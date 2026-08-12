@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+    <name>Console UI</name>
+    <directory>console_ui_workshop</directory>
+    <id>3779128726</id>
+    <description>[h1]Console UI[/h1]
+[b]A self-contained in-game command menu. No external download, PowerShell, or native debug console required.[/b]
+
+Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left stick button (L3) for about 0.5 seconds.
+
+[list]
+[*]No required dependencies; External Item Descriptions (EID) is optional
+[*]One subscription supports Repentance, Repentance+, and REPENTOGON without a second edition
+[*]15 categories with 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 68 console commands
+[*]Mode-aware stage safety lists: 45 Normal/Hard destinations and 7 Greed/Greedier destinations
+[*]Unified keyboard, mouse, and controller support across Repentance, Repentance+, and REPENTOGON
+[*]On the first menu open of each process, an empty Featured view starts on the first Collectibles entry; D-pad navigation prefers runtime menu actions with raw fallback
+[*]User-built Featured list, typed favorites, recent commands, and global search by official name, common alias, command, or ID; Ctrl+A selects the focused search text
+[*]Complete official collectible, trinket, card/rune, and pill-effect catalogs loaded lazily
+[*]Optional EID en_us descriptions, with ItemConfig fallback
+[*]Optional Mod Config Menu settings for the keyboard open key, controller favorite key, and startup key hint
+[*]Measured low-resolution layout with paged long descriptions
+[*]giveitem and spawn can repeat 1-99 times; unsafe commands remain single-run
+[*]No key injection, native console popup, network access, or external programs
+[/list]
+
+[h1]Controls[/h1]
+1. Press F6, or hold L3 for about 0.5 seconds, to open the menu.
+2. Use the arrow keys, mouse, or D-pad to navigate.
+3. Press Enter, left-click, or tap A to execute.
+4. Right-click or hold A for about 0.5 seconds to remove a removable collectible or trinket.
+5. Press F or controller X to favorite a catalog object. MCM can optionally bind a different controller favorite button.
+
+[b]Removing a collectible is not a full undo.[/b] Coins, keys, bombs, health, spawned entities, room state, and scripted pickup effects may remain after the item itself is removed.
+
+[h1]Language-version conflict[/h1]
+Console UI and Isaac Chinese Console both use F6 and L3. Install both if you wish, but enable only one language version at a time.
+
+[h1]Safety[/h1]
+This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
+
+If you report a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
+    <version>2.5.4.2</version>
+    <visibility>Public</visibility>
+    <tag id="Lua"/>
+    <tag id="Tweaks"/>
+</metadata>
+
