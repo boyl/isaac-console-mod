@@ -1,4 +1,4 @@
-# 以撒中文控制台 2.5.7｜Steam 创意工坊自包含版
+# 以撒中文控制台 2.5.8｜Steam 创意工坊自包含版
 
 这是纯 Lua 游戏内 Mod。它不需要 HTA、PowerShell、CMD、Lua 桥接 Mod 或任何站外程序，也不会打开原生调试控制台。
 
@@ -116,7 +116,7 @@ A、B、X 在所有运行时中优先采用游戏逻辑菜单动作；仅在逻�
 确认已经进入一局、Mod 已启用，并检查是否有其他 Mod 占用了 `F6`。安装 Mod Config Menu 后，可在 `Isaac Chinese Console → 设置` 中修改键盘呼出键、手柄收藏键，也可开关每个游戏进程首局显示的 F6 / L3 键位提示；MCM 是可选增强，不是本 Mod 的前置要求。手柄确认统一使用 `ACTION_MENUCONFIRM`，若收藏键与确认或返回冲突，确认或返回优先。还可以查看 `log.txt` 中是否出现：
 
 ```text
-[Isaac Chinese Console] v2.5.7 loaded; font=...; root=...
+[Isaac Chinese Console] v2.5.8 loaded; font=...; root=...
 ```
 
 ### 打开后提示 FONT LOAD FAILED

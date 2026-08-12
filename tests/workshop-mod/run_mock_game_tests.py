@@ -205,7 +205,7 @@ def scenarios() -> list[dict[str, object]]:
                 "initialFavorite": True,
             },
             {"scenario": "eid_overlay", "label": "Console UI hides EID overlay and restores prior visibility", "repPlus": True, "eid": True},
-            {"scenario": "toast_restart", "label": "R restart clears previous Toast after frame reset", "repPlus": True, "eid": False},
+            {"scenario": "toast_restart", "label": "R restart and Rerun frame resets clear transient Toasts", "repPlus": True, "eid": False},
             {"scenario": "ctrl_a_isolation", "label": "Ctrl+A search-only replace and clear", "repPlus": True, "eid": False},
             {
                 "scenario": "mcm_settings_254",

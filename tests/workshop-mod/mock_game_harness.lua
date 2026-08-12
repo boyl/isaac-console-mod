@@ -620,7 +620,7 @@ local function testUpgradeSave()
   enterSearch("260")
   pressKey(Keyboard.KEY_F)
   assertTrue(state.favorites["c:260"] == nil, "upgrade favorite mutation failed")
-  assertTrue(contains(TEST.saveData, "version=2.5.4-en.2\n"), "upgrade save version missing")
+  assertTrue(contains(TEST.saveData, "version=2.5.4-en.3\n"), "upgrade save version missing")
   assertTrue(contains(TEST.saveData, "favorites=c:182\n"), "upgrade did not preserve curated favorite")
   assertTrue(contains(TEST.saveData, "history=giveitem c260|spawn 5.10.1"), "upgrade changed history text format")
 end
@@ -1022,7 +1022,7 @@ local function testMeasuredFooterAndStars()
   renderFrame()
   local exactVersion, exactGroup, exactSummary = false, false, false
   for _, value in ipairs(TEST.rendered) do
-    if value == "v2.5.4-en.2" then exactVersion = true end
+    if value == "v2.5.4-en.3" then exactVersion = true end
     if value == "1/3" then exactGroup = true end
     if value == "The complete collectible catalog from the current game version, with high-quality items first."
         or value == "All official collectibles." or value == "COLLECTIBLES" then exactSummary = true end
@@ -1208,18 +1208,59 @@ end
 local function testToastRestartLifecycle()
   onStarted()
   state.startupHintShown = true
+
+  -- Normal R restart: the game frame resets before MC_POST_GAME_STARTED.
   TEST.frame = 120
+  state.lastGameFrame = TEST.frame
   state.toast = { message = "previous toast", color = Color(1, 1, 1, 1) }
-  state.toastUntil = 180
+  state.toastFramesRemaining = 60
   TEST.frame = 0
   onStarted()
   assertEqual(state.toast, nil, "R restart retained the previous toast")
-  assertEqual(state.toastUntil, 0, "R restart retained the previous toast deadline")
+  assertEqual(state.toastFramesRemaining, 0, "R restart retained the previous toast countdown")
   TEST.rendered = {}
   renderFrame()
   for _, value in ipairs(TEST.rendered) do
     assertTrue(value ~= "previous toast", "previous toast rendered after R restart")
   end
+
+
+  -- Rerun can reset the game frame after MC_POST_GAME_STARTED. The first
+  -- update must discard any Toast created against the pre-reset run.
+  TEST.frame = 240
+  state.startupHintShown = false
+  onStarted()
+  assertTrue(state.toast ~= nil, "pre-reset Rerun setup did not create a startup Toast")
+  TEST.frame = 0
+  onUpdate()
+  assertEqual(state.toast, nil, "post-callback Rerun frame reset retained a Toast")
+  assertEqual(state.toastFramesRemaining, 0, "post-callback Rerun retained the Toast countdown")
+
+  -- Also protect runtimes that reset the frame without the normal new-game
+  -- callback sequence.
+  state.startupHintShown = true
+  TEST.frame = 360
+  state.lastGameFrame = TEST.frame
+  state.toast = { message = "rerun toast", color = Color(1, 1, 1, 1) }
+  state.toastFramesRemaining = 60
+  state.queue = { command = "giveitem c1", total = 2, done = 0, nextFrame = 360 }
+  TEST.frame = 0
+  onUpdate()
+  assertEqual(state.toast, nil, "callback-less Rerun retained a Toast")
+  assertEqual(state.queue, nil, "callback-less Rerun retained an execution queue")
+
+  -- Ordinary Toast duration remains measured in game update frames.
+  state.toast = { message = "short toast", color = Color(1, 1, 1, 1) }
+  state.toastFramesRemaining = 3
+  state.lastGameFrame = 0
+  for frame = 1, 2 do
+    TEST.frame = frame
+    onUpdate()
+    assertTrue(state.toast ~= nil, "Toast expired before its requested duration")
+  end
+  TEST.frame = 3
+  onUpdate()
+  assertEqual(state.toast, nil, "Toast did not expire after its requested duration")
 end
 local function testCtrlAIsolation()
   onStarted()

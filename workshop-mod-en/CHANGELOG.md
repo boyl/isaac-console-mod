@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.4-en.3
+
+- Fixed Toasts, including the startup key hint, potentially remaining visible for a long time after entering a Rerun following The Lamb.
+- Replaced absolute game-frame Toast deadlines with a Mod-owned update-frame countdown while preserving all existing durations.
+- Clear prior-run Toasts and unfinished command queues when the game frame counter moves backward, covering frame reset before, after, or without the ordinary new-game callback sequence.
+
 ## 2.5.4-en.2
 
 - Fixed the first menu open of a process appearing unresponsive to the D-pad when Featured was empty; the menu now opens on the first Collectibles entry in that case.

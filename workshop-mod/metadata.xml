@@ -41,7 +41,7 @@
 
 [h1]注意[/h1]
 这是用于本地娱乐、构筑测试和截图录制的调试工具，会改变当前局面。请勿用于每日挑战或在线联机；重要存档建议提前备份。</description>
-    <version>2.5.7</version>
+    <version>2.5.8</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

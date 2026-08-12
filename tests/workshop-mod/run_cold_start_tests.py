@@ -49,11 +49,18 @@ def main() -> int:
             "initialFavorite": True,
             "expectedModName": expected_name,
         },
+        {
+            "scenario": "toast_restart",
+            "label": "R restart and Rerun frame resets clear transient Toasts",
+            "repPlus": True,
+            "eid": False,
+            "expectedModName": expected_name,
+        },
     ]
     for index, config in enumerate(cases, 1):
         print(f"[{index:02d}/{len(cases):02d}] {config['label']}")
         suite.run_scenario(dll, config)
-    print(f"cold-start integration ok: {len(cases)} scenarios")
+    print(f"cold-start and lifecycle integration ok: {len(cases)} scenarios")
     print(f"lua runtime: {dll_path}")
     return 0
 

@@ -5,7 +5,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.7"
+local VERSION = "2.5.8"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -288,7 +288,8 @@ local state = {
   hudWasVisible = true,
   queue = nil,
   toast = nil,
-  toastUntil = 0,
+  toastFramesRemaining = 0,
+  lastGameFrame = nil,
   startupHintShown = false,
   startupHintEnabled = true,
   openKey = DEFAULT_OPEN_KEY,
@@ -824,9 +825,15 @@ local function loadState()
   end
 end
 
+local function clearRunTransientState()
+  state.queue = nil
+  state.toast = nil
+  state.toastFramesRemaining = 0
+end
+
 local function showToast(message, color, duration)
   state.toast = { message = message, color = color or TEXT.main }
-  state.toastUntil = Game():GetFrameCount() + (duration or 60)
+  state.toastFramesRemaining = math.max(1, math.floor(tonumber(duration) or 60))
 end
 
 local mcmRegistered = false
@@ -1176,6 +1183,23 @@ local function processQueue()
   else
     queue.nextFrame = frame + REPEAT_DELAY_FRAMES
   end
+end
+
+local function onUpdate()
+  local frame = Game():GetFrameCount()
+  local previousFrame = state.lastGameFrame
+  if previousFrame ~= nil and frame < previousFrame then
+    clearRunTransientState()
+    debugLog("game frame reset detected; cleared transient run state")
+  elseif state.toast and previousFrame ~= nil then
+    local elapsed = frame - previousFrame
+    if elapsed > 0 then
+      state.toastFramesRemaining = math.max(0, state.toastFramesRemaining - elapsed)
+      if state.toastFramesRemaining == 0 then state.toast = nil end
+    end
+  end
+  state.lastGameFrame = frame
+  processQueue()
 end
 
 local function currentCategory()
@@ -1912,7 +1936,6 @@ local function hit(mouse, x, y, width, height)
 end
 
 local function drawToast(screenWidth, screenHeight)
-  local frame = Game():GetFrameCount()
   if state.queue then
     local queue = state.queue
     local total = clamp(math.floor(tonumber(queue.total) or 1), 1, 99)
@@ -1921,7 +1944,7 @@ local function drawToast(screenWidth, screenHeight)
     drawRect(screenWidth * 0.20, screenHeight - 28, screenWidth * 0.60, 20, COLORS.panel)
     drawRect(screenWidth * 0.20, screenHeight - 28, screenWidth * 0.60 * (done / total), 2, COLORS.accent)
     drawText(message, screenWidth * 0.20 + 6, screenHeight - 24, 0.64, TEXT.main)
-  elseif state.toast and frame <= state.toastUntil then
+  elseif state.toast and state.toastFramesRemaining > 0 then
     local width = math.min(screenWidth - 40, 360)
     drawRect((screenWidth - width) / 2, screenHeight - 28, width, 20, COLORS.panel)
     drawText(state.toast.message, (screenWidth - width) / 2 + 6, screenHeight - 24, 0.64, state.toast.color)
@@ -2302,8 +2325,8 @@ local function onInput(_, _, inputHook)
 end
 
 local function onGameStarted()
-  state.toast = nil
-  state.toastUntil = 0
+  clearRunTransientState()
+  state.lastGameFrame = Game():GetFrameCount()
   state.loaded = false
   state.hudWasVisible = true
   state.controllerOpenHold = 0
@@ -2327,7 +2350,8 @@ end
 
 local function onGameExit()
   setMenuOpen(false)
-  state.queue = nil
+  clearRunTransientState()
+  state.lastGameFrame = nil
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
@@ -2340,7 +2364,7 @@ local function onGameExit()
 end
 
 ChineseConsole:AddCallback(ModCallbacks.MC_POST_RENDER, onRender)
-ChineseConsole:AddCallback(ModCallbacks.MC_POST_UPDATE, processQueue)
+ChineseConsole:AddCallback(ModCallbacks.MC_POST_UPDATE, onUpdate)
 ChineseConsole:AddCallback(ModCallbacks.MC_INPUT_ACTION, onInput)
 ChineseConsole:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, onGameStarted)
 ChineseConsole:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, onGameExit)
