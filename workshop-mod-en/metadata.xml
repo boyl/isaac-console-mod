@@ -13,9 +13,9 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 [*]One subscription supports Repentance, Repentance+, and REPENTOGON without a second edition
 [*]15 categories with 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 68 console commands
 [*]Mode-aware stage safety lists: 45 Normal/Hard destinations and 7 Greed/Greedier destinations
-[*]Unified keyboard, mouse, and controller support across Repentance, Repentance+, and REPENTOGON
+[*]Unified keyboard, mouse, and controller support across Repentance, Repentance+, and REPENTOGON, including focus-aware LT/RT paging
 [*]On the first menu open of each process, an empty Featured view starts on the first Collectibles entry; D-pad navigation prefers runtime menu actions with raw fallback
-[*]User-built Featured list, typed favorites, recent commands, and global search by official name, common alias, command, or ID; Ctrl+A selects the focused search text
+[*]Featured favorites, recent commands, and global search; C opens manual command entry, Up/Down recalls command history, and Ctrl+A selects focused text
 [*]Complete official collectible, trinket, card/rune, and pill-effect catalogs loaded lazily
 [*]Optional EID en_us descriptions, with ItemConfig fallback
 [*]Optional Mod Config Menu settings for the keyboard open key, controller favorite key, and startup key hint
@@ -29,7 +29,8 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 2. Use the arrow keys, mouse, or D-pad to navigate.
 3. Press Enter, left-click, or tap A to execute.
 4. Right-click or hold A for about 0.5 seconds to remove a removable collectible or trinket.
-5. Press F or controller X to favorite a catalog object. MCM can optionally bind a different controller favorite button.
+5. Press F or controller X to favorite; use LT/RT to page the focused category or entry area and LB/RB to change the repeat count.
+6. The Mod overlay hides while the native pause menu is open and restores after resuming.
 
 [b]Removing a collectible is not a full undo.[/b] Coins, keys, bombs, health, spawned entities, room state, and scripted pickup effects may remain after the item itself is removed.
 
@@ -40,7 +41,7 @@ Console UI and Isaac Chinese Console both use F6 and L3. Install both if you wis
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 If you report a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.3</version>
+    <version>2.5.4.5</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

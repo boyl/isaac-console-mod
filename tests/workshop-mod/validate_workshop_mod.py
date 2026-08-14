@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.3"
-METADATA_VERSION = "2.5.4.3"
+DISPLAY_VERSION = "2.5.4-en.5"
+METADATA_VERSION = "2.5.4.5"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -183,7 +183,7 @@ def main() -> int:
         "optional MCM startup hint": 'ModConfigMenu.OptionType.BOOLEAN',
         "startup hint persistence": 'startupHintEnabled=',
         "controller favorite persistence": 'controllerFavoriteButton=',
-        "search-only Ctrl+A": "local function captureSearchText(value)",
+        "shared focused Ctrl+A editor": "local function captureEditableText(value, selectAll)",
         "custom open key": 'keyTriggered(state.openKey or DEFAULT_OPEN_KEY)',
         "two-column grid": "local GRID_COLUMNS = 2",
         "eight-item page": "local ITEMS_PER_PAGE = 8",
@@ -192,8 +192,21 @@ def main() -> int:
         "runtime font metrics": "font:GetLineHeight()",
         "shared mouse geometry": "L.searchX + L.searchW - clearW",
         "focus ownership": "state.pointerActive and hit(mouse",
+        "native pause detection": "Game():IsPaused()",
+        "pause suspension state": "state.nativePauseSuspended = true",
+        "closing input lease": "local function armInputLease(kind, value, index)",
+        "manual command entry": "local function beginCommandInput(entry)",
+        "manual command history": "local function recallCommandHistory(delta)",
+        "named raw left bumper": 'controllerButton("BUMPER_LEFT")',
+        "named raw right bumper": 'controllerButton("BUMPER_RIGHT")',
+        "named raw left trigger": 'controllerButton("TRIGGER_LEFT")',
+        "named raw right trigger": 'controllerButton("TRIGGER_RIGHT")',
+        "physical shoulder resolver": "local function controllerShoulderEvent(candidates)",
+        "focused category paging": 'if state.sidebarFocus then',
+        "entry page command": "local function changeEntryPage(delta, entries)",
+        "category page command": "local function changeCategoryPage(delta)",
         "wrapped descriptions": 'wrapText("Effect: "',
-        "actual command label": '"Command: " .. (activeEntry.cmd',
+        "clickable manual command label": 'local commandLabel = "Manual command (C): "',
         "duplicate-name suppression": 'activeEntry.en ~= detailTitle',
         "favorite save rollback": "Favorite could not be saved; the change was reverted",
         "favorite marker": "local function drawFavoriteStar(",
@@ -203,6 +216,16 @@ def main() -> int:
     for label, needle in checks.items():
         if needle not in main_lua:
             fail(f"missing implementation: {label}")
+
+    ambiguous_shoulder_actions = [
+        'controllerAction("ACTION_MENULB")',
+        'controllerAction("ACTION_MENURB")',
+        'controllerAction("ACTION_MENULT")',
+        'controllerAction("ACTION_MENURT")',
+    ]
+    for needle in ambiguous_shoulder_actions:
+        if needle in main_lua:
+            fail(f"physical shoulder role uses ambiguous action: {needle}")
 
     forbidden_source = [
         "scripts.pinyin_aliases",

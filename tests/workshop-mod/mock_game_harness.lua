@@ -4,6 +4,8 @@
 
 assert(type(MOD_ROOT) == "string" and MOD_ROOT ~= "", "MOD_ROOT is required")
 TEST_CONFIG = TEST_CONFIG or {}
+local IS_ZH = TEST_CONFIG.language == "zh"
+
 
 local function fail(message)
   error("[mock game] " .. tostring(message), 2)
@@ -30,6 +32,7 @@ local TEST = {
   actionTriggers = {},
   actionPressed = {},
   buttonPressed = {},
+  buttonPressedCalls = 0,
   mouseButtons = { false, false },
   mousePosition = { X = 0, Y = 0 },
   frame = 0,
@@ -50,6 +53,7 @@ local TEST = {
   getTrinketCalls = 0,
   getCardCalls = 0,
   getPillEffectCalls = 0,
+  paused = false,
 }
 
 if TEST_CONFIG.scenario == "oversized" then
@@ -128,6 +132,8 @@ ButtonAction = {
   ACTION_MENULEFT = 4, ACTION_MENURIGHT = 5, ACTION_MENUCONFIRM = 6,
   ACTION_MAP = 7, ACTION_DROP = 8, ACTION_BOMB = 9, ACTION_PILLCARD = 10,
   ACTION_ITEM = 11, ACTION_MENULT = 12, ACTION_MENURT = 13, ACTION_MENUTAB = 14,
+  ACTION_RESTART = 17,
+  ACTION_JOINMULTIPLAYER = 19,
 }
 Controller = {
   DPAD_LEFT = 0, DPAD_RIGHT = 1, DPAD_UP = 2, DPAD_DOWN = 3,
@@ -175,6 +181,7 @@ function Input.IsButtonTriggered(key, controllerIndex)
   return false
 end
 function Input.IsButtonPressed(button, controllerIndex)
+  TEST.buttonPressedCalls = TEST.buttonPressedCalls + 1
   local byController = TEST.buttonPressed[button]
   return type(byController) == "table" and byController[controllerIndex or 0] == true
 end
@@ -199,8 +206,12 @@ function hud:SetVisible(value) TEST.hudVisible = value == true end
 local game = {}
 function game:GetHUD() return hud end
 function game:GetFrameCount() return TEST.frame end
-function game:GetNumPlayers() return 1 end
+function game:GetNumPlayers()
+  return type(TEST_CONFIG.playerControllerIndexes) == "table"
+    and #TEST_CONFIG.playerControllerIndexes or 1
+end
 function game:IsGreedMode() return TEST_CONFIG.greedMode == true end
+function game:IsPaused() return TEST.paused end
 function Game() return game end
 
 CollectibleType = { NUM_COLLECTIBLES = 733 }
@@ -242,8 +253,10 @@ function itemConfig:GetPillEffect(id)
 end
 
 Isaac = {}
-function Isaac.GetPlayer()
-  return { ControllerIndex = TEST_CONFIG.controllerIndex or 0 }
+function Isaac.GetPlayer(index)
+  local assigned = type(TEST_CONFIG.playerControllerIndexes) == "table"
+    and TEST_CONFIG.playerControllerIndexes[(index or 0) + 1] or nil
+  return { ControllerIndex = assigned or TEST_CONFIG.controllerIndex or 0 }
 end
 function Isaac.DebugString(message) TEST.logs[#TEST.logs + 1] = tostring(message) end
 function Isaac.GetItemConfig()
@@ -283,6 +296,8 @@ if TEST_CONFIG.eid then
     } },
     ItemNames = { en_us = { ["5.100.260"] = "Black Candle" } },
   }
+  EID.descriptions.zh_cn = EID.descriptions.en_us
+  EID.ItemNames.zh_cn = EID.ItemNames.en_us
 else
   EID = nil
 end
@@ -484,12 +499,19 @@ end
 
 local function assertFontRoute()
   assertTrue(#TEST.fontLoads >= 2, "font pair was not attempted")
-  local foundFusion = false
+  local foundExpected = false
   for _, path in ipairs(TEST.fontLoads) do
-    if contains(path, "fusion/10.fnt") or contains(path, "fusion/12.fnt") then foundFusion = true end
-    assertTrue(not contains(path, ".zh/font/"), "English edition loaded a locale-specific game font")
+    if IS_ZH then
+      if contains(path, ".zh/font/") then foundExpected = true end
+    else
+      if contains(path, "fusion/10.fnt") or contains(path, "fusion/12.fnt") then
+        foundExpected = true
+      end
+      assertTrue(not contains(path, ".zh/font/"), "English edition loaded a locale-specific game font")
+    end
   end
-  assertTrue(foundFusion, "self-contained Fusion Pixel font was not loaded")
+  assertTrue(foundExpected, IS_ZH and "official Chinese font was not loaded"
+    or "self-contained Fusion Pixel font was not loaded")
 end
 
 local function testSearch()
@@ -620,7 +642,7 @@ local function testUpgradeSave()
   enterSearch("260")
   pressKey(Keyboard.KEY_F)
   assertTrue(state.favorites["c:260"] == nil, "upgrade favorite mutation failed")
-  assertTrue(contains(TEST.saveData, "version=2.5.4-en.3\n"), "upgrade save version missing")
+  assertTrue(contains(TEST.saveData, "version=" .. TEST_CONFIG.expectedVersion .. "\n"), "upgrade save version missing")
   assertTrue(contains(TEST.saveData, "favorites=c:182\n"), "upgrade did not preserve curated favorite")
   assertTrue(contains(TEST.saveData, "history=giveitem c260|spawn 5.10.1"), "upgrade changed history text format")
 end
@@ -630,7 +652,8 @@ local function testSaveFailureRollback()
   enterSearch("260")
   pressKey(Keyboard.KEY_F)
   assertTrue(state.favorites["c:260"] == nil, "failed save did not roll favorite back")
-  assertTrue(state.toast and contains(state.toast.message, "reverted"), "save failure toast is misleading")
+  assertTrue(state.toast and contains(state.toast.message, IS_ZH and "已撤销" or "reverted"),
+    "save failure toast is misleading")
   assertEqual(TEST.saveAttempts, 1, "save failure attempt count differs")
 end
 
@@ -737,14 +760,14 @@ local function testStageSafety()
   local executedBefore = #TEST.executed
   assertEqual(queueCommand("stage 14", 1), false, "nonexistent stage bypassed whitelist")
   assertTrue(state.queue == nil, "blocked nonexistent stage entered queue")
-  assertTrue(state.toast and contains(state.toast.message, "safe list"),
+  assertTrue(state.toast and contains(state.toast.message, IS_ZH and "安全白名单" or "safe list"),
     "blocked nonexistent stage gave no explanation")
   assertEqual(#TEST.executed, executedBefore, "blocked nonexistent stage executed")
 
   assertTrue(TEST_CONFIG.greedMode == true, "stage safety scenario must run in Greed mode")
   assertEqual(queueCommand("stage 1c", 1), false, "Greed mode stage command was accepted")
   assertTrue(state.queue == nil, "Greed mode stage command entered queue")
-  assertTrue(state.toast and contains(state.toast.message, "Greed-mode safe list"),
+  assertTrue(state.toast and contains(state.toast.message, IS_ZH and "贪婪模式安全白名单" or "Greed-mode safe list"),
     "Greed mode stage block gave no explanation")
   assertEqual(#TEST.executed, executedBefore, "Greed mode stage command executed")
 
@@ -850,6 +873,11 @@ local function testController()
   pressButton(physicalBack)
   assertEqual(state.open, false, "controller back did not close menu")
   assertEqual(TEST.hudVisible, true, "controller back did not restore HUD")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), 0.0,
+    "controller close release leaked back to the game")
+  renderFrame()
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), nil,
+    "controller release guard remained active after release")
 
   openMenu()
   pressButton(Controller.STICK_LEFT)
@@ -932,8 +960,11 @@ local function testOfficialImmediateGrant()
   renderFrame()
   local sawExecuteHint, sawRemoveHint = false, false
   for _, value in ipairs(TEST.rendered) do
-    if contains(value, "A: run") then sawExecuteHint = true end
-    if contains(value, "Hold A") and contains(value, "remove") then sawRemoveHint = true end
+    if contains(value, IS_ZH and "A执行" or "A: run") then sawExecuteHint = true end
+    if IS_ZH and contains(value, "长按") and contains(value, "移除")
+        or not IS_ZH and contains(value, "Hold A") and contains(value, "remove") then
+      sawRemoveHint = true
+    end
   end
   assertTrue(sawExecuteHint, "official immediate grant does not show the A execute hint")
   assertEqual(sawRemoveHint, false, "official immediate grant still advertises long-A removal")
@@ -955,7 +986,7 @@ local function testOfficialImmediateGrant()
   assertEqual(state.open, true, "official immediate grant closed before the hold threshold")
   holdButton(physicalConfirm, 1)
   assertEqual(state.open, true, "official immediate grant long hold closed the menu")
-  assertTrue(state.toast and contains(state.toast.message, "grants resources immediately"),
+  assertTrue(state.toast and contains(state.toast.message, IS_ZH and "立即增加资源" or "grants resources immediately"),
     "official immediate grant long hold gave no ItemConfig-based warning")
   releaseButton(physicalConfirm)
   onUpdate()
@@ -972,8 +1003,9 @@ local function testOfficialImmediateGrant()
     layout.gridY + row * (layout.cardH + layout.gap) + 5, 1)
   assertEqual(state.open, true, "right-click on official immediate grant closed the menu")
   assertEqual(state.queue, nil, "right-click on official immediate grant queued a command")
-  assertTrue(state.toast and contains(state.toast.message, "ItemConfig") == false
-      and contains(state.toast.message, "grants resources immediately"),
+  assertTrue(state.toast
+      and contains(state.toast.message, IS_ZH and "立即增加资源" or "grants resources immediately")
+      and (IS_ZH or contains(state.toast.message, "ItemConfig") == false),
     "right-click on official immediate grant gave no user-facing resource warning")
   assertTrue(#supplyEntries > 0, "supply category unexpectedly empty")
 
@@ -985,7 +1017,7 @@ local function testOfficialImmediateGrant()
   onUpdate()
   assertEqual(#TEST.executed, executedBeforeSpawnHold,
     "long-A executed a spawn command without an inverse")
-  assertTrue(state.toast and contains(state.toast.message, "no removable item"),
+  assertTrue(state.toast and contains(state.toast.message, IS_ZH and "没有可移除道具" or "no removable item"),
     "long-A spawn rejection gave no removal warning")
 
   local normalItem = selectCommand("giveitem c260")
@@ -1004,7 +1036,7 @@ local function testQueueInvariant()
   renderFrame()
   local showedClampedProgress = false
   for _, value in ipairs(TEST.rendered) do
-    if contains(value, "Running 1/1  remove c331") then showedClampedProgress = true end
+    if contains(value, (IS_ZH and "正在执行 " or "Running ") .. "1/1  remove c331") then showedClampedProgress = true end
     assertTrue(not contains(value, "235/1"), "queue renderer exposed progress beyond total")
   end
   assertTrue(showedClampedProgress, "queue renderer did not clamp corrupted progress")
@@ -1015,21 +1047,94 @@ local function testQueueInvariant()
   assertEqual(state.queue, nil, "corrupted completed queue was not finalized")
 end
 
+local function testCommandFeedbackDurations()
+  onStarted()
+  state.startupHintShown = true
+
+  local function finishSingle(command)
+    assertTrue(queueCommand(command, 1), "command feedback setup was rejected: " .. command)
+    onUpdate()
+    assertEqual(state.queue, nil, "single command did not finish immediately")
+  end
+
+  local function assertExpiresAfter(expectedFrames, label)
+    assertEqual(state.toastFramesRemaining, expectedFrames, label .. " duration differs")
+    for _ = 1, expectedFrames - 1 do
+      TEST.frame = TEST.frame + 1
+      onUpdate()
+      assertTrue(state.toast ~= nil, label .. " expired early")
+    end
+    TEST.frame = TEST.frame + 1
+    onUpdate()
+    assertEqual(state.toast, nil, label .. " did not expire on its boundary")
+  end
+
+  finishSingle("giveitem c1")
+  assertTrue(contains(state.toast.message, IS_ZH and "执行完成" or "Completed"),
+    "single-command success feedback differs")
+  assertExpiresAfter(60, "single-command success Toast")
+
+  assertTrue(queueCommand("giveitem c2", 2), "batch success setup was rejected")
+  onUpdate()
+  TEST.frame = TEST.frame + 7
+  onUpdate()
+  assertEqual(state.queue, nil, "batch command did not finish")
+  assertTrue(contains(state.toast.message, IS_ZH and "×2" or "x2"),
+    "batch success feedback omitted its count")
+  assertExpiresAfter(60, "batch success Toast")
+
+  TEST_CONFIG.executeFail = true
+  finishSingle("giveitem c3")
+  TEST_CONFIG.executeFail = false
+  assertEqual(state.toastFramesRemaining, 180, "execution-failure Toast duration changed")
+
+  assertTrue(queueCommand("giveitem c4", 2), "partial-failure setup was rejected")
+  onUpdate()
+  TEST_CONFIG.executeFail = true
+  TEST.frame = TEST.frame + 7
+  onUpdate()
+  TEST_CONFIG.executeFail = false
+  assertTrue(contains(state.toast.message, IS_ZH and "部分完成 1/2" or "Partially completed 1/2"),
+    "partial-failure feedback differs")
+  assertEqual(state.toastFramesRemaining, 180, "partial-failure Toast duration changed")
+
+  TEST_CONFIG.saveFail = true
+  finishSingle("giveitem c5")
+  TEST_CONFIG.saveFail = false
+  assertTrue(contains(state.toast.message, IS_ZH and "历史保存失败" or "history could not be saved"),
+    "history-save failure feedback differs")
+  assertEqual(state.toastFramesRemaining, 180, "history-save failure Toast duration changed")
+
+  assertEqual(queueCommand("lua error('blocked')", 1), false,
+    "unsafe command was accepted during feedback testing")
+  assertEqual(state.toastFramesRemaining, 120, "safety-warning Toast duration changed")
+end
+
 local function testMeasuredFooterAndStars()
   onStarted()
   openMenu()
+  state.sidebarFocus = true
   TEST.rendered = {}
   renderFrame()
-  local exactVersion, exactGroup, exactSummary = false, false, false
+  local exactVersion, exactGroup, exactSummary, exactCategoryDesc = false, false, false, false
   for _, value in ipairs(TEST.rendered) do
-    if value == "v2.5.4-en.3" then exactVersion = true end
-    if value == "1/3" then exactGroup = true end
-    if value == "The complete collectible catalog from the current game version, with high-quality items first."
-        or value == "All official collectibles." or value == "COLLECTIBLES" then exactSummary = true end
+    if value == (IS_ZH and "纯 Lua v" or "v") .. TEST_CONFIG.expectedVersion then exactVersion = true end
+    if value == (IS_ZH and "分类 1/3" or "1/3") then exactGroup = true end
+    if IS_ZH then
+      if value == "全部收藏品" then exactSummary = true end
+      if value == "当前版本的全部收藏品" then exactCategoryDesc = true end
+    elseif value == "Collectibles" then
+      exactSummary = true
+    end
+    if not IS_ZH and (value == "All collectibles in the current game version."
+        or value == "All official collectibles." or value == "COLLECTIBLES") then
+      exactCategoryDesc = true
+    end
   end
   assertTrue(exactVersion, "low-resolution version label was truncated")
   assertTrue(exactGroup, "low-resolution category page label was truncated")
   assertTrue(exactSummary, "low-resolution category summary was truncated")
+  assertTrue(exactCategoryDesc, "low-resolution category description was truncated")
 
   state.inputMode = "search"
   state.search = ""
@@ -1037,36 +1142,93 @@ local function testMeasuredFooterAndStars()
   renderFrame()
   local exactSearchHelp, exactSearchKeys = false, false
   for _, value in ipairs(TEST.rendered) do
-    if value == "Name / alias / ID" then exactSearchHelp = true end
-    if value == "Ctrl+A · Enter · Esc" then exactSearchKeys = true end
+    if IS_ZH and (value == "搜索：_" or value == "全部物品可输入全拼、首字母、英文、命令或 ID"
+        or value == "支持拼音、英文、命令或 ID") then exactSearchHelp = true end
+    if not IS_ZH and (value == "Search: _" or value == "Name / alias / command / ID"
+        or value == "Name / alias / ID") then exactSearchHelp = true end
+    if contains(value, "Ctrl+A") and contains(value, "Esc") then exactSearchKeys = true end
   end
   assertTrue(exactSearchHelp, "low-resolution search help was truncated")
   assertTrue(exactSearchKeys, "low-resolution search key help was truncated")
+
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.1"
+  state.commandSelectAll = false
+  TEST.rendered = {}
+  renderFrame()
+  local commandLabel, commandText, commandKeys, repeatKeys = false, false, false, false
+  for _, value in ipairs(TEST.rendered) do
+    if value == (IS_ZH and "命令：" or "Cmd: ") then commandLabel = true end
+    if value == "spawn 5.10.1_" then commandText = true end
+    if contains(value, "Ctrl+A") and contains(value, "Enter") and contains(value, "Esc")
+        and not contains(value, "...") then commandKeys = true end
+    if value == "LB/RB" then repeatKeys = true end
+  end
+  assertTrue(commandLabel, "low-resolution command label was truncated")
+  assertTrue(commandText, "short command was unnecessarily tail-truncated")
+  assertTrue(commandKeys, "low-resolution command key help was truncated")
+  assertTrue(repeatKeys, "repeat-count LB/RB help was missing")
+
+  state.manualCommand = string.rep("spawn 5.10.1 ", 12)
+  TEST.rendered = {}
+  renderFrame()
+  local longCommandTail = false
+  for _, value in ipairs(TEST.rendered) do
+    if value:sub(1, 3) == "..." and value:sub(-1) == "_" then
+      longCommandTail = true
+    end
+  end
+  if TEST_CONFIG.screenWidth <= 455 then
+    assertTrue(longCommandTail, "genuinely long command did not adapt from the tail at minimum resolution")
+  end
   state.inputMode = nil
 
+  state.sidebarFocus = false
   enterSearch("182")
   TEST.rendered = {}
   renderFrame()
   local exactTitle = false
-  local exactCommand = false
+  local exactCommandLabel = false
+  local exactCommandValue = false
   local completeHint = false
   local emptyStar = false
   local hoverFavoriteText = false
   local visibleRemoveButton = false
   for _, value in ipairs(TEST.rendered) do
-    if value == "Sacred Heart" then exactTitle = true end
-    if value == "Command: giveitem c182" then exactCommand = true end
-    if contains(value, "F: favorite") and not contains(value, "...") then completeHint = true end
+    if value == (IS_ZH and "圣心 / Sacred Heart" or "Sacred Heart") then exactTitle = true end
+    if value == (IS_ZH and "手动命令(C)：" or "Manual command (C): ") then exactCommandLabel = true end
+    if value == "giveitem c182" then exactCommandValue = true end
+    if contains(value, IS_ZH and "F收藏" or "F: favorite") and not contains(value, "...") then completeHint = true end
     if value == "☆" then emptyStar = true end
-    if value == "Favorite" then hoverFavoriteText = true end
-    if value == "Remove" then visibleRemoveButton = true end
+    if value == (IS_ZH and "收藏" or "Favorite") then hoverFavoriteText = true end
+    if value == (IS_ZH and "移除" or "Remove") then visibleRemoveButton = true end
   end
-  assertTrue(exactTitle, "English detail title was truncated or duplicated")
-  assertTrue(exactCommand, "detail command was truncated")
-  assertTrue(completeHint, "footer action hint was truncated")
+  assertTrue(exactTitle, "detail title was truncated or duplicated")
+  assertTrue(exactCommandLabel, "detail command label was truncated")
+  assertTrue(exactCommandValue, "short detail command was truncated; rendered="
+    .. table.concat(TEST.rendered, " | "))
+  if IS_ZH then
+    assertTrue(completeHint, "footer action hint was truncated")
+  end
   assertEqual(emptyStar, false, "unfavorited cards still render an empty star")
   assertEqual(hoverFavoriteText, false, "unfavorited cards render a favorite text action")
   assertEqual(visibleRemoveButton, false, "cards still render the redundant remove text column")
+
+  local selected = visibleEntries()[1]
+  local originalCommand = selected.cmd
+  selected.cmd = string.rep("spawn 5.10.1 ", 12)
+  TEST.rendered = {}
+  renderFrame()
+  local detailLongCommandTail = false
+  for _, value in ipairs(TEST.rendered) do
+    if value:sub(1, 3) == "..." and contains(value, "5.10.1") then
+      detailLongCommandTail = true
+    end
+  end
+  selected.cmd = originalCommand
+  if TEST_CONFIG.screenWidth <= 455 then
+    assertTrue(detailLongCommandTail, "long detail command did not adapt from the tail at minimum resolution")
+  end
 
   state.search = "260"
   state.page = 1
@@ -1084,8 +1246,10 @@ local function testMeasuredFooterAndStars()
   local mouseHint = false
   for _, value in ipairs(TEST.rendered) do
     if value == "★" then fontStar = true end
-    if contains(value, "X: unfavorite") or contains(value, "X:-fav") then controllerHint = true end
-    if (contains(value, "Hold A") and contains(value, "remove")) or contains(value, "HoldA:rm") then
+    if contains(value, IS_ZH and "X取消收藏" or "X: unfavorite")
+        or not IS_ZH and (contains(value, "X:-fav") or contains(value, "X-")) then controllerHint = true end
+    if IS_ZH and contains(value, "长按") and contains(value, "移除")
+        or not IS_ZH and ((contains(value, "Hold A") and contains(value, "remove")) or contains(value, "HoldA:rm")) then
       controllerRemoveHint = true
     end
     if contains(value, "R3") then legacyR3Hint = true end
@@ -1107,7 +1271,8 @@ local function testMeasuredFooterAndStars()
   renderFrame()
   local featuredCancelHint = false
   for _, value in ipairs(TEST.rendered) do
-    if contains(value, "F: unfavorite") or contains(value, "F:-fav") then featuredCancelHint = true end
+    if contains(value, IS_ZH and "F取消收藏" or "F: unfavorite")
+        or not IS_ZH and contains(value, "F:-fav") then featuredCancelHint = true end
   end
   assertTrue(featuredCancelHint, "featured view did not expose favorite cancellation")
 
@@ -1116,8 +1281,8 @@ local function testMeasuredFooterAndStars()
   renderFrame()
   local emptyTitle, emptyHint = false, false
   for _, value in ipairs(TEST.rendered) do
-    if value == "No favorites yet" then emptyTitle = true end
-    if value == "Press F / X in another category to add one" then emptyHint = true end
+    if value == (IS_ZH and "暂无收藏" or "No favorites yet") then emptyTitle = true end
+    if value == (IS_ZH and "请在其他分类按 F / X 添加" or "Press F / X in another category to add one") then emptyHint = true end
   end
   assertTrue(emptyTitle and emptyHint, "empty featured guidance was not rendered")
 end
@@ -1125,12 +1290,19 @@ end
 local function testFontFallback()
   assertTrue(TEST_CONFIG.repPlus, "fallback scenario must use Repentance+")
   assertTrue(#TEST.fontLoads >= 2, "bundled font pair was not attempted")
-  local foundFusion = false
+  local foundExpected = false
   for _, path in ipairs(TEST.fontLoads) do
-    if contains(path, "fusion/10.fnt") or contains(path, "fusion/12.fnt") then foundFusion = true end
-    assertTrue(not contains(path, ".zh/font/"), "English edition tried a locale-specific font")
+    if IS_ZH then
+      if contains(path, ".zh/font/") then foundExpected = true end
+    else
+      if contains(path, "fusion/10.fnt") or contains(path, "fusion/12.fnt") then
+        foundExpected = true
+      end
+      assertTrue(not contains(path, ".zh/font/"), "English edition tried a locale-specific font")
+    end
   end
-  assertTrue(foundFusion, "bundled Fusion Pixel font was not loaded")
+  assertTrue(foundExpected, IS_ZH and "official Chinese font was not loaded"
+    or "bundled Fusion Pixel font was not loaded")
   onStarted()
   openMenu()
   renderFrame()
@@ -1151,8 +1323,8 @@ local function testMcmKeybind()
   assertTrue(TEST_CONFIG.mcm, "MCM keybind scenario requires optional MCM")
   onStarted()
   assertEqual(TEST.mcmAddCalls, 3, "MCM settings were not registered exactly once each")
-  assertEqual(TEST.mcmCategory, "Console UI", "MCM category changed")
-  assertEqual(TEST.mcmSubcategory, "Settings", "MCM subcategory changed")
+  assertEqual(TEST.mcmCategory, IS_ZH and "Isaac Chinese Console" or "Console UI", "MCM category changed")
+  assertEqual(TEST.mcmSubcategory, IS_ZH and "设置" or "Settings", "MCM subcategory changed")
   assertTrue(type(TEST.mcmSetting) == "table", "MCM keybind setting missing")
   assertEqual(TEST.mcmSetting.CurrentSetting(), Keyboard.KEY_F6, "MCM default key differs")
 
@@ -1184,6 +1356,18 @@ end
 
 local function testEidOverlayIsolation()
   assertTrue(TEST_CONFIG.eid, "EID overlay scenario requires EID")
+  if IS_ZH then
+    EID.isHidden = false
+    openMenu()
+    assertEqual(EID.isHidden, false, "Chinese edition unexpectedly changed EID visibility")
+    pressKey(Keyboard.KEY_F6)
+    assertEqual(EID.isHidden, false, "Chinese edition changed EID on close")
+    EID.isHidden = true
+    openMenu()
+    pressKey(Keyboard.KEY_ESCAPE)
+    assertEqual(EID.isHidden, true, "Chinese edition changed a hidden EID")
+    return
+  end
   onStarted()
   EID.isHidden = false
   openMenu()
@@ -1262,6 +1446,129 @@ local function testToastRestartLifecycle()
   onUpdate()
   assertEqual(state.toast, nil, "Toast did not expire after its requested duration")
 end
+
+local function testRunBoundaryControllerLifecycle()
+  onStarted()
+  state.startupHintShown = true
+
+  -- A closed overlay must be completely transparent during native player and
+  -- controller construction. In particular, MC_INPUT_ACTION must not probe
+  -- raw input merely because the engine queries JOIN.
+  TEST.buttonPressed[Keyboard.KEY_R] = { [0] = true }
+  local closedInputPolls = TEST.buttonPressedCalls
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "closed overlay intercepted native player assignment")
+  assertEqual(TEST.buttonPressedCalls, closedInputPolls,
+    "closed overlay polled physical input during native player assignment")
+  TEST.buttonPressed[Keyboard.KEY_R] = nil
+
+  local function dirtyTransientInputState(label)
+    openMenu()
+    state.nativePauseSuspended = true
+    state.inputLease = {
+      kind = "action", index = 1, value = ButtonAction.ACTION_MENUCONFIRM,
+    }
+    state.controllerIndex = 1
+    state.controllerConfirmCommand = "giveitem c1"
+    state.inputMode = "search"
+    state.searchSelectAll = true
+    TEST.paused = true
+    assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+      ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+      label .. " blocked native controller recovery before the run boundary")
+  end
+
+  local function assertCleared(label)
+    assertEqual(state.open, false, label .. " retained the open overlay")
+    assertEqual(state.nativePauseSuspended, false, label .. " retained pause suspension")
+    assertEqual(state.inputLease, nil, label .. " retained the input lease")
+    assertEqual(state.controllerIndex, nil, label .. " retained the old controller assignment")
+    assertEqual(state.controllerConfirmCommand, nil, label .. " retained controller confirmation")
+    assertEqual(state.inputMode, nil, label .. " retained input focus")
+    assertEqual(state.searchSelectAll, false, label .. " retained selection state")
+    TEST.paused = false
+    assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+      ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+      label .. " blocked game input after the boundary completed")
+  end
+
+  -- R restart: frame reset is visible before the new-game callback.
+  TEST.frame = 120
+  state.lastGameFrame = TEST.frame
+  dirtyTransientInputState("R restart")
+  TEST.paused = false
+  state.inputMode = nil
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_RESTART), nil,
+    "R restart action was intercepted before the run boundary")
+  TEST.actionPressed[ButtonAction.ACTION_RESTART] = { [1] = true }
+  renderFrame()
+  TEST.actionPressed[ButtonAction.ACTION_RESTART] = nil
+  assertEqual(state.open, false,
+    "R restart did not close the overlay before player reconstruction")
+  assertEqual(state.inputLease, nil,
+    "R restart retained an input lease before player reconstruction")
+  dirtyTransientInputState("R restart callback gap")
+  TEST.paused = false
+  TEST.frame = 0
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "R restart callback gap blocked native controller reassignment")
+  onStarted()
+  assertCleared("R restart")
+
+  -- Editable fields own alphabetic R. Restart must remain blocked there so a
+  -- command or search query cannot restart the run.
+  openMenu()
+  state.inputMode = "command"
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_RESTART), 0.0,
+    "command input leaked R to the game restart action")
+  state.inputMode = "search"
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_RESTART), 0.0,
+    "search input leaked R to the game restart action")
+  pressKey(Keyboard.KEY_ESCAPE)
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, false, "restart editor isolation setup did not close the overlay")
+
+  -- Rewind may deliver a new-game callback without first exposing a lower frame.
+  TEST.frame = 180
+  state.lastGameFrame = TEST.frame
+  dirtyTransientInputState("Rewind")
+  TEST.paused = false
+  TEST.frame = 0
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "Rewind callback gap blocked native controller reassignment")
+  onStarted()
+  assertCleared("Rewind")
+
+  -- Rerun can reset the frame after the new-game callback.
+  TEST.frame = 240
+  state.lastGameFrame = TEST.frame
+  dirtyTransientInputState("Rerun callback-first")
+  TEST.paused = false
+  state.inputMode = nil
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_RESTART), nil,
+    "Rerun restart action was intercepted before the callback")
+  onStarted()
+  assertCleared("Rerun callback-first")
+  TEST.frame = 0
+  onUpdate()
+  assertCleared("Rerun callback-first frame reset")
+
+  -- Some runtimes expose only the frame rollback; that fallback must match.
+  TEST.frame = 360
+  state.lastGameFrame = TEST.frame
+  dirtyTransientInputState("callback-less frame rollback")
+  TEST.paused = false
+  TEST.frame = 0
+  onUpdate()
+  assertCleared("callback-less frame rollback")
+end
 local function testCtrlAIsolation()
   onStarted()
   openMenu()
@@ -1280,6 +1587,16 @@ local function testCtrlAIsolation()
   pressKey(Keyboard.KEY_D)
   assertEqual(state.search, "d", "typing did not replace the selected search text")
   assertEqual(state.searchSelectAll, false, "replacement did not clear selection state")
+  TEST.rendered = {}
+  renderFrame()
+  local exactFocusedSearch, prefixedFocusedSearch = false, false
+  for _, value in ipairs(TEST.rendered) do
+    if value == "d_" then exactFocusedSearch = true end
+    if value == "Search: d_" or value == "搜索：d_" then
+      prefixedFocusedSearch = true
+    end
+  end
+  assertTrue(exactFocusedSearch and not prefixedFocusedSearch, "non-empty search retained its placeholder prefix")
 
   TEST.buttonPressed[Keyboard.KEY_RIGHT_CONTROL] = { [0] = true }
   TEST.keyTriggers[Keyboard.KEY_A] = true
@@ -1304,8 +1621,12 @@ local function testCtrlAIsolation()
   TEST.keyTriggers[Keyboard.KEY_A] = true
   renderFrame()
   TEST.buttonPressed[Keyboard.KEY_LEFT_CONTROL] = { [0] = false }
-  assertEqual(state.manualCommand, "giveitem c182", "Ctrl+A affected the manual command field")
+  assertEqual(state.manualCommand, "giveitem c182", "command Ctrl+A changed text")
+  assertEqual(state.commandSelectAll, true, "command Ctrl+A did not select its own text")
   assertEqual(state.searchSelectAll, false, "manual command Ctrl+A leaked search selection state")
+  pressKey(Keyboard.KEY_D)
+  assertEqual(state.manualCommand, "d", "command typing did not replace selected text")
+  assertEqual(state.commandSelectAll, false, "command replacement retained selection")
 
   pressKey(Keyboard.KEY_F6)
   TEST.buttonPressed[Keyboard.KEY_LEFT_CONTROL] = { [0] = true }
@@ -1313,6 +1634,590 @@ local function testCtrlAIsolation()
   renderFrame()
   TEST.buttonPressed[Keyboard.KEY_LEFT_CONTROL] = { [0] = false }
   assertEqual(state.open, false, "Ctrl+A opened or changed a closed menu")
+end
+
+local function testCommandEditorAndHistory()
+  onStarted()
+  openMenu()
+  state.history = { "spawn 5.10.1 ×4", "giveitem c182" }
+  state.repeatCount = 3
+  pressKey(Keyboard.KEY_C)
+  assertEqual(state.inputMode, "command", "C did not enter manual command mode")
+  assertEqual(state.commandSelectAll, true, "prefilled command was not selected")
+  state.controlMode = "controller"
+  TEST.rendered = {}
+  pressKey(keyForCharacter("s"))
+  assertEqual(state.manualCommand, "s", "typing did not replace prefilled command")
+  assertEqual(state.controlMode, "keyboard", "command typing retained stale controller ownership")
+  local sawKeyboardHint, sawControllerHint = false, false
+  for _, text in ipairs(TEST.rendered) do
+    if contains(text, IS_ZH and "Enter执行" or "Enter")
+        and contains(text, IS_ZH and "Esc退出" or "Esc") then
+      sawKeyboardHint = true
+    end
+    if contains(text, IS_ZH and "A执行" or "A: run") then sawControllerHint = true end
+  end
+  assertTrue(sawKeyboardHint, "keyboard command input did not render keyboard help")
+  assertEqual(sawControllerHint, false, "keyboard command input retained controller help")
+  pressKey(Keyboard.KEY_UP)
+  assertEqual(state.manualCommand, "spawn 5.10.1", "Up did not recall newest command")
+  assertEqual(state.repeatCount, 4, "history did not restore repeat count")
+  pressKey(Keyboard.KEY_UP)
+  assertEqual(state.manualCommand, "giveitem c182", "second Up did not recall older command")
+  assertEqual(state.repeatCount, 1, "single history entry restored wrong count")
+  pressKey(Keyboard.KEY_DOWN)
+  assertEqual(state.manualCommand, "spawn 5.10.1", "Down did not move toward newest command")
+  pressKey(Keyboard.KEY_DOWN)
+  assertEqual(state.manualCommand, "s", "Down past newest did not restore draft")
+  assertEqual(state.repeatCount, 3, "draft repeat count was not restored")
+  TEST.buttonPressed[Keyboard.KEY_RIGHT_CONTROL] = { [0] = true }
+  TEST.keyTriggers[Keyboard.KEY_A] = true
+  renderFrame()
+  TEST.buttonPressed[Keyboard.KEY_RIGHT_CONTROL] = { [0] = false }
+  pressKey(Keyboard.KEY_DELETE)
+  assertEqual(state.manualCommand, "", "Delete did not clear selected command")
+  assertEqual(state.commandSelectAll, false, "Delete retained command selection")
+  pressKey(Keyboard.KEY_ESCAPE)
+  assertEqual(state.inputMode, nil, "Esc did not leave command input")
+  local layout = computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
+  clickMouse(layout.contentX + layout.pad + 1,
+    layout.footerY + layout.pad + layout.line10 * 3 + 1)
+  assertEqual(state.inputMode, "command", "clicking the command row did not enter command input")
+  assertEqual(state.commandSelectAll, true, "clicked command was not selected")
+  pressKey(Keyboard.KEY_ESCAPE)
+  assertEqual(state.inputMode, nil, "Esc did not leave clicked command input")
+
+end
+
+local function renderedContainsExact(candidates)
+  for _, rendered in ipairs(TEST.rendered) do
+    for _, candidate in ipairs(candidates) do
+      if rendered == candidate then return true end
+    end
+  end
+  return false
+end
+
+local function testCategoryDescriptionMatrix()
+  onStarted()
+  openMenu()
+  local expected = IS_ZH and {
+    featured = { "只显示你主动收藏的物品。", "主动收藏的物品" },
+    all_items = { "当前版本的全部收藏品", "当前版本全部收藏品" },
+    trinkets = { "官方基础饰品；给予后可移除饰品本体。", "给予和移除饰品" },
+    cards = { "官方卡牌、符文、逆位牌和魂石；只支持单次给予。", "单次给予卡牌和符文" },
+    pills = { "官方基础胶囊效果；只支持单次给予。", "单次给予胶囊效果" },
+    damage = { "伤害、射击方式与高强度叠加核心。", "伤害与射击强化" },
+    defense = { "护盾、减伤与免疫道具", "护盾、减伤与免疫" },
+    economy = { "商店、掉落与资源成长道具。", "商店、掉落与资源" },
+    explore = { "地图显示、隐藏房与房间移动工具。", "地图、隐藏房与移动" },
+    active = { "重随、回溯、重开与改变流程的强力主动道具。", "改变流程的主动道具" },
+    familiar = { "输出、格挡与续航型跟班。", "输出与辅助跟班" },
+    fun = { "适合测试构筑与制造夸张联动。", "测试构筑与趣味联动" },
+    debug = { "无敌、高伤、无限充能与信息显示开关。再次点击同一 debug 命令可关闭。", "切换调试能力" },
+    supply = { "生成资源、回复与当前房间辅助。", "生成资源与房间辅助" },
+    stage = { "按当前模式显示安全楼层：正常模式 45 项，贪婪模式 7 项。", "按模式显示安全楼层" },
+  } or {
+    featured = { "Only items you explicitly favorite appear here.", "Your saved favorites." },
+    all_items = { "All collectibles in the current game version.", "All official collectibles." },
+    trinkets = { "Official base trinkets. Granted trinkets can also be removed.", "Give and remove trinkets." },
+    cards = { "Official cards, runes, reversed cards, and soul stones. Grants are single-use commands.", "Give cards and runes once." },
+    pills = { "Official base pill effects. Grants are single-use commands.", "Give pill effects once." },
+    damage = { "Damage upgrades, tear replacements, and powerful build-defining synergies.", "Damage and tear upgrades." },
+    defense = { "Shields, damage reduction, and immunity.", "Shields and survival items." },
+    economy = { "Shop value, pickup generation, and long-term resource growth.", "Shops, pickups, and resources." },
+    explore = { "Map information, secret-room access, and room-navigation tools.", "Maps, secrets, and movement." },
+    active = { "Rerolls, rewinds, restarts, and other run-changing active items.", "Run-changing active items." },
+    familiar = { "Familiars for damage, projectile blocking, and sustain.", "Damage and support familiars." },
+    fun = { "Experimental picks for testing builds and creating wild synergies.", "Experimental build tools." },
+    debug = { "Invincibility, extreme damage, unlimited charge, and diagnostic overlays. Run the same debug command again to turn it off.", "Toggle debug flags." },
+    supply = { "Spawn pickups, restore resources, and control the current room.", "Spawn pickups and resources." },
+    stage = { "Shows the safe route for the current mode: 45 Normal/Hard destinations or 7 Greed destinations.", "Warp along the safe route." },
+  }
+
+  for index, category in ipairs(runtimeCatalog.categories) do
+    assertTrue(type(category.shortDesc) == "string" and category.shortDesc ~= "",
+      "category is missing a deliberate short description: " .. category.id)
+    state.categoryIndex = index
+    state.categoryPage = math.floor((index - 1) / 5) + 1
+    state.search = ""
+    state.inputMode = nil
+    state.page = 1
+    state.selection = 1
+    state.sidebarFocus = true
+    TEST.rendered = {}
+    renderFrame()
+    assertTrue(expected[category.id] ~= nil, "category matrix is missing " .. category.id)
+    assertTrue(renderedContainsExact({ category.name }),
+      "category title is not complete and readable: " .. category.id)
+    assertTrue(renderedContainsExact(expected[category.id]),
+      "category description is not complete and readable: " .. category.id)
+  end
+
+  state.search = "sacred"
+  state.inputMode = "search"
+  TEST.rendered = {}
+  renderFrame()
+  local searchCandidates = IS_ZH
+    and { "全部物品可输入全拼、首字母、英文、命令或 ID", "支持拼音、英文、命令或 ID" }
+    or { "Name / alias / command / ID", "Name / alias / ID" }
+  assertTrue(renderedContainsExact(searchCandidates), "search description is not complete and readable")
+  local searchCategory = runtimeCatalog.categories[state.categoryIndex]
+  assertTrue(not renderedContainsExact(expected[searchCategory.id]),
+    "category footer overrode higher-priority search context")
+
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.1"
+  state.commandSelectAll = false
+  TEST.rendered = {}
+  renderFrame()
+  assertTrue(renderedContainsExact({ "spawn 5.10.1_" }),
+    "command footer did not render the complete short command")
+  assertTrue(not renderedContainsExact(expected[searchCategory.id]),
+    "category footer overrode higher-priority command context")
+
+  state.inputMode = nil
+  TEST.rendered = {}
+  renderFrame()
+  local focusedCategory = runtimeCatalog.categories[state.categoryIndex]
+  assertTrue(renderedContainsExact(expected[focusedCategory.id]),
+    "search exit did not restore category-focused footer")
+
+  TEST_CONFIG.greedMode = true
+  state.search = ""
+  state.inputMode = nil
+  state.sidebarFocus = true
+  for index, category in ipairs(runtimeCatalog.categories) do
+    if category.id == "stage" then state.categoryIndex = index break end
+  end
+  TEST.rendered = {}
+  renderFrame()
+  local greedCandidates = IS_ZH
+    and { "贪婪模式安全楼层：stage 1–7；隐藏楼层与后缀组合不开放",
+      "贪婪模式安全楼层：stage 1–7", "贪婪楼层 stage 1–7" }
+    or { "Greed safe route: stage 1-7; hidden floors and suffix combinations are blocked",
+      "Greed route: stages 1-7.", "Greed stages 1-7." }
+  assertTrue(renderedContainsExact(greedCandidates), "Greed description is not complete and readable")
+
+  local category = runtimeCatalog.categories[state.categoryIndex]
+  state.sidebarFocus = false
+  TEST.rendered = {}
+  renderFrame()
+  assertTrue(not renderedContainsExact(expected[category.id]),
+    "category description remained visible after grid regained focus")
+  local sawEntryDetail = false
+  for _, value in ipairs(TEST.rendered) do
+    if contains(value, IS_ZH and "说明 " or "Details ") then sawEntryDetail = true end
+  end
+  assertTrue(sawEntryDetail, "grid focus did not restore entry details")
+end
+
+local function triggerTextKeyWithConfirm(key)
+  local index = TEST_CONFIG.controllerIndex or 0
+  TEST.keyTriggers[key] = true
+  TEST.actionTriggers[ButtonAction.ACTION_MENUCONFIRM] = { [index] = true }
+  renderFrame()
+end
+
+local function testEditableTextConfirmCollision()
+  onStarted()
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = ""
+  state.commandSelectAll = false
+  local expected = ""
+  for _, spec in ipairs({
+      { keyForCharacter("g"), "g" },
+      { Keyboard.KEY_SPACE, " " },
+      { Keyboard.KEY_PERIOD, "." },
+      { Keyboard.KEY_MINUS, "-" },
+      { Keyboard.KEY_SLASH, "/" },
+      { Keyboard.KEY_EQUAL, "=" },
+      { keyForCharacter("1"), "1" },
+    }) do
+    triggerTextKeyWithConfirm(spec[1])
+    expected = expected .. spec[2]
+    assertEqual(state.manualCommand, expected,
+      "supported text key was submitted instead of inserted")
+    assertEqual(state.inputMode, "command", "text key left command input")
+    assertEqual(state.open, true, "text key closed the menu")
+    assertTrue(state.queue == nil, "text key queued a command")
+  end
+
+  state.inputMode = "search"
+  state.search = "g"
+  state.searchSelectAll = false
+  triggerTextKeyWithConfirm(Keyboard.KEY_SPACE)
+  assertEqual(state.search, "g ", "Space submitted instead of extending search")
+  assertEqual(state.inputMode, "search", "Space left search input")
+  assertEqual(state.open, true, "Space closed menu from search input")
+
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.1"
+  state.commandSelectAll = false
+  TEST.buttonPressed[Keyboard.KEY_ENTER] = { [0] = true }
+  renderFrame()
+  assertEqual(state.open, false, "first Enter press without trigger report did not submit")
+  assertTrue(state.queue ~= nil, "first Enter press did not queue command")
+  local firstQueue = state.queue
+  renderFrame()
+  assertTrue(state.queue == firstQueue, "held Enter submitted more than once")
+  TEST.buttonPressed[Keyboard.KEY_ENTER] = { [0] = false }
+  renderFrame()
+  onUpdate()
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.1"
+  state.commandSelectAll = false
+  pressButton(TEST_CONFIG.physicalConfirmButton or Controller.BUTTON_A)
+  assertEqual(state.open, false, "controller confirm no longer submitted command")
+  assertTrue(state.queue ~= nil, "controller confirm did not queue command")
+  onUpdate()
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.1"
+  state.commandSelectAll = false
+  pressKey(Keyboard.KEY_ENTER)
+  assertEqual(state.open, false, "Enter no longer submitted command")
+  assertTrue(state.queue ~= nil, "Enter did not queue command")
+end
+
+local function testPauseSuspension()
+  onStarted()
+  openMenu()
+  state.search = "giveitem"
+  state.inputMode = "search"
+  state.selection = 2
+  TEST.rendered = {}
+  TEST.paused = true
+  renderFrame()
+  assertEqual(#TEST.rendered, 0, "paused overlay still rendered")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), nil,
+    "paused overlay still blocked native pause input")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "controller disconnect recovery input was blocked")
+  assertEqual(state.open, true, "pause closed the overlay instead of suspending it")
+  local executedBefore = #TEST.executed
+  TEST_CONFIG.playerControllerIndexes = { 1 }
+  TEST_CONFIG.controllerIndex = 1
+  TEST.keyTriggers[Keyboard.KEY_ENTER] = true
+  TEST.paused = false
+  renderFrame()
+  assertEqual(#TEST.executed, executedBefore, "resume input penetrated into the overlay")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), 0.0,
+    "post-reconnect join input penetrated beyond the recovery frame")
+  assertEqual(state.search, "giveitem", "resume lost the search text")
+  assertEqual(state.inputMode, "search", "resume lost input focus")
+  assertEqual(state.selection, 2, "resume lost selection")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), 0.0,
+    "resumed overlay did not reclaim input")
+  TEST.actionTriggers[ButtonAction.ACTION_MENUBACK] = { [1] = true }
+  renderFrame()
+  assertEqual(state.controllerIndex, 1,
+    "reconnected controller was not reacquired from the player's current assignment")
+  assertEqual(state.inputMode, nil,
+    "reconnected controller did not regain ownership of the focused search field")
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, false, "F6 did not close the resumed overlay")
+  TEST.paused = true
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, false, "F6 opened the overlay over native pause")
+  holdButton(Controller.STICK_LEFT, 30)
+  assertEqual(state.open, false, "L3 opened the overlay over native pause")
+  TEST.paused = false
+  releaseButton(Controller.STICK_LEFT)
+
+end
+
+local function testAssignedControllerIsolation()
+  onStarted()
+  openMenu()
+  local assigned = TEST_CONFIG.controllerIndex or 0
+  local unassigned = TEST_CONFIG.unassignedControllerIndex or 3
+  assertTrue(assigned ~= unassigned, "assigned-controller scenario needs distinct indexes")
+
+  state.categoryIndex = 2
+  state.page = 1
+  state.selection = 1
+  TEST.actionTriggers[ButtonAction.ACTION_MENUDOWN] = { [unassigned] = true }
+  TEST.buttonTriggers[Controller.DPAD_DOWN] = { [unassigned] = true }
+  renderFrame()
+  assertEqual(state.selection, 1, "unassigned controller moved the Mod focus")
+  assertTrue(state.controllerIndex ~= unassigned,
+    "unassigned controller became the active Mod controller")
+
+  TEST.actionTriggers[ButtonAction.ACTION_MENUCONFIRM] = { [unassigned] = true }
+  TEST.actionPressed[ButtonAction.ACTION_MENUCONFIRM] = { [unassigned] = true }
+  TEST.buttonTriggers[Controller.BUTTON_A] = { [unassigned] = true }
+  TEST.buttonPressed[Controller.BUTTON_A] = { [unassigned] = true }
+  renderFrame()
+  assertEqual(state.controllerConfirmCommand, nil,
+    "unassigned controller started a command")
+  assertEqual(state.open, true, "unassigned controller closed the menu")
+
+  TEST.actionPressed[ButtonAction.ACTION_MENUCONFIRM] = { [unassigned] = false }
+  TEST.buttonPressed[Controller.BUTTON_A] = { [unassigned] = false }
+  TEST.actionTriggers[ButtonAction.ACTION_MENUDOWN] = { [assigned] = true }
+  renderFrame()
+  assertEqual(state.selection, 3, "assigned controller stopped navigating")
+end
+
+local function testClosingInputLease()
+  local function assertGameInputBlocked(label)
+    assertTrue(state.inputLease ~= nil, label .. " did not arm an input lease")
+    assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+      ButtonAction.ACTION_JOINMULTIPLAYER), 0.0,
+      label .. " leaked residual input to the game")
+  end
+
+  local function releaseKeyboard(key)
+    TEST.buttonPressed[key] = { [0] = false }
+    renderFrame()
+    assertEqual(state.inputLease, nil, "keyboard input lease survived release")
+    assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+      ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+      "released keyboard input remained blocked")
+    onUpdate()
+  end
+
+  onStarted()
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.3"
+  state.commandSelectAll = false
+  TEST.buttonPressed[Keyboard.KEY_ENTER] = { [0] = true }
+  TEST.keyTriggers[Keyboard.KEY_ENTER] = true
+  renderFrame()
+  assertEqual(state.open, false, "manual command Enter did not close the menu")
+  assertGameInputBlocked("manual command Enter")
+  TEST.paused = true
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "input lease blocked the native pause or reconnect dialog")
+  TEST.paused = false
+  releaseKeyboard(Keyboard.KEY_ENTER)
+
+  openMenu()
+  state.search = "giveitem c182"
+  state.categoryIndex = 2
+  state.page = 1
+  state.selection = 1
+  state.sidebarFocus = false
+  assertTrue(#visibleEntries() > 0, "entry Enter setup has no executable entry")
+  TEST.buttonPressed[Keyboard.KEY_ENTER] = { [0] = true }
+  TEST.keyTriggers[Keyboard.KEY_ENTER] = true
+  renderFrame()
+  assertEqual(state.open, false, "entry Enter did not close the menu")
+  assertGameInputBlocked("entry Enter")
+  releaseKeyboard(Keyboard.KEY_ENTER)
+
+  openMenu()
+  TEST.buttonPressed[Keyboard.KEY_ESCAPE] = { [0] = true }
+  TEST.keyTriggers[Keyboard.KEY_ESCAPE] = true
+  renderFrame()
+  assertEqual(state.open, false, "Escape did not close the menu")
+  assertGameInputBlocked("Escape close")
+  releaseKeyboard(Keyboard.KEY_ESCAPE)
+
+  openMenu()
+  local openKey = state.openKey or Keyboard.KEY_F6
+  TEST.buttonPressed[openKey] = { [0] = true }
+  TEST.keyTriggers[openKey] = true
+  renderFrame()
+  assertEqual(state.open, false, "open key did not close the menu")
+  assertGameInputBlocked("open-key close")
+  releaseKeyboard(openKey)
+
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.3"
+  pressButton(TEST_CONFIG.physicalConfirmButton or Controller.BUTTON_A)
+  assertEqual(state.open, false, "controller command confirm did not close the menu")
+  assertGameInputBlocked("controller command confirm")
+  renderFrame()
+  assertEqual(state.inputLease, nil, "controller input lease survived release")
+
+  -- A run transition owns controller assignment. It must clear every Mod lease,
+  -- even if the closing key is still physically held when the callback arrives.
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "spawn 5.10.3"
+  TEST.buttonPressed[Keyboard.KEY_ENTER] = { [0] = true }
+  TEST.keyTriggers[Keyboard.KEY_ENTER] = true
+  renderFrame()
+  assertGameInputBlocked("pre-R Enter")
+  onStarted()
+  assertEqual(state.inputLease, nil, "R/Rewind callback retained a closing input lease")
+  assertEqual(state.nativePauseSuspended, false, "R/Rewind callback retained pause suspension")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "R/Rewind callback blocked controller reassignment")
+  TEST.buttonPressed[Keyboard.KEY_ENTER] = { [0] = false }
+
+  -- Pause suspension is a Mod-render concern, never a game-input gate.
+  state.nativePauseSuspended = true
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil,
+    "pause suspension leaked into the game input boundary")
+  state.nativePauseSuspended = false
+end
+
+local function testControllerRepeat()
+  onStarted()
+  openMenu()
+  local index = TEST_CONFIG.controllerIndex or 0
+  state.repeatCount = 1
+  state.page = 1
+  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
+  renderFrame()
+  assertEqual(state.repeatCount, 2, "RB did not increase repeat exactly once")
+  assertEqual(state.page, 1, "ambiguous MENURT action turned RB into page-next")
+  TEST.actionTriggers[ButtonAction.ACTION_MENULT] = { [index] = true }
+  TEST.buttonTriggers[Controller.BUMPER_LEFT] = { [index] = true }
+  renderFrame()
+  assertEqual(state.repeatCount, 1, "LB did not decrease repeat exactly once")
+  assertEqual(state.page, 1, "ambiguous MENULT action turned LB into page-previous")
+
+  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  renderFrame()
+  assertEqual(state.repeatCount, 1, "ambiguous menu-tab action changed repeat without a raw button")
+  assertEqual(state.page, 1, "ambiguous menu-tab action paged without a raw trigger")
+
+  state.inputMode = "command"
+  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
+  renderFrame()
+  assertEqual(state.repeatCount, 2, "RB did not change repeat in command mode")
+  state.inputMode = "search"
+  TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
+  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  renderFrame()
+  assertEqual(state.repeatCount, 2, "RB changed repeat in search mode")
+  state.inputMode = nil
+  state.repeatCount = 99
+  TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
+  renderFrame()
+  assertEqual(state.repeatCount, 99, "RB exceeded repeat upper bound")
+end
+
+local function renderedCount(expected)
+  local count = 0
+  for _, value in ipairs(TEST.rendered) do
+    if value == expected then count = count + 1 end
+  end
+  return count
+end
+
+local function triggerControllerPage(action, button, controllerIndex)
+  TEST.actionTriggers[action] = { [controllerIndex] = true }
+  TEST.buttonTriggers[button] = { [controllerIndex] = true }
+  renderFrame()
+end
+
+local function testControllerPaging()
+  onStarted()
+  openMenu()
+  local index = TEST_CONFIG.controllerIndex or 0
+
+  state.search = ""
+  state.inputMode = nil
+  state.categoryIndex = 2
+  state.categoryPage = 1
+  state.page = 1
+  state.selection = 4
+  state.sidebarFocus = false
+  state.repeatCount = 7
+  TEST.rendered = {}
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.page, 2, "semantic/raw RT did not advance exactly one entry page")
+  assertEqual(state.selection, 1, "entry paging did not select the first item")
+  assertEqual(state.repeatCount, 7, "RT changed the repeat count")
+  assertEqual(renderedCount("LT"), 1, "grid focus did not show one active LT hint")
+  assertEqual(renderedCount("RT"), 1, "grid focus did not show one active RT hint")
+
+  triggerControllerPage(ButtonAction.ACTION_MENULT, Controller.TRIGGER_LEFT, index)
+  assertEqual(state.page, 1, "semantic/raw LT did not return one entry page")
+  local entries = visibleEntries()
+  local lastEntryPage = math.max(1, math.ceil(#entries / 8))
+  state.page = lastEntryPage
+  state.selection = 4
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.page, lastEntryPage, "RT wrapped past the last entry page")
+  assertEqual(state.selection, 4, "last entry page boundary reset the selection")
+  state.page = 1
+  state.selection = 4
+  triggerControllerPage(ButtonAction.ACTION_MENULT, Controller.TRIGGER_LEFT, index)
+  assertEqual(state.page, 1, "LT wrapped before the first entry page")
+  assertEqual(state.selection, 4, "first entry page boundary reset the selection")
+
+  state.search = ""
+  state.categoryIndex = 1
+  state.categoryPage = 1
+  state.page = 3
+  state.selection = 4
+  state.sidebarFocus = true
+  TEST.rendered = {}
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.categoryPage, 2, "RT did not advance the focused category page")
+  assertEqual(state.categoryIndex, 7, "category paging did not select the target page's first category")
+  assertEqual(state.page, 1, "category paging did not reset the entry page")
+  assertEqual(state.selection, 1, "category paging did not reset the entry selection")
+  assertEqual(renderedCount("LT"), 1, "category focus did not show one active LT hint")
+  assertEqual(renderedCount("RT"), 1, "category focus did not show one active RT hint")
+
+  triggerControllerPage(ButtonAction.ACTION_MENULT, Controller.TRIGGER_LEFT, index)
+  assertEqual(state.categoryPage, 1, "LT did not return one category page")
+  assertEqual(state.categoryIndex, 1, "category previous-page target differs")
+  local lastCategoryPage = math.max(1, math.ceil(#runtimeCatalog.categories / 6))
+  local firstCategoryOnLastPage = (lastCategoryPage - 1) * 6 + 1
+  state.categoryPage = lastCategoryPage
+  state.categoryIndex = firstCategoryOnLastPage
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.categoryPage, lastCategoryPage, "RT wrapped past the last category page")
+  assertEqual(state.categoryIndex, firstCategoryOnLastPage, "last category page boundary changed category")
+  state.categoryPage = 1
+  state.categoryIndex = 2
+  triggerControllerPage(ButtonAction.ACTION_MENULT, Controller.TRIGGER_LEFT, index)
+  assertEqual(state.categoryPage, 1, "LT wrapped before the first category page")
+  assertEqual(state.categoryIndex, 2, "first category page boundary changed category")
+
+  state.categoryIndex = 2
+  state.categoryPage = 1
+  state.sidebarFocus = false
+  state.page = 1
+  state.inputMode = "search"
+  TEST.rendered = {}
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.page, 1, "RT paged while search input owned focus")
+  assertEqual(renderedCount("LT") + renderedCount("RT"), 0,
+    "search input displayed an active controller pager")
+  state.inputMode = "command"
+  TEST.rendered = {}
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.page, 1, "RT paged while command input owned focus")
+  assertEqual(renderedCount("LT") + renderedCount("RT"), 0,
+    "command input displayed an active controller pager")
+
+  state.inputMode = nil
+  state.search = "giveitem"
+  state.page = 1
+  assertTrue(#visibleEntries() > 8, "search paging setup does not have multiple pages")
+  triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
+  assertEqual(state.page, 2, "RT did not page non-editing search results")
+
+  state.search = ""
+  state.categoryIndex = 2
+  state.categoryPage = 1
+  state.page = 1
+  state.selection = 1
+  state.sidebarFocus = false
+  pressDirection(ButtonAction.ACTION_MENULEFT, Controller.DPAD_LEFT, index, true)
+  assertEqual(state.sidebarFocus, true, "left from the first grid column did not focus categories")
+  pressDirection(ButtonAction.ACTION_MENURIGHT, Controller.DPAD_RIGHT, index, true)
+  assertEqual(state.sidebarFocus, false, "right from categories did not restore grid focus")
 end
 
 local function testMcmSettings254()
@@ -1456,15 +2361,25 @@ local scenarios = {
   cold_start_focus = testColdStartControllerFocus,
   official_immediate_grant = testOfficialImmediateGrant,
   queue_invariant = testQueueInvariant,
+  command_feedback_duration = testCommandFeedbackDurations,
   measured_footer_stars = testMeasuredFooterAndStars,
+  category_description_matrix = testCategoryDescriptionMatrix,
   font_fallback = testFontFallback,
   font_failure = testFontFailurePage,
   mcm_keybind = testMcmKeybind,
   eid_overlay = testEidOverlayIsolation,
   toast_restart = testToastRestartLifecycle,
+  run_boundary_controller = testRunBoundaryControllerLifecycle,
   ctrl_a_isolation = testCtrlAIsolation,
   mcm_settings_254 = testMcmSettings254,
   official_objects = testOfficialObjects,
+  command_editor = testCommandEditorAndHistory,
+  editable_text_confirm_collision = testEditableTextConfirmCollision,
+  pause_suspension = testPauseSuspension,
+  assigned_controller_isolation = testAssignedControllerIsolation,
+  closing_input_lease = testClosingInputLease,
+  controller_repeat = testControllerRepeat,
+  controller_paging = testControllerPaging,
 }
 
 local scenario = scenarios[TEST_CONFIG.scenario]

@@ -2,12 +2,12 @@
 return {
   categories = {
     { id = "featured", group = "Items", icon = "*", name = "Featured", desc = "Only items you explicitly favorite appear here.", shortDesc = "Your saved favorites.", eyebrow = "MY FAVORITES" },
-    { id = "all_items", group = "Items", icon = "ALL", name = "Collectibles", desc = "The complete collectible catalog from the current game version, with high-quality items first.", shortDesc = "All official collectibles.", eyebrow = "COLLECTIBLES" },
+    { id = "all_items", group = "Items", icon = "ALL", name = "Collectibles", desc = "All collectibles in the current game version.", shortDesc = "All official collectibles.", eyebrow = "COLLECTIBLES" },
     { id = "trinkets", group = "Items", icon = "TR", name = "Trinkets", desc = "Official base trinkets. Granted trinkets can also be removed.", shortDesc = "Give and remove trinkets.", eyebrow = "TRINKETS" },
     { id = "cards", group = "Items", icon = "CRD", name = "Cards & Runes", desc = "Official cards, runes, reversed cards, and soul stones. Grants are single-use commands.", shortDesc = "Give cards and runes once.", eyebrow = "CARDS & RUNES" },
     { id = "pills", group = "Items", icon = "PIL", name = "Pill Effects", desc = "Official base pill effects. Grants are single-use commands.", shortDesc = "Give pill effects once.", eyebrow = "PILL EFFECTS" },
     { id = "damage", group = "Items", icon = "DMG", name = "Damage", desc = "Damage upgrades, tear replacements, and powerful build-defining synergies.", shortDesc = "Damage and tear upgrades.", eyebrow = "DAMAGE & TEARS" },
-    { id = "defense", group = "Items", icon = "DEF", name = "Defense", desc = "Shields, damage reduction, immunity, and reliable survival tools.", shortDesc = "Shields and survival items.", eyebrow = "SURVIVAL" },
+    { id = "defense", group = "Items", icon = "DEF", name = "Defense", desc = "Shields, damage reduction, and immunity.", shortDesc = "Shields and survival items.", eyebrow = "SURVIVAL" },
     { id = "economy", group = "Items", icon = "$", name = "Economy", desc = "Shop value, pickup generation, and long-term resource growth.", shortDesc = "Shops, pickups, and resources.", eyebrow = "ECONOMY" },
     { id = "explore", group = "Items", icon = "MAP", name = "Exploration", desc = "Map information, secret-room access, and room-navigation tools.", shortDesc = "Maps, secrets, and movement.", eyebrow = "NAVIGATION" },
     { id = "active", group = "Items", icon = "ACT", name = "Active Items", desc = "Rerolls, rewinds, restarts, and other run-changing active items.", shortDesc = "Run-changing active items.", eyebrow = "ACTIVE ITEMS" },

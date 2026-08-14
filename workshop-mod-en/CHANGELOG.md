@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.5.4-en.5
+
+- Added focus-aware controller paging: LT/RT pages categories while the sidebar owns focus and pages entries while the grid owns focus; search and command editors ignore the triggers.
+- Identify physical triggers through named `Controller.TRIGGER_LEFT/RIGHT` values; ambiguous `ACTION_MENULT/MENURT` menu-tab actions are not treated as triggers, preventing LB/RB from being misclassified as paging.
+- The active pager shows LT/RT while the inactive pager retains ordinary arrows, using the same measured render and mouse-hit geometry.
+- LB/RB repeat counts, D-pad automatic cross-page navigation, A/B/X/L3, favorites, commands, pause behavior, and SaveData remain unchanged.
+- Hardened closed-overlay input isolation: with no release lease, the input hook fully yields to the game and performs no extra physical-key polling during native player/controller construction.
+- Keyboard characters, deletion, and Ctrl+A in search or command editors now switch help back to keyboard prompts instead of retaining stale A/B controller hints.
+
+## 2.5.4-en.4
+
+- Hide the Mod overlay and release input while the native pause menu is open, then restore the prior page and input state without allowing the resume A/Enter press to execute an entry.
+- Turned manual commands into a clickable editor with prefilled selection, Ctrl+A, Backspace/Delete, Enter, Esc, and Up/Down recall for the latest eight commands and repeat counts.
+- Non-empty search fields now show only the query. Long search and command input keeps the tail and cursor visible.
+- Added LB/RB repeat-count controls in the normal menu and command editor while preserving physical bumper identity through named `Controller.BUMPER_LEFT/RIGHT` values across Repentance, Repentance+, and REPENTOGON.
+- Fixed text keys such as Space being reported as menu confirm and prematurely submitting manual commands. Text input now wins in search and command fields; only Enter or a real controller confirm submits.
+- Always show the LB/RB repeat-count hint and use compact category and command help so low-resolution layouts remain understandable.
+- Kept the header for category title, search, and pagination, while a single priority-based footer context now follows search, command, category, entry, and empty focus without competing for space.
+- Changed the detail shortcut to `Manual command (C)` and separately measured the label, command value, and action hint. Short commands remain complete, long commands retain their tail, and successful-command feedback now lasts about two seconds while failures and safety warnings keep their existing durations.
+- Added deliberate short descriptions for all 15 categories. Low-resolution layouts choose a complete short description only when the complete long description does not fit, rather than mechanically truncating it.
+- Fixed controller-disconnect recovery input leaking beyond the native prompt and creating a second player after the overlay closes. The disconnect prompt receives all input needed to reconnect.
+- Controller input is now resolved only from controllers assigned to existing players. A unified input lease holds residual Enter, Esc, F6, mouse, A, B, and L3 close/execute input until physical release, preventing an unintended second player, pause, or gameplay action.
+- Native-pause recovery now skips only the Mod's first input-processing frame and never gates game input. `ACTION_RESTART` passes through outside text editors and releases transient Mod input before player reconstruction; the callback gap after frame rollback also yields all input. R restart, Rewind, Rerun, and callback-less rollback clear stale pause, input-lease, and controller-ownership state so native reassignment can proceed immediately, while search and command editors retain the letter R without restarting.
+- Removed an unused resume-frame state. No resources, dependencies, persisted fields, Workshop identities, or SaveData formats changed.
+
 ## 2.5.4-en.3
 
 - Fixed Toasts, including the startup key hint, potentially remaining visible for a long time after entering a Rerun following The Lamb.

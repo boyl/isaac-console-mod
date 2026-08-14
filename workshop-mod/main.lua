@@ -5,7 +5,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.8"
+local VERSION = "2.5.10"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -16,7 +16,6 @@ local MAX_FAVORITES = 2048
 local MAX_CONTROLLER_BUTTON = 31
 local CONTROLLER_OPEN_HOLD_FRAMES = 30
 local CONTROLLER_REMOVE_HOLD_FRAMES = 30
-local MAX_CONTROLLER_INDEX = 3
 local DEFAULT_OPEN_KEY = Keyboard.KEY_F6
 
 local OPEN_KEY_NAMES = {}
@@ -78,6 +77,10 @@ local CONTROLLER_CONFIRM = controllerButton("BUTTON_A", 4)
 local CONTROLLER_BACK = controllerButton("BUTTON_B", 5)
 local CONTROLLER_FAVORITE = controllerButton("BUTTON_X", 6)
 local CONTROLLER_OPEN_BUTTON = controllerButton("STICK_LEFT", 10)
+local CONTROLLER_REPEAT_DECREASE = controllerButton("BUMPER_LEFT")
+local CONTROLLER_REPEAT_INCREASE = controllerButton("BUMPER_RIGHT")
+local CONTROLLER_PAGE_PREVIOUS = controllerButton("TRIGGER_LEFT")
+local CONTROLLER_PAGE_NEXT = controllerButton("TRIGGER_RIGHT")
 
 local COLORS = {
   overlay = Color(0.025, 0.018, 0.025, 0.99, 0, 0, 0),
@@ -119,6 +122,7 @@ local CONTROLLER_ACTION_LEFT = controllerAction("ACTION_MENULEFT")
 local CONTROLLER_ACTION_RIGHT = controllerAction("ACTION_MENURIGHT")
 local CONTROLLER_ACTION_UP = controllerAction("ACTION_MENUUP")
 local CONTROLLER_ACTION_DOWN = controllerAction("ACTION_MENUDOWN")
+local CONTROLLER_ACTION_RESTART = controllerAction("ACTION_RESTART")
 
 -- Raw values are isolated here as verified compatibility data. Menu code uses
 -- roles and logical actions, so future runtimes with complete ButtonAction
@@ -283,6 +287,10 @@ local state = {
   inputMode = nil,
   searchSelectAll = false,
   manualCommand = "giveitem c182",
+  commandSelectAll = false,
+  commandHistoryIndex = nil,
+  commandHistoryDraft = nil,
+  commandHistoryDraftRepeat = nil,
   mouseDown = false,
   rightMouseDown = false,
   hudWasVisible = true,
@@ -315,6 +323,9 @@ local state = {
   lastMouseX = nil,
   lastMouseY = nil,
   controlMode = "keyboard",
+  nativePauseSuspended = false,
+  keyboardEnterPressed = false,
+  inputLease = nil,
 }
 
 local function setMenuOpen(open)
@@ -334,6 +345,11 @@ local function setMenuOpen(open)
   if not open then
     state.inputMode = nil
     state.searchSelectAll = false
+    state.commandSelectAll = false
+    state.commandHistoryIndex = nil
+    state.commandHistoryDraft = nil
+    state.commandHistoryDraftRepeat = nil
+    state.nativePauseSuspended = false
     state.controllerConfirmHold = 0
     state.controllerConfirmCommand = nil
     state.controllerConfirmRemoveCommand = nil
@@ -826,9 +842,33 @@ local function loadState()
 end
 
 local function clearRunTransientState()
+  if state.open then setMenuOpen(false) end
   state.queue = nil
   state.toast = nil
   state.toastFramesRemaining = 0
+  state.inputMode = nil
+  state.searchSelectAll = false
+  state.commandSelectAll = false
+  state.commandHistoryIndex = nil
+  state.commandHistoryDraft = nil
+  state.commandHistoryDraftRepeat = nil
+  state.nativePauseSuspended = false
+  state.inputLease = nil
+  state.controllerIndex = nil
+  state.controllerOpenHold = 0
+  state.controllerOpenLatched = false
+  state.controllerOpenIndex = nil
+  state.controllerConfirmHold = 0
+  state.controllerConfirmCommand = nil
+  state.controllerConfirmRemoveCommand = nil
+  state.controllerConfirmRemoveMessage = nil
+  state.controllerConfirmRepeat = 1
+  state.controllerConfirmRepeatMax = nil
+  state.controllerConfirmIndex = nil
+  state.controllerConfirmSource = nil
+  state.controllerConfirmValue = nil
+  state.pointerActive = false
+  state.controlMode = "keyboard"
 end
 
 local function showToast(message, color, duration)
@@ -1148,7 +1188,7 @@ local function finishQueue(queue)
   elseif queue.failed then
     showToast("部分完成 " .. queue.done .. "/" .. queue.total .. "：" .. queue.failed, TEXT.warning, 180)
   else
-    showToast("执行完成：" .. queue.command .. (queue.total > 1 and (" ×" .. queue.total) or ""), TEXT.green, 150)
+    showToast("执行完成：" .. queue.command .. (queue.total > 1 and (" ×" .. queue.total) or ""), TEXT.green, 60)
   end
 end
 
@@ -1267,6 +1307,24 @@ local function setCategory(index)
   resetSelection()
 end
 
+local function changeCategoryPage(delta)
+  local pageCount = math.max(1, math.ceil(#Catalog.categories / CATEGORIES_PER_PAGE))
+  local targetPage = clamp(state.categoryPage + delta, 1, pageCount)
+  if targetPage == state.categoryPage then return false end
+  state.categoryPage = targetPage
+  setCategory((state.categoryPage - 1) * CATEGORIES_PER_PAGE + 1)
+  return true
+end
+
+local function changeEntryPage(delta, entries)
+  local pageCount = math.max(1, math.ceil(#entries / ITEMS_PER_PAGE))
+  local targetPage = clamp(state.page + delta, 1, pageCount)
+  if targetPage == state.page then return false end
+  state.page = targetPage
+  state.selection = 1
+  return true
+end
+
 local function resolveInitialMenuFocus(entries)
   if state.initialMenuFocusResolved then return entries end
   state.initialMenuFocusResolved = true
@@ -1325,62 +1383,128 @@ local function controlPressed()
     or Input.IsButtonPressed(Keyboard.KEY_RIGHT_CONTROL, 0)
 end
 
-local function captureText(value)
+local function markKeyboardInput()
+  state.pointerActive = false
+  state.controlMode = "keyboard"
+end
+
+local function captureEditableText(value, selectAll)
   if controlPressed() and Input.IsButtonTriggered(Keyboard.KEY_A, 0) then
-    return value
+    return value, value ~= "", false
   end
-  if Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0) then
-    return value:sub(1, math.max(0, #value - 1))
+  local backspace = Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0)
+  local delete = Input.IsButtonTriggered(Keyboard.KEY_DELETE, 0)
+  if selectAll and (backspace or delete) then return "", false, true end
+  if backspace then
+    return value:sub(1, math.max(0, #value - 1)), false, value ~= ""
   end
   for key, character in pairs(KEY_CHARS) do
-    if Input.IsButtonTriggered(key, 0) and #value < 120 then return value .. character end
+    if Input.IsButtonTriggered(key, 0) then
+      if selectAll then return character, false, true end
+      if #value < 120 then return value .. character, false, true end
+      return value, false, false
+    end
   end
-  return value
+  return value, selectAll, false
+end
+
+local function editableTextTriggered()
+  if controlPressed() and Input.IsButtonTriggered(Keyboard.KEY_A, 0) then
+    markKeyboardInput()
+    return true
+  end
+  if Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0)
+      or Input.IsButtonTriggered(Keyboard.KEY_DELETE, 0) then
+    markKeyboardInput()
+    return true
+  end
+  for key in pairs(KEY_CHARS) do
+    if Input.IsButtonTriggered(key, 0) then
+      markKeyboardInput()
+      return true
+    end
+  end
+  return false
 end
 
 local function captureSearchText(value)
-  if controlPressed() and Input.IsButtonTriggered(Keyboard.KEY_A, 0) then
-    state.searchSelectAll = value ~= ""
-    return value
-  end
-  if state.searchSelectAll then
-    if Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0)
-        or Input.IsButtonTriggered(Keyboard.KEY_DELETE, 0) then
-      state.searchSelectAll = false
-      return ""
+  local nextValue, selectAll = captureEditableText(value, state.searchSelectAll)
+  state.searchSelectAll = selectAll
+  return nextValue
+end
+
+local function clearCommandHistoryNavigation()
+  state.commandHistoryIndex = nil
+  state.commandHistoryDraft = nil
+  state.commandHistoryDraftRepeat = nil
+end
+
+local function decodeHistoryEntry(label)
+  local command = tostring(label or "")
+  local count = tonumber(command:match(" ×(%d+)$")) or 1
+  if count > 1 then command = command:gsub(" ×%d+$", "") end
+  return command, clamp(math.floor(count), 1, 99)
+end
+
+local function recallCommandHistory(delta)
+  if #state.history == 0 then return end
+  if state.commandHistoryIndex == nil then
+    if delta < 0 then return end
+    state.commandHistoryDraft = state.manualCommand
+    state.commandHistoryDraftRepeat = state.repeatCount
+    state.commandHistoryIndex = 1
+  else
+    local target = state.commandHistoryIndex + delta
+    if target < 1 then
+      state.manualCommand = state.commandHistoryDraft or ""
+      state.repeatCount = clamp(state.commandHistoryDraftRepeat or 1, 1, 99)
+      clearCommandHistoryNavigation()
+      state.commandSelectAll = false
+      return
     end
-    for key, character in pairs(KEY_CHARS) do
-      if Input.IsButtonTriggered(key, 0) then
-        state.searchSelectAll = false
-        return character
-      end
-    end
+    state.commandHistoryIndex = clamp(target, 1, #state.history)
   end
-  return captureText(value)
+  state.manualCommand, state.repeatCount = decodeHistoryEntry(
+    state.history[state.commandHistoryIndex])
+  state.commandSelectAll = false
+end
+
+local function captureCommandText()
+  local value, selectAll, changed = captureEditableText(
+    state.manualCommand, state.commandSelectAll)
+  state.manualCommand = value
+  state.commandSelectAll = selectAll
+  if changed then clearCommandHistoryNavigation() end
+end
+
+local function beginCommandInput(entry)
+  if entry then state.manualCommand = entry.cmd end
+  state.inputMode = "command"
+  state.searchSelectAll = false
+  state.commandSelectAll = state.manualCommand ~= ""
+  clearCommandHistoryNavigation()
 end
 
 local function addControllerCandidate(candidates, seen, index)
   index = tonumber(index)
   if not index then return end
   index = math.floor(index)
-  if index < 0 or index > MAX_CONTROLLER_INDEX or seen[index] then return end
+  if index < 0 or seen[index] then return end
   seen[index] = true
   candidates[#candidates + 1] = index
 end
 
 local function controllerCandidates()
   local candidates, seen = {}, {}
-  addControllerCandidate(candidates, seen, state.controllerIndex)
   local countOk, playerCount = pcall(function() return Game():GetNumPlayers() end)
-  playerCount = countOk and tonumber(playerCount) or 1
-  for playerIndex = 0, math.max(0, math.floor(playerCount or 1) - 1) do
+  assert(countOk and tonumber(playerCount), "unable to enumerate assigned controllers")
+  for playerIndex = 0, math.max(0, math.floor(tonumber(playerCount)) - 1) do
     local playerOk, controllerIndex = pcall(function()
       local player = Isaac.GetPlayer(playerIndex)
       return player and player.ControllerIndex
     end)
     if playerOk then addControllerCandidate(candidates, seen, controllerIndex) end
   end
-  for index = 0, MAX_CONTROLLER_INDEX do addControllerCandidate(candidates, seen, index) end
   return candidates
 end
 
@@ -1431,24 +1555,40 @@ local function controllerRoleEvent(candidates, role, source, value)
   return nil
 end
 
+local function controllerShoulderEvent(candidates)
+  -- ACTION_MENULT/MENURT are menu-tab actions, not reliable physical-trigger
+  -- identities: some runtimes report them for LB/RB. Named raw buttons keep
+  -- bumpers and triggers unambiguous. Existing LB/RB behavior wins if a
+  -- runtime ever aliases two named constants to the same value.
+  local event = controllerRoleEvent(candidates, "repeat_decrease", "button", CONTROLLER_REPEAT_DECREASE)
+  if event then return event end
+  event = controllerRoleEvent(candidates, "repeat_increase", "button", CONTROLLER_REPEAT_INCREASE)
+  if event then return event end
+  event = controllerRoleEvent(candidates, "page_previous", "button", CONTROLLER_PAGE_PREVIOUS)
+  if event then return event end
+  return controllerRoleEvent(candidates, "page_next", "button", CONTROLLER_PAGE_NEXT)
+end
+
 local function controllerMenuEvent()
   local candidates = controllerCandidates()
-  -- Logical actions always outrank raw compatibility values. Within the same
-  -- source tier, back and confirm outrank favorite to prevent A/X collisions.
+  -- Primary menu actions retain semantic priority. Physical shoulder roles
+  -- are resolved separately because official menu-tab actions do not
+  -- distinguish LB/RB from LT/RT consistently across runtimes.
   local event = controllerRoleEvent(candidates, "back", "action", CONTROLLER_ACTION_BACK)
   if event then return event end
   event = controllerRoleEvent(candidates, "confirm", "action", CONTROLLER_ACTION_CONFIRM)
   if event then return event end
   event = controllerRoleEvent(candidates, "favorite", "action", CONTROLLER_ACTION_FAVORITE)
   if event then return event end
-
   local favoriteButton = state.controllerFavoriteButton
     or CONTROLLER_INPUT_COMPATIBILITY.favorite
   event = controllerRoleEvent(candidates, "back", "button", CONTROLLER_INPUT_COMPATIBILITY.back)
   if event then return event end
   event = controllerRoleEvent(candidates, "confirm", "button", CONTROLLER_INPUT_COMPATIBILITY.confirm)
   if event then return event end
-  return controllerRoleEvent(candidates, "favorite", "button", favoriteButton)
+  event = controllerRoleEvent(candidates, "favorite", "button", favoriteButton)
+  if event then return event end
+  return controllerShoulderEvent(candidates)
 end
 
 local function controllerDirectionTriggered(action, button)
@@ -1477,17 +1617,75 @@ end
 
 local function keyTriggered(key)
   local triggered = Input.IsButtonTriggered(key, 0)
-  if triggered then
-    state.pointerActive = false
-    state.controlMode = "keyboard"
-  end
+  if triggered then markKeyboardInput() end
   return triggered
+end
+
+local function enterTriggered()
+  local pressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
+  local triggered = Input.IsButtonTriggered(Keyboard.KEY_ENTER, 0)
+  local rising = pressed and not state.keyboardEnterPressed
+  state.keyboardEnterPressed = pressed
+  if triggered or rising then
+    markKeyboardInput()
+    return true
+  end
+  return false
 end
 
 local function controllerActionPressed(action, index)
   if action == nil or type(Input.IsActionPressed) ~= "function" then return false end
   local ok, pressed = pcall(Input.IsActionPressed, action, index)
   return ok and pressed == true
+end
+
+local function restartActionPressed()
+  if CONTROLLER_ACTION_RESTART == nil then return false end
+  local candidates, seen = {}, {}
+  -- Controller index 0 is also the keyboard action route. Assigned player
+  -- controllers cover controller-driven restart bindings without scanning
+  -- arbitrary unassigned indexes.
+  addControllerCandidate(candidates, seen, 0)
+  for _, index in ipairs(controllerCandidates()) do
+    addControllerCandidate(candidates, seen, index)
+  end
+  for _, index in ipairs(candidates) do
+    if controllerActionPressed(CONTROLLER_ACTION_RESTART, index) then return true end
+  end
+  return false
+end
+
+local function clearInputLease()
+  state.inputLease = nil
+end
+
+local function armInputLease(kind, value, index)
+  assert(kind == "keyboard" or kind == "mouse" or kind == "action"
+      or kind == "controller_button", "unsupported input lease kind")
+  assert(type(value) == "number", "input lease value must be numeric")
+  state.inputLease = { kind = kind, value = value, index = tonumber(index) or 0 }
+end
+
+local function armControllerInputLease(event)
+  if not event then return end
+  local kind = event.source == "action" and "action" or "controller_button"
+  armInputLease(kind, event.value, event.index)
+end
+
+local function inputLeaseActive()
+  local lease = state.inputLease
+  if not lease then return false end
+  local pressed
+  if lease.kind == "action" then
+    pressed = controllerActionPressed(lease.value, lease.index)
+  elseif lease.kind == "mouse" then
+    pressed = Input.IsMouseBtnPressed(lease.value)
+  else
+    pressed = controllerButtonPressed(lease.value, lease.index)
+  end
+  if pressed then return true end
+  clearInputLease()
+  return false
 end
 
 local function controllerConfirmPressed(index)
@@ -1565,8 +1763,10 @@ local function updateControllerConfirm()
     if state.controllerConfirmHold >= CONTROLLER_REMOVE_HOLD_FRAMES then
       local command = state.controllerConfirmRemoveCommand
       local message = state.controllerConfirmRemoveMessage
+      local source, value = state.controllerConfirmSource, state.controllerConfirmValue
       clearControllerConfirm()
       if command then
+        armInputLease(source == "action" and "action" or "controller_button", value, index)
         queueCommand(command, 1)
       else
         showToast(message or "此操作没有可移除道具，请点按 A 执行", TEXT.warning, 120)
@@ -1576,13 +1776,16 @@ local function updateControllerConfirm()
     local command = state.controllerConfirmCommand
     local repeatCount = state.controllerConfirmRepeat
     local repeatMax = state.controllerConfirmRepeatMax
+    local source, value = state.controllerConfirmSource, state.controllerConfirmValue
     clearControllerConfirm()
+    armInputLease(source == "action" and "action" or "controller_button", value, index)
     queueCommand(command, repeatCount, repeatMax)
   end
   return true
 end
 
 local function handleKeyboardAndController(entries)
+  local keyboardEnter = enterTriggered()
   local controllerOpen = false
   local openPressed, openIndex = controllerOpenPressed()
   if not state.open and openPressed then
@@ -1602,58 +1805,104 @@ local function handleKeyboardAndController(entries)
     state.controllerOpenIndex = nil
   end
 
-  if keyTriggered(state.openKey or DEFAULT_OPEN_KEY) or controllerOpen then
+  local keyboardOpen = keyTriggered(state.openKey or DEFAULT_OPEN_KEY)
+  if keyboardOpen or controllerOpen then
+    if state.open and keyboardOpen then
+      armInputLease("keyboard", state.openKey or DEFAULT_OPEN_KEY, 0)
+    end
     setMenuOpen(not state.open)
     return
   end
   if not state.open then return end
 
-  if controllerButtonTriggered(CONTROLLER_OPEN_BUTTON) then
+  local controllerClose = controllerRoleEvent(
+    controllerCandidates(), "close", "button", CONTROLLER_OPEN_BUTTON)
+  if controllerClose then
+    armControllerInputLease(controllerClose)
     setMenuOpen(false)
     return
   end
   local controllerEvent = controllerMenuEvent()
 
   if state.inputMode == "search" then
-    if keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
-      state.inputMode = nil
-      state.searchSelectAll = false
-    elseif keyTriggered(Keyboard.KEY_ENTER) or (controllerEvent and controllerEvent.role == "confirm") then
-      state.inputMode = nil
-      state.searchSelectAll = false
-      resetSelection()
-    else
+    if editableTextTriggered() then
       state.search = captureSearchText(state.search)
+      resetSelection()
+    elseif keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
+      state.inputMode = nil
+      state.searchSelectAll = false
+      state.commandSelectAll = false
+    elseif keyboardEnter or (controllerEvent and controllerEvent.role == "confirm") then
+      state.inputMode = nil
+      state.searchSelectAll = false
+      state.commandSelectAll = false
       resetSelection()
     end
     return
   elseif state.inputMode == "command" then
-    if keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
+    if keyTriggered(Keyboard.KEY_UP) then
+      recallCommandHistory(1)
+    elseif keyTriggered(Keyboard.KEY_DOWN) then
+      recallCommandHistory(-1)
+    elseif editableTextTriggered() then
+      captureCommandText()
+    elseif keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
       state.inputMode = nil
-    elseif keyTriggered(Keyboard.KEY_ENTER) or (controllerEvent and controllerEvent.role == "confirm") then
+      state.commandSelectAll = false
+      clearCommandHistoryNavigation()
+    elseif keyboardEnter or (controllerEvent and controllerEvent.role == "confirm") then
+      if controllerEvent then
+        armControllerInputLease(controllerEvent)
+      else
+        armInputLease("keyboard", Keyboard.KEY_ENTER, 0)
+      end
       queueCommand(state.manualCommand, state.repeatCount)
-    else
-      state.manualCommand = captureText(state.manualCommand)
+    elseif controllerEvent and controllerEvent.role == "repeat_decrease" then
+      changeRepeat(-1)
+    elseif controllerEvent and controllerEvent.role == "repeat_increase" then
+      changeRepeat(1)
     end
     return
   end
 
   if updateControllerConfirm() then return end
 
-  if keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
+  local keyboardEscape = keyTriggered(Keyboard.KEY_ESCAPE)
+  if keyboardEscape or (controllerEvent and controllerEvent.role == "back") then
+    if controllerEvent then
+      armControllerInputLease(controllerEvent)
+    else
+      armInputLease("keyboard", Keyboard.KEY_ESCAPE, 0)
+    end
     setMenuOpen(false)
     return
   end
   if keyTriggered(Keyboard.KEY_SLASH) then
     state.inputMode = "search"
     state.searchSelectAll = false
+    state.commandSelectAll = false
+    clearCommandHistoryNavigation()
     return
   end
   if keyTriggered(Keyboard.KEY_C) then
-    local entry = selectedEntry(entries)
-    if entry then state.manualCommand = entry.cmd end
-    state.inputMode = "command"
-    state.searchSelectAll = false
+    beginCommandInput(selectedEntry(entries))
+    return
+  end
+  if controllerEvent and (controllerEvent.role == "page_previous"
+      or controllerEvent.role == "page_next") then
+    local delta = controllerEvent.role == "page_previous" and -1 or 1
+    if state.sidebarFocus then
+      changeCategoryPage(delta)
+    else
+      changeEntryPage(delta, entries)
+    end
+    return
+  end
+  if controllerEvent and controllerEvent.role == "repeat_decrease" then
+    changeRepeat(-1)
+    return
+  elseif controllerEvent and controllerEvent.role == "repeat_increase" then
+    changeRepeat(1)
     return
   end
   if keyTriggered(Keyboard.KEY_F) or (controllerEvent and controllerEvent.role == "favorite") then
@@ -1675,13 +1924,11 @@ local function handleKeyboardAndController(entries)
 
   local maxPage = math.max(1, math.ceil(#entries / ITEMS_PER_PAGE))
   if keyTriggered(Keyboard.KEY_PAGE_UP) then
-    state.page = clamp(state.page - 1, 1, maxPage)
-    state.selection = 1
+    changeEntryPage(-1, entries)
     return
   end
   if keyTriggered(Keyboard.KEY_PAGE_DOWN) then
-    state.page = clamp(state.page + 1, 1, maxPage)
-    state.selection = 1
+    changeEntryPage(1, entries)
     return
   end
 
@@ -1693,7 +1940,7 @@ local function handleKeyboardAndController(entries)
     or controllerDirectionTriggered(CONTROLLER_ACTION_LEFT, CONTROLLER_DPAD_LEFT)
   local right = keyTriggered(Keyboard.KEY_RIGHT)
     or controllerDirectionTriggered(CONTROLLER_ACTION_RIGHT, CONTROLLER_DPAD_RIGHT)
-  local keyboardConfirm = keyTriggered(Keyboard.KEY_ENTER)
+  local keyboardConfirm = keyboardEnter
   local controllerConfirm = controllerEvent and controllerEvent.role == "confirm"
   local confirm = keyboardConfirm or controllerConfirm
   if up or down or left or right or confirm then state.pointerActive = false end
@@ -1714,7 +1961,10 @@ local function handleKeyboardAndController(entries)
   state.selection = clamp(state.selection, 1, math.max(1, pageCount))
   if keyboardConfirm then
     local entry = selectedEntry(entries)
-    if entry then queueEntry(entry, state.repeatCount) end
+    if entry then
+      armInputLease("keyboard", Keyboard.KEY_ENTER, 0)
+      queueEntry(entry, state.repeatCount)
+    end
   elseif controllerConfirm then
     local entry = selectedEntry(entries)
     if entry then
@@ -1815,6 +2065,43 @@ local function fittingText(candidates, width)
   return ""
 end
 
+local function fittingInputText(value, width)
+  local text = tostring(value or "")
+  if safeTextWidth(font10, text) <= width then return text end
+  local start = math.max(1, #text - 95)
+  while start <= #text do
+    local candidate = "..." .. text:sub(start)
+    if safeTextWidth(font10, candidate) <= width then return candidate end
+    start = start + 1
+  end
+  return ""
+end
+
+local function resolveFooterContext(entries)
+  if state.inputMode == "search" then return "search", nil end
+  if state.inputMode == "command" then return "command", nil end
+  if state.sidebarFocus then return "category", currentCategory() end
+  local entry = selectedEntry(entries)
+  if entry then return "entry", entry end
+  return "empty", nil
+end
+
+local function categoryFooterText(category, greedMode, width)
+  local candidates
+  if category.id == "stage" and greedMode then
+    candidates = {
+      "贪婪模式安全楼层：stage 1–7；隐藏楼层与后缀组合不开放",
+      "贪婪模式安全楼层：stage 1–7",
+      "贪婪楼层 stage 1–7",
+    }
+  else
+    candidates = { category.desc or "", category.shortDesc or "" }
+  end
+  local text = fittingText(candidates, width)
+  assert(text ~= "", "category description does not fit: " .. tostring(category.id))
+  return text
+end
+
 local function splitUtf8(value)
   local text = tostring(value or "")
   local result = {}
@@ -1898,7 +2185,7 @@ local function computeLayout(screenWidth, screenHeight)
   local cardH = math.floor((gridH - gap * (gridRows - 1)) / gridRows)
 
   local buttonH = line10 + pad * 2
-  local repeatLabelW = safeTextWidth(font10, "执行次数")
+  local repeatLabelW = safeTextWidth(font10, "LB/RB")
   local countW = math.max(safeTextWidth(font10, "99"), line10 + pad)
   local stepW = math.max(safeTextWidth(font10, "+"), line10) + pad * 2
   local repeatW = repeatLabelW + stepW * 2 + countW + pad * 5
@@ -2009,7 +2296,7 @@ local function drawMenu(entries)
         rowW - L.iconW - L.pad * 3)
       if hovered and clicked then
         setCategory(index)
-        state.sidebarFocus = false
+        state.sidebarFocus = true
       end
     end
   end
@@ -2018,28 +2305,36 @@ local function drawMenu(entries)
   local navW = L.sidebarW - L.pad * 2
   drawRect(navX, L.categoryNavY, navW, L.categoryNavH, COLORS.card)
   local navTextY = L.categoryNavY + math.floor((L.categoryNavH - L.line10) / 2)
-  local arrowW = math.max(L.line10, safeTextWidth(font10, "<")) + L.pad * 2
+  local arrowW = math.max(L.line10, safeTextWidth(font10, "<"),
+    safeTextWidth(font10, "LT"), safeTextWidth(font10, "RT")) + L.pad * 2
+  local controllerPaging = state.controlMode == "controller" and state.inputMode == nil
+  local categoryPaging = controllerPaging and state.sidebarFocus
+  local categoryPreviousLabel = categoryPaging and "LT" or "<"
+  local categoryNextLabel = categoryPaging and "RT" or ">"
   drawRect(navX, L.categoryNavY, arrowW, L.categoryNavH, COLORS.selected)
   drawRect(navX + navW - arrowW, L.categoryNavY, arrowW, L.categoryNavH, COLORS.selected)
-  drawText("<", navX, navTextY, 0.60, TEXT.main, arrowW, true)
+  drawText(categoryPreviousLabel, navX, navTextY, 0.60, TEXT.main, arrowW, true)
   drawText("分类 " .. state.categoryPage .. "/" .. categoryPageCount,
     navX + arrowW, navTextY, 0.60, TEXT.muted, navW - arrowW * 2, true)
-  drawText(">", navX + navW - arrowW, navTextY, 0.60, TEXT.main, arrowW, true)
+  drawText(categoryNextLabel, navX + navW - arrowW, navTextY, 0.60, TEXT.main, arrowW, true)
   if clicked and hit(mouse, navX, L.categoryNavY, arrowW, L.categoryNavH) then
-    state.categoryPage = clamp(state.categoryPage - 1, 1, categoryPageCount)
-    setCategory((state.categoryPage - 1) * CATEGORIES_PER_PAGE + 1)
+    changeCategoryPage(-1)
+    state.sidebarFocus = true
     entries = visibleEntries()
   elseif clicked and hit(mouse, navX + navW - arrowW, L.categoryNavY, arrowW, L.categoryNavH) then
-    state.categoryPage = clamp(state.categoryPage + 1, 1, categoryPageCount)
-    setCategory((state.categoryPage - 1) * CATEGORIES_PER_PAGE + 1)
+    changeCategoryPage(1)
+    state.sidebarFocus = true
     entries = visibleEntries()
   end
 
   local category = currentCategory()
   local titleY = L.panelY + L.pad
   local titleW = math.max(1, L.searchX - L.contentX - L.pad)
-  drawText(state.search ~= "" and "全局搜索" or category.name,
-    L.contentX, titleY, 0.90, TEXT.main, titleW)
+  local titleText = state.search ~= "" and "全局搜索" or category.name
+  local titleScale = safeTextWidth(font12, titleText) <= titleW and 0.90 or 0.60
+  local fittedTitle = fittingText({ titleText }, titleW)
+  drawText(fittedTitle ~= "" and fittedTitle or titleText,
+    L.contentX, titleY, titleScale, TEXT.main, titleW)
 
   drawRect(L.searchX, L.searchY, L.searchW, L.searchH,
     state.inputMode == "search" and COLORS.selected or COLORS.sidebar)
@@ -2047,11 +2342,12 @@ local function drawMenu(entries)
   if state.search == "" then
     searchLabel = state.inputMode == "search" and "搜索：_" or "搜索：拼音/英文/ID"
   elseif state.inputMode == "search" and state.searchSelectAll then
-    searchLabel = "搜索：[" .. state.search .. "]"
+    searchLabel = "[" .. state.search .. "]"
   else
-    searchLabel = "搜索：" .. state.search .. (state.inputMode == "search" and "_" or "")
+    searchLabel = state.search .. (state.inputMode == "search" and "_" or "")
   end
   local clearW = state.search ~= "" and (L.line10 + L.pad * 2) or 0
+  searchLabel = fittingInputText(searchLabel, L.searchW - L.pad * 2 - clearW)
   drawText(searchLabel, L.searchX + L.pad, L.searchY + math.floor((L.searchH - L.line10) / 2),
     0.60, state.inputMode == "search" and TEXT.main or TEXT.muted,
     L.searchW - L.pad * 2 - clearW)
@@ -2075,6 +2371,7 @@ local function drawMenu(entries)
   if clicked and hit(mouse, L.closeX, L.searchY, L.closeW, L.searchH) then
     state.mouseDown = mousePressed
     state.rightMouseDown = rightPressed
+    armInputLease("mouse", 0, 0)
     setMenuOpen(false)
     return
   end
@@ -2087,25 +2384,20 @@ local function drawMenu(entries)
   local pageNavW = pageArrowW * 2 + pageLabelW
   local subY = L.panelY + L.titleH + L.pad * 2
   local pageNavX = L.contentX + L.contentW - pageNavW
-  local desc = state.search ~= "" and "全部物品支持全拼、首字母、英文、命令或 ID"
-    or (category.id == "stage" and greedMode
-      and "贪婪模式安全楼层：stage 1–7；隐藏楼层与后缀组合不开放"
-      or category.desc)
-  drawText(desc, L.contentX, subY, 0.60, TEXT.muted,
-    math.max(1, pageNavX - L.contentX - L.pad))
   local pageButtonY = subY - L.pad
   local pageButtonH = L.line10 + L.pad * 2
+  local entryPaging = controllerPaging and not state.sidebarFocus
+  local entryPreviousLabel = entryPaging and "LT" or "<"
+  local entryNextLabel = entryPaging and "RT" or ">"
   drawRect(pageNavX, pageButtonY, pageArrowW, pageButtonH, COLORS.selected)
   drawRect(pageNavX + pageArrowW + pageLabelW, pageButtonY, pageArrowW, pageButtonH, COLORS.selected)
-  drawText("<", pageNavX, subY, 0.60, TEXT.main, pageArrowW, true)
+  drawText(entryPreviousLabel, pageNavX, subY, 0.60, TEXT.main, pageArrowW, true)
   drawText(pageLabel, pageNavX + pageArrowW, subY, 0.60, TEXT.muted, pageLabelW, true)
-  drawText(">", pageNavX + pageArrowW + pageLabelW, subY, 0.60, TEXT.main, pageArrowW, true)
+  drawText(entryNextLabel, pageNavX + pageArrowW + pageLabelW, subY, 0.60, TEXT.main, pageArrowW, true)
   if clicked and hit(mouse, pageNavX, pageButtonY, pageArrowW, pageButtonH) then
-    state.page = clamp(state.page - 1, 1, maxPage)
-    state.selection = 1
+    changeEntryPage(-1, entries)
   elseif clicked and hit(mouse, pageNavX + pageArrowW + pageLabelW, pageButtonY, pageArrowW, pageButtonH) then
-    state.page = clamp(state.page + 1, 1, maxPage)
-    state.selection = 1
+    changeEntryPage(1, entries)
   end
 
   local pageStart = (state.page - 1) * ITEMS_PER_PAGE
@@ -2150,10 +2442,12 @@ local function drawMenu(entries)
         if favoriteHovered then
           toggleFavorite(entry)
         else
+          armInputLease("mouse", 0, 0)
           queueEntry(entry, state.repeatCount)
         end
       elseif hovered and rightClicked then
         if removeCommand then
+          armInputLease("mouse", 1, 0)
           queueCommand(removeCommand, 1)
         else
           showToast(removalUnavailableMessage(entry, false), TEXT.warning, 120)
@@ -2165,7 +2459,8 @@ local function drawMenu(entries)
   drawRect(L.contentX, L.footerY, L.contentW, L.footerH, COLORS.sidebar)
   local footerTextY = L.footerY + L.pad
   local repeatX = L.contentX + L.pad
-  drawText("执行次数", repeatX, footerTextY, 0.60, TEXT.main, L.repeatLabelW)
+  local repeatLabel = "LB/RB"
+  drawText(repeatLabel, repeatX, footerTextY, 0.60, TEXT.main, L.repeatLabelW)
   local minusX = repeatX + L.repeatLabelW + L.pad
   local countX = minusX + L.stepW + L.pad
   local plusX = countX + L.countW + L.pad
@@ -2183,20 +2478,49 @@ local function drawMenu(entries)
   local fullDetailX = L.contentX + L.pad
   local fullDetailW = L.contentW - L.pad * 2
   local rowStep = L.line10
-  local activeEntry = selectedEntry(entries)
-  if state.inputMode == "search" then
-    local searchText = state.searchSelectAll and ("[" .. state.search .. "]") or (state.search .. "_")
-    drawText("全局搜索：" .. searchText, detailX, footerTextY, 0.60, TEXT.accent, detailW)
-    drawText(state.searchSelectAll and "已全选：输入替换全文；Backspace/Delete 清空"
-      or "全部物品可输入全拼、首字母、英文、命令或 ID",
-      detailX, footerTextY + rowStep, 0.60, TEXT.main, detailW)
-    drawText("Ctrl+A 全选 · Enter 完成 · Esc 退出 · × 清空",
-      detailX, footerTextY + rowStep * 2, 0.60, TEXT.muted, detailW)
-  elseif state.inputMode == "command" then
-    drawText("手动命令：" .. state.manualCommand .. "_", detailX, footerTextY, 0.60, TEXT.accent, detailW)
-    drawText("Enter 执行 · Esc 取消；危险 Lua/退出命令已拦截",
-      detailX, footerTextY + rowStep, 0.60, TEXT.muted, detailW)
-  elseif activeEntry then
+  local footerMode, footerTarget = resolveFooterContext(entries)
+  if footerMode == "search" then
+    drawText(fittingText(state.searchSelectAll and {
+      "已全选：输入替换全文；Backspace/Delete 清空", "已全选：输入替换；Delete 清空",
+    } or {
+      "全部物品可输入全拼、首字母、英文、命令或 ID", "支持拼音、英文、命令或 ID",
+    }, fullDetailW), fullDetailX, footerTextY + rowStep, 0.60, TEXT.main, fullDetailW)
+    local searchHint = state.controlMode == "controller"
+      and fittingText({ "A完成 · B退出", "A完成/B退出" }, fullDetailW)
+      or fittingText({
+        "Ctrl+A 全选 · Enter 完成 · Esc 退出 · × 清空", "Ctrl+A · Enter · Esc · × 清空",
+      }, fullDetailW)
+    drawText(searchHint, fullDetailX, footerTextY + rowStep * 2,
+      0.60, TEXT.muted, fullDetailW)
+  elseif footerMode == "command" then
+    local commandLabel = "命令："
+    local commandLabelW = math.min(fullDetailW, safeTextWidth(font10, commandLabel) + L.pad)
+    local commandInputW = math.max(1, fullDetailW - commandLabelW)
+    local commandInput = state.commandSelectAll
+      and ("[" .. state.manualCommand .. "]") or (state.manualCommand .. "_")
+    local commandY = footerTextY + rowStep
+    drawText(commandLabel, fullDetailX, commandY, 0.60, TEXT.accent, commandLabelW)
+    drawText(fittingInputText(commandInput, commandInputW), fullDetailX + commandLabelW,
+      commandY, 0.60, TEXT.accent, commandInputW)
+    local commandHint = state.controlMode == "controller"
+      and fittingText({ "A执行 · B退出 · LB/RB调次数", "A执行 · B退出 · LB/RB" }, fullDetailW)
+      or fittingText({
+        "↑↓历史 · Ctrl+A · Enter执行 · Esc退出",
+        "↑↓历史 · Ctrl+A · Enter · Esc",
+      }, fullDetailW)
+    drawText(commandHint, fullDetailX, footerTextY + rowStep * 2,
+      0.60, TEXT.muted, fullDetailW)
+  elseif footerMode == "category" then
+    local categoryText = categoryFooterText(footerTarget, greedMode, fullDetailW)
+    drawText(categoryText, fullDetailX, footerTextY + rowStep,
+      0.60, TEXT.main, fullDetailW)
+    local categoryHint = state.controlMode == "controller"
+      and "右方向/A进入条目"
+      or "→/Enter 进入条目"
+    drawText(categoryHint, fullDetailX, footerTextY + rowStep * 2,
+      0.60, TEXT.muted, fullDetailW)
+  elseif footerMode == "entry" then
+    local activeEntry = footerTarget
     local detailEntryId = activeEntry.objectKey
       or (tostring(activeEntry.kind or "") .. ":" .. tostring(activeEntry.id or activeEntry.cmd or ""))
     if state.detailEntryId ~= detailEntryId then
@@ -2224,53 +2548,76 @@ local function drawMenu(entries)
     if effectPageCount > 1 and clicked and hit(mouse, fullDetailX, effectHitY, fullDetailW, rowStep) then
       state.detailPage = (state.detailPage % effectPageCount) + 1
     end
-    local commandText = "命令：" .. (activeEntry.cmd or "")
-    local commandW = math.min(safeTextWidth(font10, commandText) + L.pad,
-      math.floor(fullDetailW * 0.58))
-    local hintW = math.max(1, fullDetailW - commandW - L.pad)
     local controllerMode = state.controlMode == "controller"
     local pageHint = not controllerMode and effectPageCount > 1 and " · D翻说明" or ""
     local favoriteHint = not activeEntry.canFavorite and "" or (controllerMode
       and (state.favorites[activeEntry.objectKey] and "X取消收藏" or "X收藏")
       or (state.favorites[activeEntry.objectKey] and "F取消收藏" or "F收藏"))
-    local hint
+    local hintCandidates
     if controllerMode and removalCommand(activeEntry) then
-      hint = fittingText(favoriteHint == "" and {
+      hintCandidates = favoriteHint == "" and {
         "A点按给予 · 长按移除道具", "A给予/长按移除", "长按A移除",
       } or {
         "A点按给予 · 长按移除道具 · " .. favoriteHint,
         "A给予/长按移除 · " .. favoriteHint,
         favoriteHint .. " · 长按A移除",
-      }, hintW)
+      }
     elseif controllerMode then
-      hint = fittingText(favoriteHint == "" and {
+      hintCandidates = favoriteHint == "" and {
         "A执行", "执行",
       } or {
         "A执行 · " .. favoriteHint, favoriteHint, "A执行",
-      }, hintW)
+      }
     elseif removalCommand(activeEntry) then
-      hint = fittingText(favoriteHint == "" and {
-        "左键给予 · 右键移除道具" .. pageHint,
-        "给予/移除" .. pageHint,
-        "右键移除" .. pageHint,
+      hintCandidates = favoriteHint == "" and {
+        "左键给予 · 右键移除道具" .. pageHint, "给予/移除" .. pageHint,
       } or {
         "左键给予 · 右键移除道具 · " .. favoriteHint .. pageHint,
         "给予/移除 · " .. favoriteHint .. pageHint,
         favoriteHint .. pageHint,
-      }, hintW)
+      }
     else
-      hint = fittingText({
+      hintCandidates = {
         "左键执行" .. pageHint, "执行" .. pageHint,
-      }, hintW)
+      }
     end
-    drawText(commandText, fullDetailX, footerTextY + rowStep * 3, 0.60, TEXT.muted, commandW)
-    if hint ~= "" then
+    local commandLabel = "手动命令(C)："
+    local commandValue = activeEntry.cmd or ""
+    local commandLabelW = safeTextWidth(font10, commandLabel)
+    local desiredCommandW = commandLabelW + safeTextWidth(font10, commandValue)
+    local commandW = math.min(fullDetailW, desiredCommandW)
+    local commandValueW = math.max(1, commandW - commandLabelW)
+    local topHintW = controllerMode
+      and math.max(1, L.contentX + L.contentW - L.pad - indicatorW - detailX - L.pad)
+      or 0
+    local commandHintW = math.max(1, fullDetailW - commandW - L.pad)
+    local hintW = controllerMode and topHintW or commandHintW
+    local hint = fittingText(hintCandidates, hintW)
+    local hintOnTop = controllerMode and hint ~= ""
+    if controllerMode and hint == "" then
+      hintW = commandHintW
+      hint = fittingText(hintCandidates, hintW)
+    end
+    local commandY = footerTextY + rowStep * 3
+    local commandHovered = state.pointerActive
+      and hit(mouse, fullDetailX, commandY, commandW, rowStep)
+    local commandColor = commandHovered and TEXT.accent or TEXT.muted
+    drawText(commandLabel, fullDetailX, commandY, 0.60,
+      commandColor, commandLabelW)
+    drawText(fittingInputText(commandValue, commandValueW),
+      fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
+    if commandHovered and clicked then beginCommandInput(activeEntry) end
+    if hintOnTop then
+      drawText(hint, detailX, footerTextY, 0.60, TEXT.muted, hintW)
+    elseif hint ~= "" and hintW > L.pad then
       drawText(hint, fullDetailX + commandW + L.pad, footerTextY + rowStep * 3,
         0.60, TEXT.muted, hintW)
     end
   else
-    drawText("当前分类没有匹配条目", detailX, footerTextY, 0.60, TEXT.warning, detailW)
-    drawText("请清空搜索或更换关键词", detailX, footerTextY + rowStep, 0.60, TEXT.muted, detailW)
+    drawText("当前分类没有匹配条目", fullDetailX, footerTextY + rowStep,
+      0.60, TEXT.warning, fullDetailW)
+    drawText("请清空搜索或更换关键词", fullDetailX, footerTextY + rowStep * 2,
+      0.60, TEXT.muted, fullDetailW)
   end
 
   state.mouseDown = mousePressed
@@ -2280,9 +2627,36 @@ end
 
 local function onRender()
   loadState()
+  local paused = Game():IsPaused()
+  if paused then
+    state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
+    if state.open then
+      state.nativePauseSuspended = true
+      clearControllerConfirm()
+    end
+    return
+  end
+  -- R is text while an editor owns focus. Everywhere else it is a game-owned
+  -- lifecycle boundary, so release all overlay state before the engine starts
+  -- rebuilding players and controller assignments.
+  if state.inputMode == nil and restartActionPressed() then
+    clearRunTransientState()
+    return
+  end
+  local inputLeaseBlocked = inputLeaseActive()
+  local blockResumeInput = state.nativePauseSuspended
+  if blockResumeInput then
+    state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
+    state.nativePauseSuspended = false
+    state.mouseDown = Input.IsMouseBtnPressed(0)
+    state.rightMouseDown = Input.IsMouseBtnPressed(1)
+    local mouse = Isaac.WorldToScreen(Input.GetMousePosition(true))
+    state.lastMouseX, state.lastMouseY = mouse.X, mouse.Y
+    state.pointerActive = false
+  end
   local inputHandled = false
   if not state.open then
-    handleKeyboardAndController({})
+    if not blockResumeInput and not inputLeaseBlocked then handleKeyboardAndController({}) end
     inputHandled = true
     if not state.open then
       drawToast(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
@@ -2294,7 +2668,7 @@ local function onRender()
   -- keeps normal gameplay, R restarts and exits independent of the catalog.
   loadCompleteCatalog()
   local entries = resolveInitialMenuFocus(visibleEntries())
-  if not inputHandled then handleKeyboardAndController(entries) end
+  if not inputHandled and not blockResumeInput then handleKeyboardAndController(entries) end
   if not state.open then
     drawToast(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
     return
@@ -2318,7 +2692,31 @@ local function onRender()
   end
 end
 
-local function onInput(_, _, inputHook)
+local function runBoundaryPending()
+  local previousFrame = state.lastGameFrame
+  return previousFrame ~= nil and Game():GetFrameCount() < previousFrame
+end
+
+local function onInput(_, _, inputHook, action)
+  -- When the overlay neither owns the screen nor waits for a closing input to
+  -- be released, it has no input authority at all. This early return is also
+  -- important while the engine is constructing players: querying physical
+  -- keys from MC_INPUT_ACTION during that phase can interfere with native
+  -- controller assignment and create a phantom co-op player.
+  if not state.open and state.inputLease == nil then return nil end
+  -- Restart is a game-owned lifecycle action. It must remain visible while the
+  -- overlay or a release lease is active, otherwise a controller-controlled
+  -- run can enter the next run before the engine sees its reconnect input.
+  if action == CONTROLLER_ACTION_RESTART and state.inputMode == nil then return nil end
+  -- R, Rewind and Rerun can reset the game clock before
+  -- MC_POST_GAME_STARTED. During that callback gap the previous run's overlay
+  -- state must not intercept any native controller assignment or pause input.
+  if runBoundaryPending() then return nil end
+  if Game():IsPaused() then return nil end
+  if state.inputLease ~= nil then
+    if inputHook == InputHook.GET_ACTION_VALUE then return 0.0 end
+    return false
+  end
   if not state.open then return nil end
   if inputHook == InputHook.GET_ACTION_VALUE then return 0.0 end
   return false
@@ -2334,6 +2732,7 @@ local function onGameStarted()
   state.controllerOpenIndex = nil
   state.controllerIndex = nil
   clearControllerConfirm()
+  clearInputLease()
   state.pointerActive = false
   state.lastMouseX = nil
   state.lastMouseY = nil
@@ -2357,6 +2756,7 @@ local function onGameExit()
   state.controllerOpenIndex = nil
   state.controllerIndex = nil
   clearControllerConfirm()
+  clearInputLease()
   state.pointerActive = false
   state.lastMouseX = nil
   state.lastMouseY = nil
