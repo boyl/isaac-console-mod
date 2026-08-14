@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import sys
 from pathlib import Path
 
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.5"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.6"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -392,6 +393,56 @@ def scenarios() -> list[dict[str, object]]:
                 "eid": False,
             },
             {
+                "scenario": "command_contracts",
+                "label": "complete official command contracts and disabled gates",
+                "repPlus": False,
+                "eid": False,
+            },
+            {
+                "scenario": "unknown_command_confirmation",
+                "label": "unknown command visible confirmation and single execution",
+                "repPlus": True,
+                "eid": False,
+            },
+            {
+                "scenario": "lifecycle_command_channel",
+                "label": "Repentance lifecycle commands dispatch from Render EID-off",
+                "repPlus": False,
+                "eid": False,
+            },
+            {
+                "scenario": "lifecycle_command_channel",
+                "label": "Repentance lifecycle commands dispatch from Render EID-on",
+                "repPlus": False,
+                "eid": True,
+            },
+            {
+                "scenario": "lifecycle_command_channel",
+                "label": "Repentance+ lifecycle commands dispatch from Render EID-off",
+                "repPlus": True,
+                "eid": False,
+            },
+            {
+                "scenario": "lifecycle_command_channel",
+                "label": "Repentance+ lifecycle commands dispatch from Render EID-on",
+                "repPlus": True,
+                "eid": True,
+            },
+            {
+                "scenario": "lifecycle_command_channel",
+                "label": "REPENTOGON lifecycle commands dispatch from Render EID-off",
+                "repPlus": True,
+                "repentogon": True,
+                "eid": False,
+            },
+            {
+                "scenario": "lifecycle_command_channel",
+                "label": "REPENTOGON lifecycle commands dispatch from Render EID-on",
+                "repPlus": True,
+                "repentogon": True,
+                "eid": True,
+            },
+            {
                 "scenario": "measured_footer_stars",
                 "label": "455x256 complete footer and favorite markers",
                 "repPlus": False,
@@ -469,6 +520,28 @@ def main() -> int:
     if not MOD_ROOT.is_dir() or not HARNESS.is_file():
         print("mock test inputs are missing", file=sys.stderr)
         return 2
+    repository_root = HARNESS.parents[2]
+    zh_specs = repository_root / "workshop-mod/scripts/command_specs.lua"
+    en_specs = repository_root / "workshop-mod-en/scripts/command_specs.lua"
+    if zh_specs.is_file() and en_specs.is_file():
+        normalize = lambda value: re.sub(r"\s+", "", re.sub(r"--[^\n]*", "", value))
+        if normalize(zh_specs.read_text(encoding="utf-8")) != normalize(en_specs.read_text(encoding="utf-8")):
+            raise AssertionError("Chinese and English command contracts differ")
+
+        def catalog_semantics(path: Path) -> list[tuple[str, str, str, str]]:
+            rows = re.findall(r'^\s*\{ commandId = .*$', path.read_text(encoding="utf-8"), re.M)
+            result = []
+            for row in rows:
+                def field(name: str, default: str = "") -> str:
+                    match = re.search(rf'{name}\s*=\s*"([^"]*)"', row)
+                    return match.group(1) if match else default
+                result.append((field("commandId"), field("cat"), field("catalogAction", "execute"), field("cmd")))
+            return result
+
+        zh_catalog = repository_root / "workshop-mod/scripts/command_catalog.lua"
+        en_catalog = repository_root / "workshop-mod-en/scripts/command_catalog.lua"
+        if catalog_semantics(zh_catalog) != catalog_semantics(en_catalog):
+            raise AssertionError("Chinese and English command catalog semantics differ")
     dll, dll_path = load_lua()
     configure_lua(dll)
     cases = scenarios()

@@ -27,6 +27,7 @@ end
 
 local TEST = {
   callbacks = {},
+  callbackLists = {},
   keyTriggers = {},
   buttonTriggers = {},
   actionTriggers = {},
@@ -65,6 +66,7 @@ elseif TEST_CONFIG.initialFavorite then
 end
 
 REPENTANCE_PLUS = TEST_CONFIG.repPlus == true
+REPENTOGON = TEST_CONFIG.repentogon == true and {} or nil
 
 function Color(...) return { ... } end
 function KColor(...) return { ... } end
@@ -142,6 +144,7 @@ Controller = {
   BUMPER_RIGHT = 11, TRIGGER_RIGHT = 12, STICK_RIGHT = 13,
   BUTTON_BACK = 14, BUTTON_START = 15,
 }
+Challenge = { NUM_CHALLENGES = 46 }
 
 if TEST_CONFIG.mcm then
   ModConfigMenu = {
@@ -305,7 +308,19 @@ end
 local registeredMod = nil
 function RegisterMod(name, apiVersion)
   local mod = { name = name, apiVersion = apiVersion }
-  function mod:AddCallback(callbackId, callback) TEST.callbacks[callbackId] = callback end
+  function mod:AddCallback(callbackId, callback)
+    local callbacks = TEST.callbackLists[callbackId] or {}
+    callbacks[#callbacks + 1] = callback
+    TEST.callbackLists[callbackId] = callbacks
+    if TEST.callbacks[callbackId] == nil then TEST.callbacks[callbackId] = callback end
+  end
+  function mod:RemoveCallback(callbackId, callback)
+    local callbacks = TEST.callbackLists[callbackId] or {}
+    for index = #callbacks, 1, -1 do
+      if callbacks[index] == callback then table.remove(callbacks, index) end
+    end
+    TEST.callbacks[callbackId] = callbacks[1]
+  end
   function mod:HasData()
     if TEST_CONFIG.hasDataFail then error("forced HasData failure") end
     if TEST_CONFIG.loadFail then return true end
@@ -349,6 +364,13 @@ local onInput = TEST.callbacks[ModCallbacks.MC_INPUT_ACTION]
 local onStarted = TEST.callbacks[ModCallbacks.MC_POST_GAME_STARTED]
 local onExit = TEST.callbacks[ModCallbacks.MC_PRE_GAME_EXIT]
 
+local function runCallbacks(callbackId)
+  local callbacks = TEST.callbackLists[callbackId] or {}
+  local snapshot = {}
+  for index, callback in ipairs(callbacks) do snapshot[index] = callback end
+  for _, callback in ipairs(snapshot) do callback() end
+end
+
 local function findUpvalue(rootFunction, targetName, seen)
   if type(rootFunction) ~= "function" then return nil end
   seen = seen or {}
@@ -374,6 +396,7 @@ local computeLayout = findUpvalue(onRender, "computeLayout")
 local drawFavoriteStar = findUpvalue(onRender, "drawFavoriteStar")
 local queueCommand = findUpvalue(onRender, "queueCommand")
 local queueEntry = findUpvalue(onRender, "queueEntry")
+local beginCommandInput = findUpvalue(onRender, "beginCommandInput")
 local removalCommand = findUpvalue(onRender, "removalCommand")
 local allEntries = findUpvalue(onRender, "allEntries")
 local runtimeCatalog = findUpvalue(visibleEntries, "Catalog")
@@ -383,6 +406,7 @@ assertTrue(type(computeLayout) == "function", "computeLayout upvalue unavailable
 assertTrue(type(drawFavoriteStar) == "function", "drawFavoriteStar upvalue unavailable")
 assertTrue(type(queueCommand) == "function", "queueCommand upvalue unavailable")
 assertTrue(type(removalCommand) == "function", "removalCommand upvalue unavailable")
+assertTrue(type(beginCommandInput) == "function", "beginCommandInput upvalue unavailable")
 
 local function clearInput()
   TEST.keyTriggers = {}
@@ -392,7 +416,7 @@ end
 
 local function renderFrame()
   TEST.frame = TEST.frame + 1
-  onRender()
+  runCallbacks(ModCallbacks.MC_POST_RENDER)
   clearInput()
 end
 
@@ -789,6 +813,10 @@ local function testStageSafety()
   end
 
   assertEqual(queueCommand("stage 1", 1), true, "documented Greed stage was blocked")
+  assertTrue(state.lifecycleRequest ~= nil and state.queue == nil,
+    "stage did not enter the Render lifecycle channel")
+  runCallbacks(ModCallbacks.MC_POST_RENDER)
+  onUpdate()
   onUpdate()
   assertEqual(TEST.executed[#TEST.executed], "stage 1", "documented Greed stage failed")
 
@@ -1045,6 +1073,149 @@ local function testQueueInvariant()
   assertEqual(#TEST.executed, executedBefore,
     "already-complete corrupted queue executed an extra command")
   assertEqual(state.queue, nil, "corrupted completed queue was not finalized")
+end
+
+local function findCatalogCommand(commandId, action)
+  for _, entry in ipairs(runtimeCatalog.commands) do
+    if entry.commandId == commandId and (not action or entry.catalogAction == action) then
+      return entry
+    end
+  end
+  return nil
+end
+
+local function testCommandContracts()
+  onStarted()
+  local specs = include("scripts.command_specs")
+  local expectedOfficial = {
+    "spawn", "goto", "stage", "gridspawn", "debug", "giveitem", "remove",
+    "costumetest", "restart", "listcollectibles", "repeat", "clearseeds",
+    "seed", "challenge", "combo", "macro", "playsfx", "curse", "reseed",
+    "copy", "clear", "lua", "luarun", "luamod", "luamem", "metro",
+    "delirious", "restock", "rewind", "testbosspool", "reloadwisps",
+  }
+  for _, verb in ipairs(expectedOfficial) do
+    assertTrue(specs.byVerb[verb] ~= nil, "official command missing from contract: " .. verb)
+  end
+  for alias, commandId in pairs({ g = "giveitem", r = "remove", m = "macro", l = "lua" }) do
+    assertEqual(specs.byVerb[alias].id, commandId, "command alias contract differs: " .. alias)
+  end
+  assertEqual(#runtimeCatalog.categories, 17, "command categories were not appended exactly once")
+  assertTrue(findCatalogCommand("goto", "manual") ~= nil, "goto reference entry missing")
+  assertTrue(findCatalogCommand("listcollectibles", "disabled") ~= nil,
+    "native-output entry is not visibly disabled")
+  assertTrue(findCatalogCommand("rewind") ~= nil,
+    "rewind lifecycle entry is missing")
+
+  for _, command in ipairs({
+      "listcollectibles", "copy", "clear", "luamem", "testbosspool",
+      "lua x", "l x", "luarun x", "luamod x", "achievement 1", "prof",
+      "fullrestart", "quit", "macro x", "repeat 2",
+    }) do
+    assertEqual(queueCommand(command, 1), false, "disabled command was accepted: " .. command)
+    assertTrue(state.queue == nil and state.lifecycleRequest == nil,
+      "disabled command entered an execution channel: " .. command)
+  end
+  for _, spec in ipairs(specs.list) do
+    if spec.mode == "output" or spec.mode == "disabled" then
+      local entry = findCatalogCommand(spec.id, "disabled")
+      assertTrue(entry ~= nil, "disabled command has no visible catalog entry: " .. spec.id)
+      assertEqual(queueEntry(entry, 1), false,
+        "A/Enter queued a disabled catalog entry: " .. spec.id)
+      assertEqual(beginCommandInput(entry), false,
+        "C opened a disabled catalog entry: " .. spec.id)
+      assertTrue(state.queue == nil and state.lifecycleRequest == nil,
+        "disabled entry reached an execution channel: " .. spec.id)
+    end
+  end
+  for _, command in ipairs({ "restart 41", "challenge 46", "curse 256", "seed abcd efgh" }) do
+    assertEqual(queueCommand(command, 1), false, "invalid parameter bypassed validation: " .. command)
+  end
+
+  local gotoEntry = findCatalogCommand("goto", "manual")
+  assertEqual(queueEntry(gotoEntry, 1), false, "parameter reference executed from A/Enter")
+  assertTrue(beginCommandInput(gotoEntry), "C could not open a parameter template")
+  assertEqual(state.manualCommand, "goto ", "parameter template did not retain its trailing input position")
+  assertEqual(state.commandSelectAll, false, "parameter template was incorrectly selected")
+  local outputEntry = findCatalogCommand("listcollectibles", "disabled")
+  assertEqual(beginCommandInput(outputEntry), false, "C opened a disabled output command")
+end
+
+local function testLifecycleCommandChannel()
+  onStarted()
+  if TEST_CONFIG.repentogon then
+    assertTrue(REPENTOGON ~= nil and REPENTANCE_PLUS,
+      "REPENTOGON lifecycle scenario did not expose its runtime capability")
+  end
+  local commands = { "rewind", "restart", "reseed", "seed T1MM AY48", "challenge 20", "goto d.10", "stage 1" }
+  for _ = 2, 20 do commands[#commands + 1] = "rewind" end
+  for _, command in ipairs(commands) do
+    openMenu()
+    local executedBefore = #TEST.executed
+    local laterRenderRanBeforeDispatch = false
+    local function laterRenderCallback()
+      laterRenderRanBeforeDispatch = #TEST.executed == executedBefore
+    end
+    registeredMod:AddCallback(ModCallbacks.MC_POST_RENDER, laterRenderCallback)
+    assertTrue(queueCommand(command, 9), "lifecycle command was rejected: " .. command)
+    assertTrue(state.queue == nil and state.lifecycleRequest ~= nil,
+      "lifecycle command entered MC_POST_UPDATE queue: " .. command)
+    assertEqual(state.open, false, "lifecycle command did not release the overlay: " .. command)
+    runCallbacks(ModCallbacks.MC_POST_RENDER)
+    registeredMod:RemoveCallback(ModCallbacks.MC_POST_RENDER, laterRenderCallback)
+    assertTrue(laterRenderRanBeforeDispatch,
+      "lifecycle command did not run after an existing render callback: " .. command)
+    assertEqual(#TEST.executed, executedBefore + 1, "Render dispatch count differs: " .. command)
+    assertEqual(TEST.executed[#TEST.executed], command, "Render dispatched wrong command")
+    assertTrue(state.lifecycleRequest == nil and state.lifecycleReceipt ~= nil,
+      "Render dispatch touched post-command engine state")
+    onUpdate()
+    assertTrue(state.lifecycleReceipt ~= nil,
+      "lifecycle receipt settled before the stable update window: " .. command)
+    onUpdate()
+    assertEqual(state.lifecycleReceipt, nil, "stable callback did not settle lifecycle receipt")
+    assertEqual(state.history[1], command, "lifecycle history settled incorrectly")
+    assertEqual(state.repeatCount, 1, "lifecycle command retained a repeat count")
+  end
+
+  openMenu()
+  local executedBeforeBoundary = #TEST.executed
+  assertTrue(queueCommand("rewind", 1), "boundary cancellation setup failed")
+  onStarted()
+  runCallbacks(ModCallbacks.MC_POST_RENDER)
+  assertEqual(#TEST.executed, executedBeforeBoundary,
+    "new-run cleanup left a one-shot lifecycle dispatcher armed")
+end
+
+local function testUnknownCommandConfirmation()
+  onStarted()
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "thirdparty_test value"
+  assertEqual(queueCommand(state.manualCommand, 99), false,
+    "unknown command executed without a first confirmation")
+  assertEqual(state.unknownCommandConfirmation, state.manualCommand,
+    "unknown command did not expose persistent confirmation state")
+  assertTrue(state.open and state.queue == nil, "first unknown confirmation changed execution state")
+  assertTrue(queueCommand(state.manualCommand, 99), "confirmed unknown command was rejected")
+  assertEqual(state.queue.total, 1, "unknown command was allowed to batch")
+  onUpdate()
+  assertEqual(TEST.executed[#TEST.executed], "thirdparty_test value",
+    "confirmed unknown command did not execute once")
+
+  openMenu()
+  state.inputMode = "command"
+  state.manualCommand = "another_thirdparty"
+  assertEqual(queueCommand(state.manualCommand, 1), false, "confirmation setup failed")
+  pressKey(keyForCharacter("x"))
+  assertEqual(state.unknownCommandConfirmation, nil, "editing did not cancel unknown confirmation")
+  state.manualCommand = "another_thirdparty"
+  assertEqual(queueCommand(state.manualCommand, 1), false, "Escape confirmation setup failed")
+  pressKey(Keyboard.KEY_ESCAPE)
+  assertEqual(state.inputMode, "command", "first Esc left the editor instead of cancelling confirmation")
+  assertEqual(state.unknownCommandConfirmation, nil, "Esc retained unknown confirmation")
+  pressKey(Keyboard.KEY_ESCAPE)
+  assertEqual(state.inputMode, nil, "second Esc did not leave command editing")
 end
 
 local function testCommandFeedbackDurations()
@@ -1717,6 +1888,8 @@ local function testCategoryDescriptionMatrix()
     debug = { "无敌、高伤、无限充能与信息显示开关。再次点击同一 debug 命令可关闭。", "切换调试能力" },
     supply = { "生成资源、回复与当前房间辅助。", "生成资源与房间辅助" },
     stage = { "按当前模式显示安全楼层：正常模式 45 项，贪婪模式 7 项。", "按模式显示安全楼层" },
+    run_control = { "安全执行调试开关、刷新及会重建游戏对象的运行命令。", "调试、刷新与运行控制" },
+    command_reference = { "官方命令语法参考；参数命令需按 C 补全，禁用项只供查阅。", "官方语法与安全状态" },
   } or {
     featured = { "Only items you explicitly favorite appear here.", "Your saved favorites." },
     all_items = { "All collectibles in the current game version.", "All official collectibles." },
@@ -1733,6 +1906,8 @@ local function testCategoryDescriptionMatrix()
     debug = { "Invincibility, extreme damage, unlimited charge, and diagnostic overlays. Run the same debug command again to turn it off.", "Toggle debug flags." },
     supply = { "Spawn pickups, restore resources, and control the current room.", "Spawn pickups and resources." },
     stage = { "Shows the safe route for the current mode: 45 Normal/Hard destinations or 7 Greed destinations.", "Warp along the safe route." },
+    run_control = { "Safely run debug toggles, refresh actions, and commands that rebuild game objects.", "Debug, refresh, and lifecycle control" },
+    command_reference = { "Official syntax reference. Press C to complete parameter commands; disabled entries are reference-only.", "Official syntax and safety status" },
   }
 
   for index, category in ipairs(runtimeCatalog.categories) do
@@ -2357,6 +2532,9 @@ local scenarios = {
   load_failure = testLoadFailure,
   interactions = testInteractions,
   stage_safety = testStageSafety,
+  command_contracts = testCommandContracts,
+  lifecycle_command_channel = testLifecycleCommandChannel,
+  unknown_command_confirmation = testUnknownCommandConfirmation,
   controller = testController,
   cold_start_focus = testColdStartControllerFocus,
   official_immediate_grant = testOfficialImmediateGrant,

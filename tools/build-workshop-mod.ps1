@@ -27,6 +27,8 @@ $commonFiles = @(
     'resources/gfx/ui/isaac_console_pixel.anm2',
     'resources/gfx/ui/isaac_console_pixel.png',
     'scripts/data.lua',
+    'scripts/command_specs.lua',
+    'scripts/command_catalog.lua',
     'scripts/official_objects.lua'
 )
 

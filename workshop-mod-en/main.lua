@@ -1,9 +1,11 @@
 local ConsoleUI = RegisterMod("Console UI", 1)
 local Catalog = include("scripts.data")
+local CommandSpecs = include("scripts.command_specs")
+local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.5"
+local VERSION = "2.5.4-en.6"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -79,6 +81,7 @@ local COLORS = {
   selected = Color(0.425, 0.160, 0.220, 1.00, 0, 0, 0),
   accent = Color(0.930, 0.300, 0.390, 1.00, 0, 0, 0),
   gold = Color(0.720, 0.450, 0.160, 1.00, 0, 0, 0),
+  disabled = Color(0.255, 0.225, 0.235, 1.00, 0, 0, 0),
   shadow = Color(0.000, 0.000, 0.000, 0.45, 0, 0, 0),
 }
 
@@ -258,6 +261,9 @@ local state = {
   rightMouseDown = false,
   hudWasVisible = true,
   queue = nil,
+  lifecycleRequest = nil,
+  lifecycleReceipt = nil,
+  unknownCommandConfirmation = nil,
   toast = nil,
   toastFramesRemaining = 0,
   lastGameFrame = nil,
@@ -292,6 +298,21 @@ local state = {
   keyboardEnterPressed = false,
   inputLease = nil,
 }
+
+local lifecycleDispatcher = { registered = false }
+
+function lifecycleDispatcher.disarm()
+  if not lifecycleDispatcher.registered then return end
+  ConsoleUI:RemoveCallback(ModCallbacks.MC_POST_RENDER, lifecycleDispatcher.dispatch)
+  lifecycleDispatcher.registered = false
+end
+
+function lifecycleDispatcher.arm()
+  if lifecycleDispatcher.registered then return end
+  assert(type(lifecycleDispatcher.dispatch) == "function", "lifecycle dispatcher is not initialized")
+  ConsoleUI:AddCallback(ModCallbacks.MC_POST_RENDER, lifecycleDispatcher.dispatch)
+  lifecycleDispatcher.registered = true
+end
 
 local function suppressEidOverlay()
   if type(EID) ~= "table" or type(EID.isHidden) ~= "boolean" then return end
@@ -339,6 +360,7 @@ local function setMenuOpen(open)
     state.commandHistoryIndex = nil
     state.commandHistoryDraft = nil
     state.commandHistoryDraftRepeat = nil
+    state.unknownCommandConfirmation = nil
     state.nativePauseSuspended = false
     state.controllerConfirmHold = 0
     state.controllerConfirmCommand = nil
@@ -350,6 +372,13 @@ local function setMenuOpen(open)
     state.controllerConfirmSource = nil
     state.controllerConfirmValue = nil
   end
+end
+
+for _, category in ipairs(CommandCatalog.categories) do
+  Catalog.categories[#Catalog.categories + 1] = category
+end
+for _, command in ipairs(CommandCatalog.commands) do
+  Catalog.commands[#Catalog.commands + 1] = command
 end
 
 local categoryById = {}
@@ -421,11 +450,19 @@ for _, item in ipairs(Catalog.items) do
   allEntries[#allEntries + 1] = item
 end
 for _, command in ipairs(Catalog.commands) do
+  local commandVerb = tostring(command.cmd or ""):lower():match("^(%S+)")
+  local spec = CommandSpecs.byId[command.commandId] or CommandSpecs.byVerb[commandVerb]
+  assert(spec, "missing command contract for catalog entry: " .. tostring(command.commandId or command.cmd))
+  command.commandSpec = spec
+  command.catalogAction = command.catalogAction
+    or ((spec.mode == "output" or spec.mode == "disabled") and "disabled" or "execute")
+  command.cmd = command.cmd or spec.syntax
+  command.commandTemplate = spec.template
+  command.displayCommand = spec.syntax
   command.kind = "command"
   command.canFavorite = false
   command.canRemove = tostring(command.cmd or ""):match("^giveitem%s+c%d+%s*$") ~= nil
-  command.repeatMax = tostring(command.cmd or ""):match("^giveitem%s+") or tostring(command.cmd or ""):match("^spawn%s+")
-  command.repeatMax = command.repeatMax and 99 or 1
+  command.repeatMax = tonumber(command.repeatMax) or spec.repeatMax or 1
   command.searchText = buildSearchText(command)
   if command.cat == "stage" then
     local mode = command.stageMode == "greed" and "greed" or "normal"
@@ -839,7 +876,10 @@ end
 
 local function clearRunTransientState()
   if state.open then setMenuOpen(false) end
+  lifecycleDispatcher.disarm()
   state.queue = nil
+  state.lifecycleRequest = nil
+  state.unknownCommandConfirmation = nil
   state.toast = nil
   state.toastFramesRemaining = 0
   state.inputMode = nil
@@ -1068,31 +1108,68 @@ local function registerMcmSettings()
   end
 end
 
-local function isRepeatSafe(command)
-  local lowered = trim(command):lower()
-  return lowered:match("^giveitem%s+") ~= nil or lowered:match("^spawn%s+") ~= nil
+local function commandSpec(command)
+  local verb = trim(command):lower():match("^(%S+)")
+  return CommandSpecs.byVerb[verb], verb
 end
 
-local BLOCKED_MANUAL = {
-  lua = true,
-  luamod = true,
-  luarun = true,
-  achievement = true,
-  prof = true,
-  fullrestart = true,
-  quit = true,
-}
+local function disabledCommandReason(spec)
+  if spec.mode == "output" then return "This command only outputs to the native console and cannot run here" end
+  local reasons = {
+    code = "This command can execute arbitrary code and is disabled in the Workshop build",
+    save = "This command may change persistent progress and is disabled here",
+    process = "This command controls the game process and is disabled here",
+    indirect = "This command can indirectly execute uncontrolled commands and is disabled here",
+    lifecycle = "Runtime testing caused a hang and process exit, so this command is disabled",
+  }
+  return reasons[spec.reason] or "This command is disabled in the Workshop build"
+end
+
+local function validateKnownParameters(spec, command, verb)
+  local argument = trim(command:sub(#verb + 1))
+  if spec.syntax:find("<", 1, true) and argument == "" then
+    return false, "Missing command parameters; press C to inspect and complete the syntax"
+  end
+  if spec.validator == "restart" then
+    if argument == "" then return true end
+    local id = tonumber(argument)
+    if not id or id % 1 ~= 0 or id < 0 or id > 40 then
+      return false, "restart character ID must be an integer from 0 to 40"
+    end
+  elseif spec.validator == "challenge" then
+    local id = tonumber(argument)
+    local count = Challenge and tonumber(Challenge.NUM_CHALLENGES)
+    if not count then return false, "This runtime does not expose its challenge count; command blocked" end
+    if not id or id % 1 ~= 0 or id < 1 or id >= count then
+      return false, "challenge ID must be between 1 and " .. tostring(count - 1)
+    end
+  elseif spec.validator == "curse" then
+    local value = tonumber(argument)
+    if not value or value % 1 ~= 0 or value < 0 or value > 255 then
+      return false, "curse must be an integer from 0 to 255"
+    end
+  elseif spec.validator == "seed" then
+    if not argument:match("^[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]%s+[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]$") then
+      return false, "seed must use the uppercase XXXX XXXX format"
+    end
+  end
+  return true
+end
 
 local function validateCommand(command)
   command = trim(command)
   if command == "" then return false, "Command cannot be empty" end
   if #command > 120 then return false, "Command is too long" end
   if command:find("[\r\n;]") then return false, "Command contains an unsafe separator" end
-  local verb = command:match("^(%S+)")
-  if BLOCKED_MANUAL[(verb or ""):lower()] then
-    return false, "The Workshop edition blocks " .. tostring(verb) .. " to protect your save"
+  local spec, verb = commandSpec(command)
+  if spec and (spec.mode == "output" or spec.mode == "disabled") then
+    return false, disabledCommandReason(spec), spec
   end
-  return true, command
+  if spec then
+    local valid, reason = validateKnownParameters(spec, command, verb)
+    if not valid then return false, reason, spec end
+  end
+  return true, command, spec
 end
 
 local function isStageCommand(command)
@@ -1121,10 +1198,21 @@ local function addHistory(command, count)
 end
 
 local function queueCommand(command, requestedCount, explicitRepeatMax)
-  local valid, value = validateCommand(command)
+  local valid, value, spec = validateCommand(command)
   if not valid then
     showToast(value, TEXT.warning, 120)
     return false
+  end
+
+  if not spec then
+    if state.unknownCommandConfirmation ~= value then
+      state.unknownCommandConfirmation = value
+      showToast("Unknown or third-party command: press Enter again to run it once", TEXT.warning, 180)
+      return false
+    end
+    state.unknownCommandConfirmation = nil
+  else
+    state.unknownCommandConfirmation = nil
   end
 
   if isStageCommand(value) then
@@ -1138,18 +1226,27 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
     end
   end
 
-  if state.queue then
+  if state.queue or state.lifecycleRequest or state.lifecycleReceipt then
     showToast("The previous batch is still running", TEXT.warning, 90)
     return false
   end
 
   local requested = clamp(tonumber(requestedCount) or 1, 1, 99)
   local repeatMax = tonumber(explicitRepeatMax)
-  if not repeatMax then repeatMax = isRepeatSafe(value) and 99 or 1 end
+  if not repeatMax then repeatMax = spec and spec.repeatMax or 1 end
   repeatMax = clamp(math.floor(repeatMax), 1, 99)
   local count = math.min(requested, repeatMax)
   if requested > repeatMax then
     showToast("This command is limited to one execution for safety", TEXT.warning, 120)
+  end
+
+  if spec and spec.phase == "render" then
+    state.lifecycleRequest = { command = value }
+    state.repeatCount = 1
+    state.inputLease = nil
+    setMenuOpen(false)
+    lifecycleDispatcher.arm()
+    return true
   end
 
   state.queue = {
@@ -1166,6 +1263,14 @@ end
 
 local function queueEntry(entry, requestedCount)
   if not entry then return false end
+  if entry.catalogAction == "disabled" then
+    showToast(disabledCommandReason(entry.commandSpec), TEXT.warning, 180)
+    return false
+  end
+  if entry.catalogAction == "manual" then
+    showToast("Parameter reference: press C to enter the complete command", TEXT.warning, 120)
+    return false
+  end
   return queueCommand(entry.cmd, requestedCount, entry.repeatMax)
 end
 
@@ -1221,6 +1326,23 @@ local function processQueue()
   end
 end
 
+local function finalizeLifecycleReceipt()
+  local receipt = state.lifecycleReceipt
+  if not receipt then return end
+  receipt.stableUpdates = (receipt.stableUpdates or 0) + 1
+  if receipt.stableUpdates < 2 then return end
+  state.lifecycleReceipt = nil
+  addHistory(receipt.command, 1)
+  state.repeatCount = 1
+  local saved, saveError = saveState()
+  if not saved then
+    showToast("Command was dispatched, but history could not be saved", TEXT.warning, 180)
+    debugLog("lifecycle history save failed: " .. tostring(saveError))
+  else
+    showToast("Completed: " .. receipt.command, TEXT.green, 60)
+  end
+end
+
 local function onUpdate()
   local frame = Game():GetFrameCount()
   local previousFrame = state.lastGameFrame
@@ -1235,6 +1357,7 @@ local function onUpdate()
     end
   end
   state.lastGameFrame = frame
+  finalizeLifecycleReceipt()
   processQueue()
 end
 
@@ -1443,6 +1566,7 @@ local function decodeHistoryEntry(label)
 end
 
 local function recallCommandHistory(delta)
+  state.unknownCommandConfirmation = nil
   if #state.history == 0 then return end
   if state.commandHistoryIndex == nil then
     if delta < 0 then return end
@@ -1470,15 +1594,28 @@ local function captureCommandText()
     state.manualCommand, state.commandSelectAll)
   state.manualCommand = value
   state.commandSelectAll = selectAll
-  if changed then clearCommandHistoryNavigation() end
+  if changed then
+    clearCommandHistoryNavigation()
+    state.unknownCommandConfirmation = nil
+  end
 end
 
 local function beginCommandInput(entry)
-  if entry then state.manualCommand = entry.cmd end
+  if entry and entry.catalogAction == "disabled" then
+    showToast(disabledCommandReason(entry.commandSpec), TEXT.warning, 180)
+    return false
+  end
+  if entry then
+    state.manualCommand = entry.catalogAction == "manual"
+      and (entry.commandTemplate or "") or entry.cmd
+  end
   state.inputMode = "command"
   state.searchSelectAll = false
-  state.commandSelectAll = state.manualCommand ~= ""
+  state.commandSelectAll = entry ~= nil and entry.catalogAction ~= "manual"
+    and state.manualCommand ~= ""
+  state.unknownCommandConfirmation = nil
   clearCommandHistoryNavigation()
+  return true
 end
 
 local function addControllerCandidate(candidates, seen, index)
@@ -1843,9 +1980,13 @@ local function handleKeyboardAndController(entries)
     elseif editableTextTriggered() then
       captureCommandText()
     elseif keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
-      state.inputMode = nil
-      state.commandSelectAll = false
-      clearCommandHistoryNavigation()
+      if state.unknownCommandConfirmation then
+        state.unknownCommandConfirmation = nil
+      else
+        state.inputMode = nil
+        state.commandSelectAll = false
+        clearCommandHistoryNavigation()
+      end
     elseif keyboardEnter or (controllerEvent and controllerEvent.role == "confirm") then
       if controllerEvent then
         armControllerInputLease(controllerEvent)
@@ -1964,6 +2105,11 @@ local function handleKeyboardAndController(entries)
   elseif controllerConfirm then
     local entry = selectedEntry(entries)
     if entry then
+      if entry.catalogAction and entry.catalogAction ~= "execute" then
+        armControllerInputLease(controllerEvent)
+        queueEntry(entry, state.repeatCount)
+        return
+      end
       state.controllerConfirmHold = 0
       state.controllerConfirmCommand = entry.cmd
       state.controllerConfirmRemoveCommand = removalCommand(entry)
@@ -2413,7 +2559,9 @@ local function drawMenu(entries)
       local selected = not state.sidebarFocus and localIndex == state.selection
       drawRect(x, y, L.cardW, L.cardH,
         selected and COLORS.selected or (hovered and COLORS.cardHover or COLORS.card))
-      drawRect(x, y, 3, L.cardH, entry.tier == "S" and COLORS.accent or COLORS.gold)
+      local entryDisabled = entry.catalogAction == "disabled"
+      drawRect(x, y, 3, L.cardH, entryDisabled and COLORS.disabled
+        or (entry.tier == "S" and COLORS.accent or COLORS.gold))
       local textY = y + math.floor((L.cardH - L.line10) / 2)
       local iconX = x + L.pad
       local removeCommand = removalCommand(entry)
@@ -2422,9 +2570,9 @@ local function drawMenu(entries)
       local favoriteW = isFavorite and L.starW or 0
       local favoriteX = x + L.cardW - favoriteW
       drawText(entry.icon or "?", iconX, textY, 0.60,
-        entry.tier == "S" and TEXT.accent or TEXT.gold, L.iconW, true)
+        entryDisabled and TEXT.muted or (entry.tier == "S" and TEXT.accent or TEXT.gold), L.iconW, true)
       drawText(entry.name or "", iconX + L.iconW + L.pad, textY, 0.60,
-        TEXT.main,
+        entryDisabled and TEXT.muted or TEXT.main,
         math.max(1, favoriteX - (iconX + L.iconW + L.pad) - L.pad))
       if favoriteW > 0 then
         drawFavoriteStar(favoriteX, y, favoriteW, L.cardH)
@@ -2501,14 +2649,17 @@ local function drawMenu(entries)
     drawText(commandLabel, fullDetailX, commandY, 0.60, TEXT.accent, commandLabelW)
     drawText(fittingInputText(commandInput, commandInputW), fullDetailX + commandLabelW,
       commandY, 0.60, TEXT.accent, commandInputW)
-    local commandHint = state.controlMode == "controller"
-      and fittingText({ "A: run · B: back · LB/RB: count", "A: run · B: back · LB/RB" }, fullDetailW)
-      or fittingText({
-        "Up/Down history · Ctrl+A · Enter · Esc",
-        "History ↑↓ · Ctrl+A · Enter · Esc",
-      }, fullDetailW)
+    local awaitingUnknown = state.unknownCommandConfirmation == trim(state.manualCommand)
+    local commandHint = awaitingUnknown
+      and fittingText({ "Unknown/third-party command: press Enter again to run once", "Unknown: press Enter again" }, fullDetailW)
+      or (state.controlMode == "controller"
+        and fittingText({ "A: run · B: back · LB/RB: count", "A: run · B: back · LB/RB" }, fullDetailW)
+        or fittingText({
+          "Up/Down history · Ctrl+A · Enter · Esc",
+          "History ↑↓ · Ctrl+A · Enter · Esc",
+        }, fullDetailW))
     drawText(commandHint, fullDetailX, footerTextY + rowStep * 2,
-      0.60, TEXT.muted, fullDetailW)
+      0.60, awaitingUnknown and TEXT.warning or TEXT.muted, fullDetailW)
   elseif footerMode == "category" then
     local categoryText = categoryFooterText(footerTarget, greedMode, fullDetailW)
     drawText(categoryText, fullDetailX, footerTextY + rowStep,
@@ -2561,7 +2712,13 @@ local function drawMenu(entries)
       and (state.favorites[activeEntry.objectKey] and "X-" or "X+")
       or (state.favorites[activeEntry.objectKey] and "F-" or "F+"))
     local hintCandidates
-    if controllerMode and removalCommand(activeEntry) then
+    if activeEntry.catalogAction == "disabled" then
+      hintCandidates = controllerMode and { "Disabled · B: back", "Disabled" }
+        or { "Disabled · reference only", "Disabled" }
+    elseif activeEntry.catalogAction == "manual" then
+      hintCandidates = controllerMode and { "Press C to complete · B: back", "C: complete" }
+        or { "Enter: info · C: complete parameters", "C: complete" }
+    elseif controllerMode and removalCommand(activeEntry) then
       hintCandidates = favoriteHint == "" and {
         "Tap A: give · Hold A: remove", "A: give/hold remove", "Hold A: remove",
       } or {
@@ -2592,7 +2749,7 @@ local function drawMenu(entries)
       }
     end
     local commandLabel = "Manual command (C): "
-    local commandValue = activeEntry.cmd or ""
+    local commandValue = activeEntry.displayCommand or activeEntry.cmd or ""
     local commandLabelW = safeTextWidth(font10, commandLabel)
     local desiredCommandW = commandLabelW + safeTextWidth(font10, commandValue)
     local commandW = math.min(fullDetailW, desiredCommandW)
@@ -2611,7 +2768,8 @@ local function drawMenu(entries)
     local commandY = footerTextY + rowStep * 3
     local commandHovered = state.pointerActive
       and hit(mouse, fullDetailX, commandY, commandW, rowStep)
-    local commandColor = commandHovered and TEXT.accent or TEXT.muted
+    local commandColor = activeEntry.catalogAction == "disabled" and TEXT.warning
+      or (commandHovered and TEXT.accent or TEXT.muted)
     drawText(commandLabel, fullDetailX, commandY, 0.60,
       commandColor, commandLabelW)
     drawText(fittingInputText(commandValue, commandValueW),
@@ -2701,6 +2859,20 @@ local function onRender()
   end
 end
 
+lifecycleDispatcher.dispatch = function()
+  local request = state.lifecycleRequest
+  lifecycleDispatcher.disarm()
+  if not request then return end
+  state.lifecycleRequest = nil
+  state.lifecycleReceipt = { command = request.command, stableUpdates = 0 }
+  state.queue = nil
+  state.inputLease = nil
+  -- This one-shot callback is registered only after the request, so it is
+  -- appended after existing render callbacks. ExecuteCommand must remain the
+  -- final operation because rewind invalidates EntityPlayer userdata at once.
+  return Isaac.ExecuteCommand(request.command)
+end
+
 local function runBoundaryPending()
   local previousFrame = state.lastGameFrame
   return previousFrame ~= nil and Game():GetFrameCount() < previousFrame
@@ -2760,6 +2932,7 @@ end
 local function onGameExit()
   setMenuOpen(false)
   clearRunTransientState()
+  state.lifecycleReceipt = nil
   state.lastGameFrame = nil
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false

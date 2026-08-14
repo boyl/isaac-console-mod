@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.5"
-METADATA_VERSION = "2.5.4.5"
+DISPLAY_VERSION = "2.5.4-en.6"
+METADATA_VERSION = "2.5.4.6"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -80,6 +80,8 @@ def main() -> int:
         "main.lua",
         "metadata.xml",
         "scripts/data.lua",
+        "scripts/command_specs.lua",
+        "scripts/command_catalog.lua",
         "scripts/english_aliases.lua",
         "scripts/official_objects.lua",
         "resources/font/fusion/10.fnt",
@@ -136,6 +138,8 @@ def main() -> int:
 
     main_lua = (root / "main.lua").read_text(encoding="utf-8")
     data_lua = (root / "scripts/data.lua").read_text(encoding="utf-8")
+    command_specs_lua = (root / "scripts/command_specs.lua").read_text(encoding="utf-8")
+    command_catalog_lua = (root / "scripts/command_catalog.lua").read_text(encoding="utf-8")
     aliases_lua = (root / "scripts/english_aliases.lua").read_text(encoding="utf-8")
     objects_lua = (root / "scripts/official_objects.lua").read_text(encoding="utf-8")
     checks = {
@@ -157,9 +161,13 @@ def main() -> int:
         "long-A target lock": "state.controllerConfirmRemoveCommand = removalCommand(entry)",
         "hidden command execution": "Isaac.ExecuteCommand",
         "repeat upper bound": "1, 99",
-        "repeat whitelist": "^giveitem%s+",
+        "contract repeat bound": "spec and spec.repeatMax or 1",
         "stage whitelist": "stageCommandWhitelists",
-        "unsafe Lua blocked": "luarun = true",
+        "central command contracts": 'include("scripts.command_specs")',
+        "localized command catalog": 'include("scripts.command_catalog")',
+        "Render lifecycle request": "state.lifecycleRequest = { command = value }",
+        "post-lifecycle receipt": "local function finalizeLifecycleReceipt()",
+        "unknown command confirmation": "state.unknownCommandConfirmation ~= value",
         "input blocking": "MC_INPUT_ACTION",
         "ItemConfig removal semantics": '"AddCoins", "AddKeys", "AddBombs", "AddHearts", "AddMaxHearts"',
         "bundled 10px font": '"fusion/10.fnt"',
@@ -283,14 +291,36 @@ def main() -> int:
             fail(f"required English alias missing for ID {item_id}: {aliases.get(item_id)}")
 
     category_count = len(re.findall(r'^\s*\{ id = "[^"]+", group =', data_lua, re.M))
+    category_count += len(re.findall(r'^\s*\{ id = "[^"]+", group =', command_catalog_lua, re.M))
     item_count = len(re.findall(r'^\s*\{ id = \d+, cat =', data_lua, re.M))
     command_count = len(re.findall(r'^\s*\{ cat = "[^"]+", name = .*? cmd =', data_lua, re.M))
-    if (category_count, item_count, command_count) != (15, 74, 68):
+    command_count += len(re.findall(r'^\s*\{ commandId = "[^"]+", cat =', command_catalog_lua, re.M))
+    if (category_count, item_count, command_count) != (17, 74, 106):
         fail(f"catalog counts mismatch: {(category_count, item_count, command_count)}")
     if len(re.findall(r'^\s*\{ id = \d+, cat = .*? desc = "[^"]+"', data_lua, re.M)) != 74:
         fail("not every curated item has an English explanation")
     if len(re.findall(r'^\s*\{ cat = .*? desc = "[^"]+", cmd = "[^"]+"', data_lua, re.M)) != 68:
         fail("not every command has an English explanation")
+    if len(re.findall(r'^\s*\{ commandId = "[^"]+", cat = .*? desc = "[^"]+"', command_catalog_lua, re.M)) != 38:
+        fail("not every extended command has an English explanation")
+
+    expected_official_verbs = {
+        "spawn", "goto", "stage", "gridspawn", "debug", "giveitem", "remove",
+        "costumetest", "restart", "listcollectibles", "repeat", "clearseeds",
+        "seed", "challenge", "combo", "macro", "playsfx", "curse", "reseed",
+        "copy", "clear", "lua", "luarun", "luamod", "luamem", "metro",
+        "delirious", "restock", "rewind", "testbosspool", "reloadwisps",
+    }
+    contract_verbs = {
+        verb
+        for body in re.findall(r'verbs\s*=\s*\{(.*?)\}', command_specs_lua)
+        for verb in re.findall(r'"([a-z]+)"', body)
+    }
+    missing_verbs = sorted(expected_official_verbs - contract_verbs)
+    if missing_verbs:
+        fail(f"official command contracts missing: {missing_verbs}")
+    if not re.search(r'\{ id = "rewind".*?mode = "lifecycle".*?phase = "render"', command_specs_lua):
+        fail("rewind is not routed through the lifecycle render channel")
 
     stage_lines = re.findall(r'^\s*\{ cat = "stage".*$', data_lua, re.M)
     normal_stages = {
@@ -324,7 +354,7 @@ def main() -> int:
     if object_counts != {"trinkets": 188, "cards": 97, "pills": 50}:
         fail(f"official object counts mismatch: {object_counts}")
 
-    for path in [root / "main.lua", root / "scripts/data.lua", root / "scripts/english_aliases.lua", root / "scripts/official_objects.lua", root / "metadata.xml", root / "THIRD-PARTY-FONTS.md", root / "THIRD-PARTY-DATA.md"]:
+    for path in [root / "main.lua", root / "scripts/data.lua", root / "scripts/command_specs.lua", root / "scripts/command_catalog.lua", root / "scripts/english_aliases.lua", root / "scripts/official_objects.lua", root / "metadata.xml", root / "THIRD-PARTY-FONTS.md", root / "THIRD-PARTY-DATA.md"]:
         validate_text_is_english(path)
 
     font10 = parse_bmfont(root / "resources/font/fusion/10.fnt")

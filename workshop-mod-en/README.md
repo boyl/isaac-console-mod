@@ -14,6 +14,7 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 
 - `F6` or hold `L3`: open the menu; Mod Config Menu can change the keyboard key and turn the first-run key hint on or off.
 - Arrow keys / D-pad: move through categories and cards, crossing pages automatically.
+- Controller `LT` / `RT`: page the focused category list or entry grid.
 - Mouse: select categories, cards, search, repeat count, paging, and close controls.
 - `Enter`, left mouse button, or tap `A`: execute the selected entry.
 - Right mouse button or hold `A` for about 0.5 seconds: remove a removable collectible.
@@ -23,12 +24,15 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 - `C`: edit the current command with ASCII input.
 - `D`: page through a long effect description.
 - `-` / `+`: set a repeat count from 1 to 99.
+- Controller `LB` / `RB`: decrease or increase the repeat count.
 
 Only `giveitem` and `spawn` can repeat. Debug flags, stage warps, `kill`, and other one-shot commands are forced to a single execution.
 
 ## Catalog and EID
 
-The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 68 console commands. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. Featured starts empty and contains only objects you explicitly favorite.
+The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 106 command or command-reference entries across 17 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. Featured starts empty and contains only objects you explicitly favorite.
+
+Commands are classified by runtime safety. Lifecycle-changing commands use a one-shot final Render dispatcher, commands whose output requires the native console remain reference-only, and dangerous commands are blocked with an explicit reason. `rewind` is single-use and waits for a stable lifecycle receipt before the interface can submit another command.
 
 External Item Descriptions is optional. When EID is enabled, Console UI reads its public `en_us` tables to enrich descriptions. If EID is missing or incompatible, official game data remains available and all commands continue to work.
 
@@ -55,4 +59,3 @@ When reporting an issue, include:
 - keyboard, mouse, and controller model/path used;
 - other enabled Mods;
 - relevant `[Console UI]` lines from `log.txt`.
-

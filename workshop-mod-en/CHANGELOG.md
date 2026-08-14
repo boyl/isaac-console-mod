@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.4-en.6
+
+- Added centralized command specifications plus Run Control and Command Reference categories. Built-in commands now have explicit direct, parameter-template, lifecycle, native-console-only, or blocked contracts shared by both languages.
+- Parameter references explain their syntax on A/Enter and open an unselected tail-positioned template on C. Unknown or third-party commands require an explicit second confirmation and are always single-run.
+- Routed `restart/reseed/seed/challenge/goto/stage` through a one-shot render-phase lifecycle channel that closes the overlay and releases input before execution, avoids touching invalidated player objects afterward, and settles history only in a later stable callback.
+- `rewind` now appends a one-shot final Render dispatcher so no existing Mod Render callback can access invalidated player objects later in the same frame; command state settles only after two stable updates.
+- Native-console-output commands and Lua, exit, achievement, profiling, macro, and repeat commands now show explicit blocked reasons and never enter the execution queue.
+- Added independent command-domain, lifecycle, unknown-confirmation, and cross-language semantic regressions without changing favorites, SaveData, input roles, or Workshop identity.
+
 ## 2.5.4-en.5
 
 - Added focus-aware controller paging: LT/RT pages categories while the sidebar owns focus and pages entries while the grid owns focus; search and command editors ignore the triggers.
