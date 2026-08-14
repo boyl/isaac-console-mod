@@ -1,7 +1,7 @@
 -- Generated from the v1.3.0 curated catalog. Do not edit by hand.
 return {
   categories = {
-    { id = "featured", group = "精选", icon = "✦", name = "常用精选", desc = "只显示你主动收藏的物品。", shortDesc = "主动收藏的物品", eyebrow = "MY FAVORITES" },
+    { id = "featured", group = "精选", icon = "✦", name = "常用精选", desc = "最近收藏的条目优先显示。", shortDesc = "最近收藏的条目", eyebrow = "MY FAVORITES" },
     { id = "all_items", group = "物品", icon = "全", name = "全部收藏品", desc = "当前版本的全部收藏品", shortDesc = "当前版本全部收藏品", eyebrow = "COLLECTIBLES" },
     { id = "trinkets", group = "物品", icon = "饰", name = "饰品", desc = "官方基础饰品；给予后可移除饰品本体。", shortDesc = "给予和移除饰品", eyebrow = "TRINKETS" },
     { id = "cards", group = "物品", icon = "卡", name = "卡牌/符文", desc = "官方卡牌、符文、逆位牌和魂石；只支持单次给予。", shortDesc = "单次给予卡牌和符文", eyebrow = "CARDS & RUNES" },

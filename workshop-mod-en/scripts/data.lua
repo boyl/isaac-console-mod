@@ -1,7 +1,7 @@
 -- Independent English catalog for Console UI v2.5.2-en.2.
 return {
   categories = {
-    { id = "featured", group = "Items", icon = "*", name = "Featured", desc = "Only items you explicitly favorite appear here.", shortDesc = "Your saved favorites.", eyebrow = "MY FAVORITES" },
+    { id = "featured", group = "Items", icon = "*", name = "Featured", desc = "Your most recently favorited entries appear first.", shortDesc = "Recent favorite entries.", eyebrow = "MY FAVORITES" },
     { id = "all_items", group = "Items", icon = "ALL", name = "Collectibles", desc = "All collectibles in the current game version.", shortDesc = "All official collectibles.", eyebrow = "COLLECTIBLES" },
     { id = "trinkets", group = "Items", icon = "TR", name = "Trinkets", desc = "Official base trinkets. Granted trinkets can also be removed.", shortDesc = "Give and remove trinkets.", eyebrow = "TRINKETS" },
     { id = "cards", group = "Items", icon = "CRD", name = "Cards & Runes", desc = "Official cards, runes, reversed cards, and soul stones. Grants are single-use commands.", shortDesc = "Give cards and runes once.", eyebrow = "CARDS & RUNES" },

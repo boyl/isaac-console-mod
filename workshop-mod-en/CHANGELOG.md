@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.4-en.7
+
+- Extended Featured favorites to all 1,162 right-side entries: 1,056 official objects and 106 command or command-reference entries. Category rows remain navigation-only.
+- Added language-independent `m:` keys for command favorites without changing direct, manual, lifecycle, native-console-only, or blocked execution contracts.
+- Featured now shows newly favorited entries first. Existing saves without order metadata migrate once in the old catalog order, while removing and re-adding an entry moves it to the front.
+- Added hollow and filled pixel-star controls to every card. Clicking a star only toggles the favorite and never executes the entry; keyboard F and controller X keep their existing behavior.
+- Favorite SaveData now validates membership and ordering as one invariant, rolls both back after a failed save, drops unknown command keys at the load boundary, and remains below the 64 KiB limit even with all 1,162 entries selected.
+
 ## 2.5.4-en.6
 
 - Added centralized command specifications plus Run Control and Command Reference categories. Built-in commands now have explicit direct, parameter-template, lifecycle, native-console-only, or blocked contracts shared by both languages.

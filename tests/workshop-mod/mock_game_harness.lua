@@ -48,6 +48,7 @@ local TEST = {
   mcmSetting = nil,
   mcmSettings = {},
   spriteRenders = 0,
+  spriteColors = {},
   worldToScreenCalls = 0,
   getItemConfigCalls = 0,
   getCollectibleCalls = 0,
@@ -68,8 +69,16 @@ end
 REPENTANCE_PLUS = TEST_CONFIG.repPlus == true
 REPENTOGON = TEST_CONFIG.repentogon == true and {} or nil
 
-function Color(...) return { ... } end
-function KColor(...) return { ... } end
+function Color(...)
+  local value = { ... }
+  value.__isaacColorType = "Color"
+  return value
+end
+function KColor(...)
+  local value = { ... }
+  value.__isaacColorType = "KColor"
+  return value
+end
 function Vector(x, y) return { X = x or 0, Y = y or 0 } end
 
 local function utf8Length(value)
@@ -105,7 +114,10 @@ function Font()
     return utf8Length(value) * 6
   end
   function font:GetLineHeight() return self.lineHeight end
-  function font:DrawStringUTF8(value)
+  function font:DrawStringUTF8(value, _, _, color)
+    if color ~= nil and color.__isaacColorType ~= "KColor" then
+      error("Font:DrawStringUTF8 expected KColor")
+    end
     TEST.rendered[#TEST.rendered + 1] = tostring(value or "")
   end
   return font
@@ -115,7 +127,16 @@ function Sprite()
   local sprite = {}
   function sprite:Load() end
   function sprite:Play() end
-  function sprite:Render() TEST.spriteRenders = TEST.spriteRenders + 1 end
+  function sprite:Render()
+    if self.Color ~= nil and self.Color.__isaacColorType ~= "Color" then
+      error("Sprite:Render expected Color")
+    end
+    TEST.spriteRenders = TEST.spriteRenders + 1
+    local color = self.Color or {}
+    TEST.spriteColors[#TEST.spriteColors + 1] = table.concat({
+      tostring(color[1]), tostring(color[2]), tostring(color[3]), tostring(color[4]),
+    }, ",")
+  end
   return sprite
 end
 
@@ -398,6 +419,8 @@ local queueCommand = findUpvalue(onRender, "queueCommand")
 local queueEntry = findUpvalue(onRender, "queueEntry")
 local beginCommandInput = findUpvalue(onRender, "beginCommandInput")
 local removalCommand = findUpvalue(onRender, "removalCommand")
+local toggleFavorite = findUpvalue(onRender, "toggleFavorite")
+local saveState = findUpvalue(onRender, "saveState")
 local allEntries = findUpvalue(onRender, "allEntries")
 local runtimeCatalog = findUpvalue(visibleEntries, "Catalog")
 assertTrue(type(state) == "table", "state upvalue unavailable")
@@ -407,6 +430,8 @@ assertTrue(type(drawFavoriteStar) == "function", "drawFavoriteStar upvalue unava
 assertTrue(type(queueCommand) == "function", "queueCommand upvalue unavailable")
 assertTrue(type(removalCommand) == "function", "removalCommand upvalue unavailable")
 assertTrue(type(beginCommandInput) == "function", "beginCommandInput upvalue unavailable")
+assertTrue(type(toggleFavorite) == "function", "toggleFavorite upvalue unavailable")
+assertTrue(type(saveState) == "function", "saveState upvalue unavailable")
 
 local function clearInput()
   TEST.keyTriggers = {}
@@ -663,6 +688,14 @@ local function testUpgradeSave()
   assertTrue(state.favorites["c:260"] == true, "v2.4.2 dynamic favorite did not migrate")
   assertTrue(state.favorites["c:182"] == true, "v2.4.2 curated favorite did not migrate")
   assertEqual(#state.history, 2, "v2.4.2 history did not load")
+  openMenu()
+  state.search = ""
+  state.categoryIndex = 1
+  visibleEntries()
+  assertEqual(state.favoriteOrder[1], "c:182", "legacy favorites did not keep catalog order")
+  assertEqual(state.favoriteOrder[2], "c:260", "legacy dynamic favorite migration order differs")
+  assertTrue(contains(TEST.saveData, "favoriteOrder=recent\n"),
+    "legacy favorite order migration was not marked complete")
   enterSearch("260")
   pressKey(Keyboard.KEY_F)
   assertTrue(state.favorites["c:260"] == nil, "upgrade favorite mutation failed")
@@ -676,6 +709,7 @@ local function testSaveFailureRollback()
   enterSearch("260")
   pressKey(Keyboard.KEY_F)
   assertTrue(state.favorites["c:260"] == nil, "failed save did not roll favorite back")
+  assertEqual(#state.favoriteOrder, 0, "failed save did not roll recent favorite order back")
   assertTrue(state.toast and contains(state.toast.message, IS_ZH and "已撤销" or "reverted"),
     "save failure toast is misleading")
   assertEqual(TEST.saveAttempts, 1, "save failure attempt count differs")
@@ -1362,16 +1396,12 @@ local function testMeasuredFooterAndStars()
   local exactCommandLabel = false
   local exactCommandValue = false
   local completeHint = false
-  local emptyStar = false
-  local hoverFavoriteText = false
   local visibleRemoveButton = false
   for _, value in ipairs(TEST.rendered) do
     if value == (IS_ZH and "圣心 / Sacred Heart" or "Sacred Heart") then exactTitle = true end
     if value == (IS_ZH and "手动命令(C)：" or "Manual command (C): ") then exactCommandLabel = true end
     if value == "giveitem c182" then exactCommandValue = true end
     if contains(value, IS_ZH and "F收藏" or "F: favorite") and not contains(value, "...") then completeHint = true end
-    if value == "☆" then emptyStar = true end
-    if value == (IS_ZH and "收藏" or "Favorite") then hoverFavoriteText = true end
     if value == (IS_ZH and "移除" or "Remove") then visibleRemoveButton = true end
   end
   assertTrue(exactTitle, "detail title was truncated or duplicated")
@@ -1381,8 +1411,6 @@ local function testMeasuredFooterAndStars()
   if IS_ZH then
     assertTrue(completeHint, "footer action hint was truncated")
   end
-  assertEqual(emptyStar, false, "unfavorited cards still render an empty star")
-  assertEqual(hoverFavoriteText, false, "unfavorited cards render a favorite text action")
   assertEqual(visibleRemoveButton, false, "cards still render the redundant remove text column")
 
   local selected = visibleEntries()[1]
@@ -1431,9 +1459,16 @@ local function testMeasuredFooterAndStars()
   assertTrue(controllerRemoveHint, "controller mode did not render long-A remove help")
   assertEqual(legacyR3Hint, false, "controller help still advertises R3 removal")
   assertEqual(mouseHint, false, "controller mode still rendered mouse-only help")
+  TEST.spriteColors = {}
   local rendersBeforeStar = TEST.spriteRenders
-  drawFavoriteStar(0, 0, 20, 20)
-  assertTrue(TEST.spriteRenders > rendersBeforeStar, "favorite pixel star rendered no geometry")
+  drawFavoriteStar(0, 0, 20, 20, false)
+  local hollowStarRenders = TEST.spriteRenders - rendersBeforeStar
+  assertTrue(hollowStarRenders > 0, "hollow favorite pixel star rendered no geometry")
+  local hollowColors = table.concat(TEST.spriteColors, "|")
+  TEST.spriteColors = {}
+  drawFavoriteStar(0, 0, 20, 20, true)
+  local filledColors = table.concat(TEST.spriteColors, "|")
+  assertTrue(filledColors ~= hollowColors, "filled favorite star is not visually distinct from the hollow state")
 
   state.search = ""
   state.categoryIndex = 1
@@ -1453,7 +1488,8 @@ local function testMeasuredFooterAndStars()
   local emptyTitle, emptyHint = false, false
   for _, value in ipairs(TEST.rendered) do
     if value == (IS_ZH and "暂无收藏" or "No favorites yet") then emptyTitle = true end
-    if value == (IS_ZH and "请在其他分类按 F / X 添加" or "Press F / X in another category to add one") then emptyHint = true end
+    if value == (IS_ZH and "请在其他分类按 F / X 或点击星标添加"
+        or "Press F / X or click a star") then emptyHint = true end
   end
   assertTrue(emptyTitle and emptyHint, "empty featured guidance was not rendered")
 end
@@ -1873,7 +1909,7 @@ local function testCategoryDescriptionMatrix()
   onStarted()
   openMenu()
   local expected = IS_ZH and {
-    featured = { "只显示你主动收藏的物品。", "主动收藏的物品" },
+    featured = { "最近收藏的条目优先显示。", "最近收藏的条目" },
     all_items = { "当前版本的全部收藏品", "当前版本全部收藏品" },
     trinkets = { "官方基础饰品；给予后可移除饰品本体。", "给予和移除饰品" },
     cards = { "官方卡牌、符文、逆位牌和魂石；只支持单次给予。", "单次给予卡牌和符文" },
@@ -1891,7 +1927,7 @@ local function testCategoryDescriptionMatrix()
     run_control = { "安全执行调试开关、刷新及会重建游戏对象的运行命令。", "调试、刷新与运行控制" },
     command_reference = { "官方命令语法参考；参数命令需按 C 补全，禁用项只供查阅。", "官方语法与安全状态" },
   } or {
-    featured = { "Only items you explicitly favorite appear here.", "Your saved favorites." },
+    featured = { "Your most recently favorited entries appear first.", "Recent favorite entries." },
     all_items = { "All collectibles in the current game version.", "All official collectibles." },
     trinkets = { "Official base trinkets. Granted trinkets can also be removed.", "Give and remove trinkets." },
     cards = { "Official cards, runes, reversed cards, and soul stones. Grants are single-use commands.", "Give cards and runes once." },
@@ -2437,6 +2473,145 @@ local function findObject(key)
   return nil
 end
 
+local function testAllEntryFavorites()
+  onStarted()
+  openMenu()
+
+  local entriesByKey = {}
+  local commandCount, objectCount = 0, 0
+  for _, entry in ipairs(allEntries) do
+    local key = entry.objectKey
+    assertTrue(entry.canFavorite == true, "catalog entry is not favoriteable: " .. tostring(key))
+    assertTrue(type(key) == "string" and key ~= "", "catalog entry has no stable favorite key")
+    assertTrue(entriesByKey[key] == nil, "duplicate catalog favorite key: " .. key)
+    entriesByKey[key] = entry
+    if entry.kind == "command" then commandCount = commandCount + 1
+    else objectCount = objectCount + 1 end
+  end
+  assertEqual(#allEntries, 1162, "complete favoriteable catalog count differs")
+  assertEqual(objectCount, 1056, "official object favorite count differs")
+  assertEqual(commandCount, 106, "command favorite count differs")
+
+  local expectedCommands = {
+    { "m:debug:execute:any:debug%2012", "execute" },
+    { "m:rewind:execute:any:rewind", "execute" },
+    { "m:goto:manual:any:-", "manual" },
+    { "m:lua:disabled:any:-", "disabled" },
+    { "m:stage:execute:normal:stage%201", "execute" },
+    { "m:stage:execute:greed:stage%201", "execute" },
+  }
+  for _, expected in ipairs(expectedCommands) do
+    local entry = entriesByKey[expected[1]]
+    assertTrue(entry ~= nil, "language-independent command favorite key missing: " .. expected[1])
+    assertEqual(entry.catalogAction, expected[2], "favoriting changed command permission: " .. expected[1])
+  end
+
+  local recentSequence = {
+    "m:debug:execute:any:debug%2012",
+    "m:goto:manual:any:-",
+    "m:lua:disabled:any:-",
+    "m:rewind:execute:any:rewind",
+  }
+  for _, key in ipairs(recentSequence) do toggleFavorite(entriesByKey[key]) end
+  for index, key in ipairs({
+      "m:rewind:execute:any:rewind",
+      "m:lua:disabled:any:-",
+      "m:goto:manual:any:-",
+      "m:debug:execute:any:debug%2012",
+    }) do
+    assertEqual(state.favoriteOrder[index], key, "recent favorite order differs at " .. index)
+  end
+  assertTrue(contains(TEST.saveData, "favoriteOrder=recent\n"), "recent favorite marker was not saved")
+
+  local gotoEntry = entriesByKey["m:goto:manual:any:-"]
+  toggleFavorite(gotoEntry)
+  toggleFavorite(gotoEntry)
+  assertEqual(state.favoriteOrder[1], gotoEntry.objectKey,
+    "removing and re-adding a favorite did not move it to the front")
+
+  local disabledEntry = entriesByKey["m:lua:disabled:any:-"]
+  local executedBeforeDisabled = #TEST.executed
+  assertEqual(queueEntry(disabledEntry, 99), false, "favorited disabled command entered the queue")
+  assertEqual(#TEST.executed, executedBeforeDisabled, "favorited disabled command executed")
+  assertEqual(queueEntry(gotoEntry, 99), false, "favorited parameter reference entered the execution queue")
+  assertEqual(state.inputMode, nil, "favorited parameter reference bypassed the C-key editor gate")
+  assertTrue(state.toast ~= nil, "favorited parameter reference did not retain its C-key guidance")
+
+  state.search = "costumetest"
+  state.page = 1
+  state.selection = 1
+  state.sidebarFocus = false
+  local costumeResults = visibleEntries()
+  assertEqual(#costumeResults, 1, "costumetest search is not unique for input favorite test")
+  local costumeKey = costumeResults[1].objectKey
+  pressKey(Keyboard.KEY_F)
+  assertTrue(state.favorites[costumeKey] == true, "keyboard F did not favorite a command entry")
+  pressButton(TEST_CONFIG.physicalFavoriteButton or Controller.BUTTON_X)
+  assertTrue(state.favorites[costumeKey] == nil, "controller X did not unfavorite a command entry")
+  pressButton(TEST_CONFIG.physicalFavoriteButton or Controller.BUTTON_X)
+  assertTrue(state.favorites[costumeKey] == true, "controller X did not re-favorite a command entry")
+
+  local normalStageKey = "m:stage:execute:normal:stage%201"
+  local greedStageKey = "m:stage:execute:greed:stage%201"
+  toggleFavorite(entriesByKey[normalStageKey])
+  toggleFavorite(entriesByKey[greedStageKey])
+  state.categoryIndex = 1
+  state.search = ""
+  TEST_CONFIG.greedMode = false
+  local normalVisible = {}
+  for _, entry in ipairs(visibleEntries()) do normalVisible[entry.objectKey] = true end
+  assertTrue(normalVisible[normalStageKey] == true and normalVisible[greedStageKey] == nil,
+    "normal mode did not filter mode-specific stage favorites")
+  TEST_CONFIG.greedMode = true
+  local greedVisible = {}
+  for _, entry in ipairs(visibleEntries()) do greedVisible[entry.objectKey] = true end
+  assertTrue(greedVisible[normalStageKey] == nil and greedVisible[greedStageKey] == true,
+    "Greed mode did not filter mode-specific stage favorites")
+  TEST_CONFIG.greedMode = false
+
+  state.search = "restock"
+  state.page = 1
+  state.selection = 1
+  state.sidebarFocus = false
+  local restockResults = visibleEntries()
+  assertEqual(#restockResults, 1, "restock search is not unique for mouse favorite test")
+  local restockKey = restockResults[1].objectKey
+  assertTrue(state.favorites[restockKey] == nil, "mouse favorite test entry was already selected")
+  local layout = computeLayout(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+  local executedBeforeMouse = #TEST.executed
+  clickMouse(layout.contentX + layout.cardW - math.floor(layout.starW / 2),
+    layout.gridY + math.floor(layout.cardH / 2), 0)
+  assertTrue(state.favorites[restockKey] == true, "hollow star click did not add favorite")
+  assertEqual(#TEST.executed, executedBeforeMouse, "star click also executed its command entry")
+  clickMouse(layout.contentX + layout.cardW - math.floor(layout.starW / 2),
+    layout.gridY + math.floor(layout.cardH / 2), 0)
+  assertTrue(state.favorites[restockKey] == nil, "filled star click did not remove favorite")
+  assertEqual(#TEST.executed, executedBeforeMouse, "unfavorite star click executed its command entry")
+
+  TEST.saveData = "version=" .. TEST_CONFIG.expectedVersion
+    .. "\nfavoriteOrder=recent\nfavorites=m:removed:disabled:any:-,c:182\nhistory="
+  state.loaded = false
+  onStarted()
+  assertTrue(state.favorites["m:removed:disabled:any:-"] == nil,
+    "unknown command favorite key survived the load boundary")
+  assertTrue(state.favorites["c:182"] == true and state.favoriteOrder[1] == "c:182",
+    "unknown command favorite cleanup removed a valid favorite")
+  assertTrue(not contains(TEST.saveData, "m:removed:disabled:any:-"),
+    "unknown command favorite key was not removed from SaveData")
+
+  state.favorites = {}
+  state.favoriteOrder = {}
+  for _, entry in ipairs(allEntries) do
+    state.favorites[entry.objectKey] = true
+    state.favoriteOrder[#state.favoriteOrder + 1] = entry.objectKey
+  end
+  local saved, saveError = saveState()
+  assertTrue(saved, "complete favorite catalog did not serialize: " .. tostring(saveError))
+  assertTrue(#TEST.saveData < 65536, "complete 1162-entry favorite payload exceeds 64 KiB")
+  assertTrue(contains(TEST.saveData, "favorites=" .. state.favoriteOrder[1]),
+    "complete favorite payload did not preserve explicit order")
+end
+
 local function searchContains(query, key)
   state.search = query
   for _, entry in ipairs(visibleEntries()) do
@@ -2551,6 +2726,7 @@ local scenarios = {
   ctrl_a_isolation = testCtrlAIsolation,
   mcm_settings_254 = testMcmSettings254,
   official_objects = testOfficialObjects,
+  all_entry_favorites = testAllEntryFavorites,
   command_editor = testCommandEditorAndHistory,
   editable_text_confirm_collision = testEditableTextConfirmCollision,
   pause_suspension = testPauseSuspension,

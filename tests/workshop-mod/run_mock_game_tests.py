@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.6"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.7"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -123,6 +123,14 @@ def scenarios() -> list[dict[str, object]]:
                 "label": "1056 official objects and typed favorites EID-on",
                 "repPlus": True,
                 "eid": True,
+            },
+            {
+                "scenario": "all_entry_favorites",
+                "label": "1162 stable favorite keys recent order mouse isolation and 64 KiB budget",
+                "repPlus": True,
+                "eid": True,
+                "screenWidth": 1280,
+                "screenHeight": 720,
             },
             {
                 "scenario": "idle_restarts",

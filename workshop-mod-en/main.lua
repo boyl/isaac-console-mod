@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.6"
+local VERSION = "2.5.4-en.7"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -81,6 +81,7 @@ local COLORS = {
   selected = Color(0.425, 0.160, 0.220, 1.00, 0, 0, 0),
   accent = Color(0.930, 0.300, 0.390, 1.00, 0, 0, 0),
   gold = Color(0.720, 0.450, 0.160, 1.00, 0, 0, 0),
+  favoriteOff = Color(0.690, 0.580, 0.620, 1.00, 0, 0, 0),
   disabled = Color(0.255, 0.225, 0.235, 1.00, 0, 0, 0),
   shadow = Color(0.000, 0.000, 0.000, 0.45, 0, 0, 0),
 }
@@ -248,6 +249,8 @@ local state = {
   initialMenuFocusResolved = false,
   repeatCount = 1,
   favorites = {},
+  favoriteOrder = {},
+  favoriteOrderNeedsCatalogMigration = false,
   history = {},
   search = "",
   inputMode = nil,
@@ -390,6 +393,7 @@ local allEntries = {}
 local completeEntries = {}
 local completeCatalogLoaded = false
 local knownItemIds = {}
+local FavoriteModel = { catalogReady = false, entryByKey = {} }
 local stageCommandWhitelists = { normal = {}, greed = {} }
 local officialGrantCache = {}
 local sharedItemConfig = nil
@@ -413,6 +417,34 @@ end
 
 local function objectKey(objectType, id)
   return tostring(objectType or "") .. ":" .. tostring(id or "")
+end
+
+function FavoriteModel.canonicalCommandText(value)
+  return tostring(value or ""):lower():match("^%s*(.-)%s*$"):gsub("%s+", " ")
+end
+
+function FavoriteModel.encodeFavoriteSegment(value)
+  return (tostring(value or ""):gsub("([^%w._%-])", function(char)
+    return string.format("%%%02X", string.byte(char))
+  end))
+end
+
+function FavoriteModel.commandFavoriteKey(command, spec)
+  local action = command.catalogAction
+  assert(action == "execute" or action == "manual" or action == "disabled",
+    "invalid favorite command action: " .. tostring(action))
+  local mode = command.cat == "stage"
+    and (command.stageMode == "greed" and "greed" or "normal") or "any"
+  local commandText = action == "execute" and FavoriteModel.canonicalCommandText(command.cmd) or "-"
+  return table.concat({
+    "m", FavoriteModel.encodeFavoriteSegment(spec.id), action, mode, FavoriteModel.encodeFavoriteSegment(commandText),
+  }, ":")
+end
+
+function FavoriteModel.registerEntry(entry)
+  local key = assert(entry and entry.objectKey, "favorite entry key is missing")
+  assert(not FavoriteModel.entryByKey[key], "duplicate favorite entry key: " .. key)
+  FavoriteModel.entryByKey[key] = entry
 end
 
 local function normalizeSearchText(value)
@@ -446,6 +478,7 @@ for _, item in ipairs(Catalog.items) do
   item.canRemove = true
   item.repeatMax = 99
   item.searchText = buildSearchText(item)
+  FavoriteModel.registerEntry(item)
   knownItemIds[item.id] = true
   allEntries[#allEntries + 1] = item
 end
@@ -460,10 +493,12 @@ for _, command in ipairs(Catalog.commands) do
   command.commandTemplate = spec.template
   command.displayCommand = spec.syntax
   command.kind = "command"
-  command.canFavorite = false
+  command.objectKey = FavoriteModel.commandFavoriteKey(command, spec)
+  command.canFavorite = true
   command.canRemove = tostring(command.cmd or ""):match("^giveitem%s+c%d+%s*$") ~= nil
   command.repeatMax = tonumber(command.repeatMax) or spec.repeatMax or 1
   command.searchText = buildSearchText(command)
+  FavoriteModel.registerEntry(command)
   if command.cat == "stage" then
     local mode = command.stageMode == "greed" and "greed" or "normal"
     stageCommandWhitelists[mode][tostring(command.cmd or ""):lower()] = true
@@ -605,6 +640,7 @@ local function loadCompleteCatalog()
           descSource = eidDescription and "EID" or "game",
         }
         entry.searchText = buildSearchText(entry)
+        FavoriteModel.registerEntry(entry)
         completeEntries[#completeEntries + 1] = entry
         allEntries[#allEntries + 1] = entry
       end
@@ -663,6 +699,7 @@ local function loadCompleteCatalog()
             descSource = eidDescription and "EID" or "game",
           }
           entry.searchText = buildSearchText(entry)
+          FavoriteModel.registerEntry(entry)
           allEntries[#allEntries + 1] = entry
           objectCounts[spec.objectType] = objectCounts[spec.objectType] + 1
         end
@@ -677,6 +714,7 @@ local function loadCompleteCatalog()
     end
     return (a.id or 0) < (b.id or 0)
   end)
+  FavoriteModel.catalogReady = true
   debugLog("complete catalog loaded: " .. #completeEntries .. " collectibles; EID en_us names="
     .. eidNames .. " descriptions=" .. eidDescriptions
     .. "; trinkets=" .. objectCounts.t .. " cards=" .. objectCounts.k
@@ -727,11 +765,43 @@ local FAVORITE_ID_LIMITS = {
 }
 
 local function validFavoriteKey(value)
-  local code, idText = tostring(value or ""):match("^([ctkp]):(%d+)$")
+  local text = tostring(value or "")
+  local code, idText = text:match("^([ctkp]):(%d+)$")
   local limits = code and FAVORITE_ID_LIMITS[code] or nil
   local id = tonumber(idText)
-  if not limits or not id or id < limits[1] or id > limits[2] then return nil end
-  return objectKey(code, id), code, id
+  if limits and id and id >= limits[1] and id <= limits[2] then
+    return objectKey(code, id), code, id
+  end
+  local entry = FavoriteModel.entryByKey[text]
+  if entry and entry.kind == "command" then return text, "m" end
+  return nil
+end
+
+function FavoriteModel.orderIndex(key)
+  for index, value in ipairs(state.favoriteOrder) do
+    if value == key then return index end
+  end
+  return nil
+end
+
+function FavoriteModel.orderedKeys()
+  assert(#state.favoriteOrder <= MAX_FAVORITES, "favorite order exceeds the configured limit")
+  local result, seen = {}, {}
+  for _, key in ipairs(state.favoriteOrder) do
+    local normalized = validFavoriteKey(key)
+    assert(normalized == key, "favorite order contains an invalid key: " .. tostring(key))
+    assert(state.favorites[key] == true, "favorite order contains a disabled key: " .. key)
+    assert(not seen[key], "favorite order contains a duplicate key: " .. key)
+    seen[key] = true
+    result[#result + 1] = key
+  end
+  for key, enabled in pairs(state.favorites) do
+    if enabled then
+      assert(validFavoriteKey(key) == key, "favorite state contains an invalid key: " .. tostring(key))
+      assert(seen[key], "favorite state is missing from recent order: " .. key)
+    end
+  end
+  return result
 end
 
 local function debugStateStats(label, rawBytes)
@@ -750,15 +820,7 @@ local function debugStateStats(label, rawBytes)
 end
 
 local function saveState()
-  local favoriteKeys = {}
-  for key, enabled in pairs(state.favorites) do
-    local normalized = validFavoriteKey(key)
-    if enabled and normalized then
-      favoriteKeys[#favoriteKeys + 1] = normalized
-    end
-  end
-  table.sort(favoriteKeys)
-  while #favoriteKeys > MAX_FAVORITES do table.remove(favoriteKeys) end
+  local favoriteKeys = FavoriteModel.orderedKeys()
 
   local history = {}
   for index = 1, math.min(#state.history, MAX_HISTORY) do
@@ -769,6 +831,7 @@ local function saveState()
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
+      .. (state.favoriteOrderNeedsCatalogMigration and "" or "favoriteOrder=recent\n")
       .. "favorites=" .. table.concat(favoriteKeys, ",") .. "\n"
       .. "history=" .. table.concat(history, "|")
   if #payload > MAX_SAVE_BYTES then
@@ -788,6 +851,8 @@ local function loadState()
   if state.loaded then return end
   state.loaded = true
   state.favorites = {}
+  state.favoriteOrder = {}
+  state.favoriteOrderNeedsCatalogMigration = false
   state.history = {}
   state.openKey = DEFAULT_OPEN_KEY
   state.startupHintEnabled = true
@@ -835,6 +900,13 @@ local function loadState()
       migrated = true
     end
   end
+  local favoriteOrderMode = parseRaw:match("favoriteOrder=([^\n]*)")
+  if favoriteOrderMode == "recent" then
+    state.favoriteOrderNeedsCatalogMigration = false
+  else
+    state.favoriteOrderNeedsCatalogMigration = true
+    if favoriteOrderMode ~= nil then migrated = true end
+  end
   local favorites = parseRaw:match("favorites=([^\n]*)") or ""
   local favoriteCount = 0
   for token in favorites:gmatch("([^,]+)") do
@@ -848,6 +920,7 @@ local function loadState()
     end
     if key and not state.favorites[key] then
       state.favorites[key] = true
+      state.favoriteOrder[#state.favoriteOrder + 1] = key
       favoriteCount = favoriteCount + 1
       if favoriteCount >= MAX_FAVORITES then
         migrated = true
@@ -872,6 +945,32 @@ local function loadState()
     local saved, err = saveState()
     if not saved then debugLog("state compaction failed: " .. tostring(err)) end
   end
+end
+
+function FavoriteModel.finalizeOrder(forceAvailableCatalog)
+  if not state.favoriteOrderNeedsCatalogMigration then return end
+  if not FavoriteModel.catalogReady and not forceAvailableCatalog then return end
+  if not FavoriteModel.catalogReady then
+    debugLog("favorite order migration used the available partial catalog")
+  end
+  local ordered, seen = {}, {}
+  for _, entry in ipairs(allEntries) do
+    local key = entry.objectKey
+    if key and state.favorites[key] and not seen[key] then
+      ordered[#ordered + 1] = key
+      seen[key] = true
+    end
+  end
+  local unavailable = {}
+  for key, enabled in pairs(state.favorites) do
+    if enabled and not seen[key] then unavailable[#unavailable + 1] = key end
+  end
+  table.sort(unavailable)
+  for _, key in ipairs(unavailable) do ordered[#ordered + 1] = key end
+  state.favoriteOrder = ordered
+  state.favoriteOrderNeedsCatalogMigration = false
+  local saved, err = saveState()
+  if not saved then debugLog("favorite order migration save failed: " .. tostring(err)) end
 end
 
 local function clearRunTransientState()
@@ -1381,12 +1480,23 @@ local function visibleEntries()
     -- commands, and IDs all work regardless of the selected category.
     for _, entry in ipairs(allEntries) do result[#result + 1] = entry end
   elseif category.id == "featured" then
+    FavoriteModel.finalizeOrder()
     local seen = {}
-    for _, entry in ipairs(allEntries) do
-      local key = entry.objectKey
-      if entry.canFavorite and key and state.favorites[key] and not seen[key] then
-        result[#result + 1] = entry
-        seen[key] = true
+    if state.favoriteOrderNeedsCatalogMigration then
+      for _, entry in ipairs(allEntries) do
+        local key = entry.objectKey
+        if entry.canFavorite and key and state.favorites[key] and not seen[key] then
+          result[#result + 1] = entry
+          seen[key] = true
+        end
+      end
+    else
+      for _, key in ipairs(state.favoriteOrder) do
+        local entry = FavoriteModel.entryByKey[key]
+        if entry and state.favorites[key] and not seen[key] then
+          result[#result + 1] = entry
+          seen[key] = true
+        end
       end
     end
   elseif category.id == "all_items" then
@@ -1466,18 +1576,34 @@ end
 local function toggleFavorite(entry)
   local key = entry and entry.objectKey or nil
   if not entry or not entry.canFavorite or not key then
-    showToast("Only catalog objects can be favorited", TEXT.warning, 75)
+    showToast("This entry cannot be favorited", TEXT.warning, 75)
     return
   end
+  FavoriteModel.finalizeOrder(true)
   local wasFavorite = state.favorites[key] == true
+  local previousIndex = FavoriteModel.orderIndex(key)
+  assert((previousIndex ~= nil) == wasFavorite, "favorite state and recent order differ: " .. key)
   if wasFavorite then
     state.favorites[key] = nil
+    table.remove(state.favoriteOrder, previousIndex)
   else
+    if #state.favoriteOrder >= MAX_FAVORITES then
+      showToast("Favorite limit reached", TEXT.warning, 120)
+      return
+    end
     state.favorites[key] = true
+    table.insert(state.favoriteOrder, 1, key)
   end
   local saved, saveError = saveState()
   if not saved then
-    state.favorites[key] = wasFavorite and true or nil
+    if wasFavorite then
+      state.favorites[key] = true
+      table.insert(state.favoriteOrder, previousIndex, key)
+    else
+      state.favorites[key] = nil
+      assert(state.favoriteOrder[1] == key, "new favorite moved before rollback")
+      table.remove(state.favoriteOrder, 1)
+    end
     showToast("Favorite could not be saved; the change was reverted", TEXT.warning, 150)
     debugLog("favorite save failed: " .. tostring(saveError))
     return
@@ -2134,7 +2260,17 @@ local FAVORITE_STAR_SPANS = {
   { 2, 5 }, { 1, 2, 6, 2 }, { 0, 2, 7, 2 }, { 0, 1, 8, 1 },
 }
 
-local function drawFavoriteStar(x, y, width, height)
+local FAVORITE_STAR_CELLS = {}
+for row, spans in ipairs(FAVORITE_STAR_SPANS) do
+  FAVORITE_STAR_CELLS[row] = {}
+  for index = 1, #spans, 2 do
+    for column = spans[index], spans[index] + spans[index + 1] - 1 do
+      FAVORITE_STAR_CELLS[row][column] = true
+    end
+  end
+end
+
+local function drawFavoriteStar(x, y, width, height, filled)
   local cell = 1
   local starW, starH = 9, #FAVORITE_STAR_SPANS
   local startX = math.floor(x + (width - starW) / 2)
@@ -2145,10 +2281,25 @@ local function drawFavoriteStar(x, y, width, height)
         spans[index + 1] * cell + 2, cell + 2, COLORS.panel)
     end
   end
-  for row, spans in ipairs(FAVORITE_STAR_SPANS) do
-    for index = 1, #spans, 2 do
-      drawRect(startX + spans[index] * cell, startY + (row - 1) * cell,
-        spans[index + 1] * cell, cell, COLORS.gold)
+  if filled then
+    for row, spans in ipairs(FAVORITE_STAR_SPANS) do
+      for index = 1, #spans, 2 do
+        drawRect(startX + spans[index] * cell, startY + (row - 1) * cell,
+          spans[index + 1] * cell, cell, COLORS.gold)
+      end
+    end
+  else
+    for row, columns in ipairs(FAVORITE_STAR_CELLS) do
+      local previous = FAVORITE_STAR_CELLS[row - 1]
+      local following = FAVORITE_STAR_CELLS[row + 1]
+      for column = 0, starW - 1 do
+        if columns[column] and not (previous and previous[column]
+            and following and following[column]
+            and columns[column - 1] and columns[column + 1]) then
+          drawRect(startX + column * cell, startY + (row - 1) * cell,
+            cell, cell, COLORS.favoriteOff)
+        end
+      end
     end
   end
 end
@@ -2545,7 +2696,7 @@ local function drawMenu(entries)
   local pageStart = (state.page - 1) * ITEMS_PER_PAGE
   if #entries == 0 and category.id == "featured" then
     drawText("No favorites yet", L.contentX, L.gridY + L.cardH, 0.72, TEXT.main, L.contentW, true)
-    drawText("Press F / X in another category to add one", L.contentX,
+    drawText("Press F / X or click a star", L.contentX,
       L.gridY + L.cardH + L.line12 + L.pad, 0.60, TEXT.muted, L.contentW, true)
   end
   for localIndex = 1, ITEMS_PER_PAGE do
@@ -2567,7 +2718,7 @@ local function drawMenu(entries)
       local removeCommand = removalCommand(entry)
       local isFavorite = entry.canFavorite and entry.objectKey
         and state.favorites[entry.objectKey] == true
-      local favoriteW = isFavorite and L.starW or 0
+      local favoriteW = entry.canFavorite and L.starW or 0
       local favoriteX = x + L.cardW - favoriteW
       drawText(entry.icon or "?", iconX, textY, 0.60,
         entryDisabled and TEXT.muted or (entry.tier == "S" and TEXT.accent or TEXT.gold), L.iconW, true)
@@ -2575,7 +2726,7 @@ local function drawMenu(entries)
         entryDisabled and TEXT.muted or TEXT.main,
         math.max(1, favoriteX - (iconX + L.iconW + L.pad) - L.pad))
       if favoriteW > 0 then
-        drawFavoriteStar(favoriteX, y, favoriteW, L.cardH)
+        drawFavoriteStar(favoriteX, y, favoriteW, L.cardH, isFavorite)
       end
       if hovered then
         state.selection = localIndex
@@ -2702,22 +2853,34 @@ local function drawMenu(entries)
     end
     local controllerMode = state.controlMode == "controller"
     local pageHint = not controllerMode and effectPageCount > 1 and " · D: details" or ""
-    local favoriteHint = not activeEntry.canFavorite and "" or (controllerMode
-      and (state.favorites[activeEntry.objectKey] and "X: unfavorite" or "X: favorite")
-      or (state.favorites[activeEntry.objectKey] and "F: unfavorite" or "F: favorite"))
-    local favoriteShort = not activeEntry.canFavorite and "" or (controllerMode
-      and (state.favorites[activeEntry.objectKey] and "X:-fav" or "X:+fav")
-      or (state.favorites[activeEntry.objectKey] and "F:-fav" or "F:+fav"))
-    local favoriteTiny = not activeEntry.canFavorite and "" or (controllerMode
-      and (state.favorites[activeEntry.objectKey] and "X-" or "X+")
-      or (state.favorites[activeEntry.objectKey] and "F-" or "F+"))
+    local isFavorite = state.favorites[activeEntry.objectKey] == true
+    local favoriteHint, favoriteShort, favoriteTiny = "", "", ""
+    if activeEntry.canFavorite then
+      if controllerMode then
+        favoriteHint = isFavorite and "X: unfavorite" or "X: favorite"
+        favoriteShort = isFavorite and "X:-fav" or "X:+fav"
+        favoriteTiny = isFavorite and "X-" or "X+"
+      elseif state.controlMode == "mouse" then
+        favoriteHint = isFavorite and "Click star: unfavorite" or "Click star: favorite"
+        favoriteShort = isFavorite and "Star:-fav" or "Star:+fav"
+        favoriteTiny = isFavorite and "Star-" or "Star+"
+      else
+        favoriteHint = isFavorite and "F: unfavorite" or "F: favorite"
+        favoriteShort = isFavorite and "F:-fav" or "F:+fav"
+        favoriteTiny = isFavorite and "F-" or "F+"
+      end
+    end
     local hintCandidates
     if activeEntry.catalogAction == "disabled" then
-      hintCandidates = controllerMode and { "Disabled · B: back", "Disabled" }
-        or { "Disabled · reference only", "Disabled" }
+      hintCandidates = favoriteHint == "" and (controllerMode
+        and { "Disabled · B: back", "Disabled" }
+        or { "Disabled · reference only", "Disabled" })
+        or { "Disabled · " .. favoriteHint, favoriteHint, favoriteShort, "Disabled" }
     elseif activeEntry.catalogAction == "manual" then
-      hintCandidates = controllerMode and { "Press C to complete · B: back", "C: complete" }
-        or { "Enter: info · C: complete parameters", "C: complete" }
+      hintCandidates = favoriteHint == "" and (controllerMode
+        and { "Press C to complete · B: back", "C: complete" }
+        or { "Enter: info · C: complete parameters", "C: complete" })
+        or { "C: complete · " .. favoriteHint, favoriteHint, favoriteShort, "C: complete" }
     elseif controllerMode and removalCommand(activeEntry) then
       hintCandidates = favoriteHint == "" and {
         "Tap A: give · Hold A: remove", "A: give/hold remove", "Hold A: remove",
@@ -2744,8 +2907,11 @@ local function drawMenu(entries)
         favoriteShort .. pageHint,
       }
     else
-      hintCandidates = {
+      hintCandidates = favoriteHint == "" and {
         "LMB: run" .. pageHint, "Run" .. pageHint,
+      } or {
+        "LMB: run · " .. favoriteHint .. pageHint,
+        favoriteHint .. pageHint, favoriteShort .. pageHint, "Run" .. pageHint,
       }
     end
     local commandLabel = "Manual command (C): "

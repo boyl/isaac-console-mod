@@ -15,7 +15,8 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 [*]Mode-aware stage safety lists: 45 Normal/Hard destinations and 7 Greed/Greedier destinations
 [*]Unified keyboard, mouse, and controller support across Repentance, Repentance+, and REPENTOGON, including focus-aware LT/RT paging
 [*]On the first menu open of each process, an empty Featured view starts on the first Collectibles entry; D-pad navigation prefers runtime menu actions with raw fallback
-[*]Featured favorites, recent commands, and global search; C opens manual command entry, Up/Down recalls command history, and Ctrl+A selects focused text
+[*]All 1,162 object and command entries can be favorited; Featured shows the most recent favorites first without changing command permissions
+[*]F, controller X, and hollow/filled mouse stars toggle favorites; C opens manual commands and Up/Down recalls command history
 [*]Complete official collectible, trinket, card/rune, and pill-effect catalogs loaded lazily
 [*]Optional EID en_us descriptions, with ItemConfig fallback
 [*]Optional Mod Config Menu settings for the keyboard open key, controller favorite key, and startup key hint
@@ -41,7 +42,7 @@ Console UI and Isaac Chinese Console both use F6 and L3. Install both if you wis
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 If you report a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.6</version>
+    <version>2.5.4.7</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

@@ -15,10 +15,10 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 - `F6` or hold `L3`: open the menu; Mod Config Menu can change the keyboard key and turn the first-run key hint on or off.
 - Arrow keys / D-pad: move through categories and cards, crossing pages automatically.
 - Controller `LT` / `RT`: page the focused category list or entry grid.
-- Mouse: select categories, cards, search, repeat count, paging, and close controls.
+- Mouse: select categories, cards, hollow/filled favorite stars, search, repeat count, paging, and close controls.
 - `Enter`, left mouse button, or tap `A`: execute the selected entry.
 - Right mouse button or hold `A` for about 0.5 seconds: remove a removable collectible.
-- `F` or controller `X`: add or remove a collectible from Featured. MCM can optionally bind a different controller favorite button.
+- `F` or controller `X`: add or remove the current entry from Featured. MCM can optionally bind a different controller favorite button.
 - `/`: search by official English name, common alias, command, or numeric ID.
 - `Ctrl+A` while the search box is focused: select the full query; the next character replaces it, while Backspace/Delete clears it.
 - `C`: edit the current command with ASCII input.
@@ -30,7 +30,7 @@ Only `giveitem` and `spawn` can repeat. Debug flags, stage warps, `kill`, and ot
 
 ## Catalog and EID
 
-The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 106 command or command-reference entries across 17 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. Featured starts empty and contains only objects you explicitly favorite.
+The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 106 command or command-reference entries across 17 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. All 1,162 right-side entries can be favorited, and Featured shows the most recently favorited entry first. Favoriting a blocked or reference-only command never changes its execution permission.
 
 Commands are classified by runtime safety. Lifecycle-changing commands use a one-shot final Render dispatcher, commands whose output requires the native console remain reference-only, and dangerous commands are blocked with an explicit reason. `rewind` is single-use and waits for a stable lifecycle receipt before the interface can submit another command.
 

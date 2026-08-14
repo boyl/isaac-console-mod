@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.6"
-METADATA_VERSION = "2.5.4.6"
+DISPLAY_VERSION = "2.5.4-en.7"
+METADATA_VERSION = "2.5.4.7"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -185,6 +185,10 @@ def main() -> int:
         "complete game catalog": "loadCompleteCatalog()",
         "official object catalog": 'include("scripts.official_objects")',
         "typed favorites": 'local function validFavoriteKey(value)',
+        "command favorite keys": "function FavoriteModel.commandFavoriteKey(command, spec)",
+        "favorite key registry": "function FavoriteModel.registerEntry(entry)",
+        "recent favorite ordering": "function FavoriteModel.finalizeOrder(forceAvailableCatalog)",
+        "favorite membership/order invariant": "favorite state is missing from recent order",
         "user-only Featured": 'if #entries == 0 and category.id == "featured" then',
         "optional MCM keybind": 'ModConfigMenu.OptionType.KEYBIND_KEYBOARD',
         "optional MCM controller favorite": 'ModConfigMenu.OptionType.KEYBIND_CONTROLLER',
@@ -218,6 +222,7 @@ def main() -> int:
         "duplicate-name suppression": 'activeEntry.en ~= detailTitle',
         "favorite save rollback": "Favorite could not be saved; the change was reverted",
         "favorite marker": "local function drawFavoriteStar(",
+        "favorite marker on every card": "local favoriteW = entry.canFavorite and L.starW or 0",
         "queue clamp": "queue.total = clamp(math.floor(rawTotal), 1, 99)",
         "queue completion guard": "if not queue or queue.finished then return end",
     }
@@ -258,6 +263,7 @@ def main() -> int:
         '"openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY)',
         '"startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1")',
         '"controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto")',
+        '"favoriteOrder=recent\\n"',
         '"favorites=" .. table.concat(favoriteKeys, ",")',
         '"history=" .. table.concat(history, "|")',
         'parseRaw:match("favorites=([^\\n]*)")',
