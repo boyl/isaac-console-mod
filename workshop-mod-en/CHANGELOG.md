@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.4-en.9
+
+- Contextual help now reflects the active keyboard, mouse, or controller path instead of mixing unavailable actions; search and command editors keep the required text-editing shortcuts.
+- Controller Y pages a focused multi-page description exactly once and loops without executing, favoriting, changing the repeat count, or paging the list. Categories, editors, and single-page descriptions ignore it.
+- Success, warning, failure, and progress Toasts now use measured one- or two-line layouts inside both their background and the screen. Long critical messages preserve what happened and the next action; all success feedback now lasts 30 update frames (about one second).
+- Both languages now run 88 Mock scenarios, cold-start regressions, and candidate-package validation through one release gate without adding settings, SaveData fields, or dependencies.
+
 ## 2.5.4-en.8
 
 - Added an optional persistent MCM setting that chooses whether regular commands close the menu. It defaults to On, preserving existing saves and behavior when MCM is absent.

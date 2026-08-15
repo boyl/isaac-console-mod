@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.8"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.9"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -519,6 +519,47 @@ def scenarios() -> list[dict[str, object]]:
                 "eid": False,
                 "mcm": True,
             },
+            {
+                "scenario": "device_help_contract",
+                "label": "keyboard mouse controller contextual help contract",
+                "repPlus": True,
+                "eid": True,
+                "screenWidth": 1280,
+                "screenHeight": 720,
+            },
+            *[
+                {
+                    "scenario": "controller_details",
+                    "label": f"{runtime} Y details controller {controller_index}",
+                    "repPlus": rep_plus,
+                    "repentogon": repentogon,
+                    "eid": eid,
+                    "controllerIndex": controller_index,
+                    "playerControllerIndexes": [controller_index],
+                    "screenWidth": 455 if controller_index == 0 else 1280,
+                    "screenHeight": 256 if controller_index == 0 else 720,
+                }
+                for runtime, rep_plus, repentogon, eid, controller_index in (
+                    ("Repentance", False, False, False, 0),
+                    ("Repentance", False, False, True, 2),
+                    ("Repentance+", True, False, False, 0),
+                    ("Repentance+", True, False, True, 3),
+                    ("REPENTOGON", True, True, False, 0),
+                    ("REPENTOGON", True, True, True, 3),
+                )
+            ],
+            *[
+                {
+                    "scenario": "toast_layout",
+                    "label": f"{width}x{height} semantic Toast bounds",
+                    "repPlus": True,
+                    "eid": False,
+                    "screenWidth": width,
+                    "screenHeight": height,
+                    "fontLineHeight": 32 if width == 455 else 10,
+                }
+                for width, height in ((455, 256), (1280, 720), (2048, 1152))
+            ],
         ]
     )
     return result

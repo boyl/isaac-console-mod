@@ -7,7 +7,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.13"
+local VERSION = "2.5.14"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -114,19 +114,19 @@ end
 -- Keep each runtime's proven official route first. The bundled font is only
 -- attempted after that route fails validation.
 local IS_REPENTANCE_PLUS = REPENTANCE_PLUS == true
-local function controllerAction(name)
+function ChineseConsole.controllerAction(name)
   local value = type(ButtonAction) == "table" and ButtonAction[name] or nil
   return type(value) == "number" and value or nil
 end
 
-local CONTROLLER_ACTION_CONFIRM = controllerAction("ACTION_MENUCONFIRM")
-local CONTROLLER_ACTION_BACK = controllerAction("ACTION_MENUBACK")
-local CONTROLLER_ACTION_FAVORITE = controllerAction("ACTION_MENUTAB")
-local CONTROLLER_ACTION_LEFT = controllerAction("ACTION_MENULEFT")
-local CONTROLLER_ACTION_RIGHT = controllerAction("ACTION_MENURIGHT")
-local CONTROLLER_ACTION_UP = controllerAction("ACTION_MENUUP")
-local CONTROLLER_ACTION_DOWN = controllerAction("ACTION_MENUDOWN")
-local CONTROLLER_ACTION_RESTART = controllerAction("ACTION_RESTART")
+local CONTROLLER_ACTION_CONFIRM = ChineseConsole.controllerAction("ACTION_MENUCONFIRM")
+local CONTROLLER_ACTION_BACK = ChineseConsole.controllerAction("ACTION_MENUBACK")
+local CONTROLLER_ACTION_FAVORITE = ChineseConsole.controllerAction("ACTION_MENUTAB")
+local CONTROLLER_ACTION_LEFT = ChineseConsole.controllerAction("ACTION_MENULEFT")
+local CONTROLLER_ACTION_RIGHT = ChineseConsole.controllerAction("ACTION_MENURIGHT")
+local CONTROLLER_ACTION_UP = ChineseConsole.controllerAction("ACTION_MENUUP")
+local CONTROLLER_ACTION_DOWN = ChineseConsole.controllerAction("ACTION_MENUDOWN")
+local CONTROLLER_ACTION_RESTART = ChineseConsole.controllerAction("ACTION_RESTART")
 
 -- Raw values are isolated here as verified compatibility data. Menu code uses
 -- roles and logical actions, so future runtimes with complete ButtonAction
@@ -338,6 +338,15 @@ local state = {
   inputLease = nil,
 }
 
+local Presentation = {
+  toastDurations = { success = 30, default = 60 },
+  toastColors = {
+    info = TEXT.main,
+    success = TEXT.green,
+    warning = TEXT.warning,
+    error = TEXT.accent,
+  },
+}
 local lifecycleDispatcher = { registered = false }
 
 function lifecycleDispatcher.disarm()
@@ -753,8 +762,7 @@ local function utf8sub(value, maxChars)
     end
     chars = chars + 1
   end
-  if index <= bytes then return value:sub(1, index - 1) .. "…" end
-  return value
+  return value:sub(1, index - 1)
 end
 
 local function encode(value)
@@ -1021,9 +1029,22 @@ local function clearRunTransientState()
   state.controlMode = "keyboard"
 end
 
-local function showToast(message, color, duration)
-  state.toast = { message = message, color = color or TEXT.main }
-  state.toastFramesRemaining = math.max(1, math.floor(tonumber(duration) or 60))
+local function showToast(message, kind, duration, action, actionFit)
+  kind = kind or "info"
+  assert(Presentation.toastColors[kind] ~= nil, "unknown Toast kind: " .. tostring(kind))
+  local combined = tostring(message or "")
+  if action and action ~= "" then combined = combined .. "：" .. action end
+  state.toast = {
+    message = combined,
+    primary = tostring(message or ""),
+    action = action,
+    actionFit = actionFit or "leading",
+    kind = kind,
+  }
+  local resolvedDuration = kind == "success"
+    and Presentation.toastDurations.success
+    or (tonumber(duration) or Presentation.toastDurations.default)
+  state.toastFramesRemaining = math.max(1, math.floor(resolvedDuration))
 end
 
 local mcmRegistered = false
@@ -1098,7 +1119,7 @@ local function registerMcmSettings()
     OnChange = function(value)
       local nextKey = tonumber(value)
       if not isValidOpenKey(nextKey) then
-        showToast("该按键与菜单操作冲突，设置未更改", TEXT.warning, 150)
+        showToast("该按键与菜单操作冲突，设置未更改", "warning", 150)
         return
       end
       local previousKey = state.openKey or DEFAULT_OPEN_KEY
@@ -1107,10 +1128,10 @@ local function registerMcmSettings()
       if not saved then
         state.openKey = previousKey
         debugLog("open key save failed; rollback: " .. tostring(err))
-        showToast("改键保存失败，已恢复 " .. openKeyName(previousKey), TEXT.warning, 150)
+        showToast("改键保存失败", "error", 150, "已恢复 " .. openKeyName(previousKey))
         return
       end
-      showToast("呼出键已改为 " .. openKeyName(nextKey), TEXT.green, 120)
+      showToast("呼出键已改为 " .. openKeyName(nextKey), "success", 120)
     end,
     Popup = function()
       return "按下新的键盘按键。$newlineEsc 取消；不建议使用游戏操作键或其他 Mod 的快捷键。"
@@ -1139,7 +1160,7 @@ local function registerMcmSettings()
       if value ~= nil and numeric ~= -1 then
         nextButton = normalizeControllerButton(numeric)
         if nextButton == nil then
-          showToast("手柄收藏键无效，设置未更改", TEXT.warning, 150)
+          showToast("手柄收藏键无效，设置未更改", "warning", 150)
           return
         end
       end
@@ -1150,13 +1171,13 @@ local function registerMcmSettings()
       if not saved then
         state.controllerFavoriteButton = previousButton
         debugLog("controller favorite button save failed; rollback: " .. tostring(err))
-        showToast("手柄收藏键保存失败，已恢复", TEXT.warning, 150)
+        showToast("手柄收藏键保存失败", "error", 150, "已恢复原设置")
         return
       end
       if nextButton ~= nil then
-        showToast("手柄收藏键已设为自定义按钮 " .. nextButton, TEXT.green, 120)
+        showToast("手柄收藏键已设为自定义按钮 " .. nextButton, "success", 120)
       else
-        showToast("手柄收藏键已恢复自动识别", TEXT.green, 120)
+        showToast("手柄收藏键已恢复自动识别", "success", 120)
       end
     end,
     Popup = function()
@@ -1188,10 +1209,10 @@ local function registerMcmSettings()
       if not saved then
         state.startupHintEnabled = previousEnabled
         debugLog("startup hint setting save failed; rollback: " .. tostring(err))
-        showToast("键位提示设置保存失败，已恢复", TEXT.warning, 150)
+        showToast("键位提示设置保存失败", "error", 150, "已恢复原设置")
         return
       end
-      showToast("进入游戏时键位提示已" .. (nextEnabled and "开启" or "关闭"), TEXT.green)
+      showToast("进入游戏时键位提示已" .. (nextEnabled and "开启" or "关闭"), "success")
     end,
     Info = {
       "控制每次启动游戏进程后，第一局是否显示 F6 / L3 呼出提示。",
@@ -1215,10 +1236,10 @@ local function registerMcmSettings()
       if not saved then
         state.closeAfterRegularCommand = previousEnabled
         debugLog("close-after-command setting save failed; rollback: " .. tostring(err))
-        showToast("执行后关闭设置保存失败，已恢复", TEXT.warning, 150)
+        showToast("执行后关闭设置保存失败", "error", 150, "已恢复原设置")
         return
       end
-      showToast("普通命令执行后关闭界面已" .. (nextEnabled and "开启" or "关闭"), TEXT.green)
+      showToast("普通命令执行后关闭界面已" .. (nextEnabled and "开启" or "关闭"), "success")
     end,
     Info = {
       "适用于给予、移除、生成、调试、批量及手动输入的普通命令。",
@@ -1359,14 +1380,14 @@ end
 local function queueCommand(command, requestedCount, explicitRepeatMax)
   local valid, value, spec = validateCommand(command)
   if not valid then
-    showToast(value, TEXT.warning, 120)
+    showToast(value, "warning", 120)
     return false
   end
 
   if not spec then
     if state.unknownCommandConfirmation ~= value then
       state.unknownCommandConfirmation = value
-      showToast("未知或第三方命令：再次按 Enter 确认单次执行", TEXT.warning, 180)
+      showToast("未知或第三方命令", "warning", 180, "再次按 Enter 确认单次执行")
       return false
     end
     state.unknownCommandConfirmation = nil
@@ -1380,13 +1401,13 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
       local message = stageMode == "greed"
         and "该楼层不在贪婪模式安全白名单中，已阻止执行"
         or "楼层命令不在正常模式安全白名单中，已阻止执行"
-      showToast(message, TEXT.warning, 180)
+      showToast(message, "warning", 180)
       return false
     end
   end
 
   if state.queue or state.lifecycleRequest or state.lifecycleReceipt then
-    showToast("上一条批量命令仍在执行", TEXT.warning, 90)
+    showToast("上一条批量命令仍在执行", "warning", 90)
     return false
   end
 
@@ -1396,7 +1417,7 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
   repeatMax = clamp(math.floor(repeatMax), 1, 99)
   local count = math.min(requested, repeatMax)
   if requested > repeatMax then
-    showToast("此类命令为安全起见只执行 1 次", TEXT.warning, 120)
+    showToast("此类命令为安全起见只执行 1 次", "warning", 120)
   end
 
   if spec and spec.phase == "render" then
@@ -1423,11 +1444,11 @@ end
 local function queueEntry(entry, requestedCount)
   if not entry then return false end
   if entry.catalogAction == "disabled" then
-    showToast(disabledCommandReason(entry.commandSpec), TEXT.warning, 180)
+    showToast(disabledCommandReason(entry.commandSpec), "warning", 180)
     return false
   end
   if entry.catalogAction == "manual" then
-    showToast("这是参数参考：按 C 输入完整命令", TEXT.warning, 120)
+    showToast("这是参数参考，按 C 输入完整命令", "warning", 120)
     return false
   end
   return queueCommand(entry.cmd, requestedCount, entry.repeatMax)
@@ -1443,12 +1464,15 @@ local function finishQueue(queue)
   state.repeatCount = 1
   local saved, saveError = saveState()
   if not saved then
-    showToast("命令已执行，但历史保存失败", TEXT.warning, 180)
+    showToast("命令已执行", "error", 180, "历史保存失败")
     debugLog("history save failed: " .. tostring(saveError))
   elseif queue.failed then
-    showToast("部分完成 " .. queue.done .. "/" .. queue.total .. "：" .. queue.failed, TEXT.warning, 180)
+    showToast("部分完成 " .. queue.done .. "/" .. queue.total, "error", 180, queue.failed)
   else
-    showToast("执行完成：" .. queue.command .. (queue.total > 1 and (" ×" .. queue.total) or ""), TEXT.green, 60)
+    showToast(
+      "执行完成" .. (queue.total > 1 and (" ×" .. queue.total) or ""),
+      "success", 60, queue.command, "trailing")
+    state.toast.inlineAction = true
   end
 end
 
@@ -1495,10 +1519,11 @@ local function finalizeLifecycleReceipt()
   state.repeatCount = 1
   local saved, saveError = saveState()
   if not saved then
-    showToast("命令已派发，但历史保存失败", TEXT.warning, 180)
+    showToast("命令已派发", "error", 180, "历史保存失败")
     debugLog("lifecycle history save failed: " .. tostring(saveError))
   else
-    showToast("执行完成：" .. receipt.command, TEXT.green, 60)
+    showToast("执行完成", "success", 60, receipt.command, "trailing")
+    state.toast.inlineAction = true
   end
 end
 
@@ -1636,7 +1661,7 @@ end
 local function toggleFavorite(entry)
   local key = entry and entry.objectKey or nil
   if not entry or not entry.canFavorite or not key then
-    showToast("当前条目不可收藏", TEXT.warning, 75)
+    showToast("当前条目不可收藏", "warning", 75)
     return
   end
   FavoriteModel.finalizeOrder(true)
@@ -1648,7 +1673,7 @@ local function toggleFavorite(entry)
     table.remove(state.favoriteOrder, previousIndex)
   else
     if #state.favoriteOrder >= MAX_FAVORITES then
-      showToast("收藏数量已达上限", TEXT.warning, 120)
+      showToast("收藏数量已达上限", "warning", 120)
       return
     end
     state.favorites[key] = true
@@ -1664,16 +1689,16 @@ local function toggleFavorite(entry)
       assert(state.favoriteOrder[1] == key, "new favorite moved before rollback")
       table.remove(state.favoriteOrder, 1)
     end
-    showToast("收藏保存失败，操作已撤销", TEXT.warning, 150)
+    showToast("收藏保存失败", "error", 150, "操作已撤销")
     debugLog("favorite save failed: " .. tostring(saveError))
     return
   end
-  showToast(wasFavorite and "已取消收藏" or "已加入常用精选", TEXT.green, 75)
+  showToast(wasFavorite and "已取消收藏" or "已加入常用精选", "success", 75)
 end
 
 local function changeRepeat(delta)
   state.repeatCount = clamp(state.repeatCount + delta, 1, 99)
-  if state.repeatCount > 20 then showToast("超过 20 次可能造成短暂卡顿", TEXT.warning, 75) end
+  if state.repeatCount > 20 then showToast("超过 20 次可能造成短暂卡顿", "warning", 75) end
 end
 
 local KEY_CHARS = {
@@ -1788,7 +1813,7 @@ end
 
 local function beginCommandInput(entry)
   if entry and entry.catalogAction == "disabled" then
-    showToast(disabledCommandReason(entry.commandSpec), TEXT.warning, 180)
+    showToast(disabledCommandReason(entry.commandSpec), "warning", 180)
     return false
   end
   if entry then
@@ -1906,6 +1931,8 @@ local function controllerMenuEvent()
   event = controllerRoleEvent(candidates, "confirm", "button", CONTROLLER_INPUT_COMPATIBILITY.confirm)
   if event then return event end
   event = controllerRoleEvent(candidates, "favorite", "button", favoriteButton)
+  if event then return event end
+  event = controllerRoleEvent(candidates, "details", "button", controllerButton("BUTTON_Y"))
   if event then return event end
   return controllerShoulderEvent(candidates)
 end
@@ -2088,7 +2115,7 @@ local function updateControllerConfirm()
         armInputLease(source == "action" and "action" or "controller_button", value, index)
         queueCommand(command, 1)
       else
-        showToast(message or "此操作没有可移除道具，请点按 A 执行", TEXT.warning, 120)
+        showToast(message or "此操作没有可移除道具，请点按 A 执行", "warning", 120)
       end
     end
   else
@@ -2232,8 +2259,9 @@ local function handleKeyboardAndController(entries)
     toggleFavorite(selectedEntry(entries))
     return
   end
-  if keyTriggered(Keyboard.KEY_D) then
-    state.detailPage = state.detailPage + 1
+  if keyTriggered(Keyboard.KEY_D)
+      or (controllerEvent and controllerEvent.role == "details") then
+    Presentation.advanceDetails(entries)
     return
   end
   if keyTriggered(Keyboard.KEY_MINUS) then
@@ -2430,6 +2458,18 @@ local function fittingInputText(value, width)
   return ""
 end
 
+function Presentation.fittingLeadingText(value, width)
+  local text = tostring(value or "")
+  if safeTextWidth(font10, text) <= width then return text end
+  local limit = math.min(#text, 256)
+  while limit > 0 do
+    local candidate = utf8sub(text, limit) .. "..."
+    if safeTextWidth(font10, candidate) <= width then return candidate end
+    limit = limit - 1
+  end
+  return ""
+end
+
 local function resolveFooterContext(entries)
   if state.inputMode == "search" then return "search", nil end
   if state.inputMode == "command" then return "command", nil end
@@ -2475,18 +2515,23 @@ local function wrapText(value, width, maxLines)
   local lines = {}
   local current = ""
   local chars = splitUtf8(value)
-  for _, char in ipairs(chars) do
+  local truncated = false
+  for charIndex, char in ipairs(chars) do
     local candidate = current .. char
     if current ~= "" and safeTextWidth(font10, candidate) > width then
       lines[#lines + 1] = current
       current = char == " " and "" or char
-      if #lines >= maxLines then break end
+      if #lines >= maxLines then
+        truncated = charIndex <= #chars
+        current = ""
+        break
+      end
     else
       current = candidate
     end
   end
   if #lines < maxLines and current ~= "" then lines[#lines + 1] = current end
-  return lines
+  return lines, truncated
 end
 
 local function computeLayout(screenWidth, screenHeight)
@@ -2538,7 +2583,7 @@ local function computeLayout(screenWidth, screenHeight)
   local cardH = math.floor((gridH - gap * (gridRows - 1)) / gridRows)
 
   local buttonH = line10 + pad * 2
-  local repeatLabelW = safeTextWidth(font10, "LB/RB")
+  local repeatLabelW = math.max(safeTextWidth(font10, "LB/RB"), safeTextWidth(font10, "次数"))
   local countW = math.max(safeTextWidth(font10, "99"), line10 + pad)
   local stepW = math.max(safeTextWidth(font10, "+"), line10) + pad * 2
   local repeatW = repeatLabelW + stepW * 2 + countW + pad * 5
@@ -2571,23 +2616,183 @@ local function computeLayout(screenWidth, screenHeight)
   return layout
 end
 
+function Presentation.effectLines(entry, width)
+  return wrapText("作用：" .. (entry.desc or "暂无说明"), width, 99)
+end
+
+function Presentation.advanceDetails(entries)
+  if state.inputMode ~= nil or state.sidebarFocus then return false end
+  local entry = selectedEntry(entries)
+  if not entry then return false end
+  local L = computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
+  local lines = Presentation.effectLines(entry, L.contentW - L.pad * 2)
+  if #lines <= 1 then return false end
+  state.detailPage = (state.detailPage % #lines) + 1
+  return true
+end
+
+function Presentation.repeatLabel()
+  return state.controlMode == "controller" and "LB/RB" or "次数"
+end
+
+function Presentation.emptyFeaturedHint()
+  if state.controlMode == "controller" then return "请在其他分类按 X 添加" end
+  if state.controlMode == "mouse" then return "请在其他分类点击星标添加" end
+  return "请在其他分类按 F 添加"
+end
+
+function Presentation.categoryHint()
+  if state.controlMode == "controller" then return "右方向/A进入条目" end
+  if state.controlMode == "mouse" then return "点击条目进入" end
+  return "→/Enter 进入条目"
+end
+
+function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
+  local mode = state.controlMode
+  local actions = {}
+  local function add(value)
+    if value and value ~= "" then actions[#actions + 1] = value end
+  end
+  local favorite
+  if entry.canFavorite then
+    if mode == "controller" then favorite = isFavorite and "X取消收藏" or "X收藏"
+    elseif mode == "mouse" then favorite = isFavorite and "点击星标取消收藏" or "点击星标收藏"
+    else favorite = isFavorite and "F取消收藏" or "F收藏" end
+  end
+  local details
+  if effectPageCount > 1 and mode ~= "controller" then
+    details = mode == "mouse" and "点击说明翻页" or "D翻说明"
+  end
+
+  if entry.catalogAction == "disabled" then
+    add("已禁用")
+  elseif entry.catalogAction == "manual" then
+    if mode == "controller" then add("A查看说明"); add("C补参数")
+    elseif mode == "mouse" then
+      if details then add(details); details = nil else add("点击卡片查看") end
+      add("点击命令编辑")
+    else
+      if details then add(details); details = nil else add("Enter查看说明") end
+      add("C补参数")
+    end
+  elseif mode == "controller" and removalCommand(entry) then
+    add("A给予/长按移除")
+  elseif mode == "controller" then
+    add("A执行")
+  elseif mode == "mouse" and removalCommand(entry) then
+    add("左键给予"); add("右键移除")
+  elseif mode == "mouse" then
+    add("左键执行")
+  elseif removalCommand(entry) then
+    add("Enter给予")
+  else
+    add("Enter执行")
+  end
+  add(details)
+  add(favorite)
+
+  local candidates = { table.concat(actions, " · ") }
+  if mode == "controller" then
+    local primary = entry.catalogAction == "disabled" and "已禁用"
+      or (entry.catalogAction == "manual" and "A查看说明"
+      or (removalCommand(entry) and "A给予" or "A执行"))
+    candidates[#candidates + 1] = favorite and (primary .. " · " .. favorite) or primary
+    candidates[#candidates + 1] = primary
+  elseif mode == "keyboard" then
+    if #actions > 1 then
+      candidates[#candidates + 1] = table.concat(actions, " · ", 1, #actions - 1)
+    end
+    local compact = {}
+    if entry.catalogAction == "manual" then compact[#compact + 1] = "Enter/C"
+    elseif entry.catalogAction ~= "disabled" then compact[#compact + 1] = "Enter" end
+    if details then compact[#compact + 1] = "D" end
+    if favorite then compact[#compact + 1] = "F" end
+    candidates[#candidates + 1] = table.concat(compact, "/")
+  end
+  if mode ~= "controller" then
+    for last = #actions - 2, 1, -1 do
+      candidates[#candidates + 1] = table.concat(actions, " · ", 1, last)
+    end
+  end
+  return candidates
+end
+
+function Presentation.controllerDetailHint(effectPageCount)
+  if state.controlMode == "controller" and effectPageCount > 1 then return "Y翻页" end
+  return nil
+end
+
+function Presentation.toastLines(toast, width)
+  local primary = tostring(toast.primary or toast.message or "")
+  if toast.inlineAction and toast.action and toast.action ~= "" then
+    local label = primary .. "："
+    local labelW = math.min(width, safeTextWidth(font10, label))
+    local actionW = math.max(1, width - labelW)
+    return { label .. fittingInputText(toast.action, actionW) }
+  end
+  if toast.action and toast.action ~= "" then
+    local action = toast.actionFit == "trailing"
+      and fittingInputText(toast.action, width) or Presentation.fittingLeadingText(toast.action, width)
+    return { Presentation.fittingLeadingText(primary, width), action }
+  end
+  local lines, truncated = wrapText(primary, width, 2)
+  if truncated and #lines > 0 then
+    lines[#lines] = Presentation.fittingLeadingText(lines[#lines] .. "...", width)
+  end
+  return lines
+end
+
 local function hit(mouse, x, y, width, height)
   return mouse.X >= x and mouse.X <= x + width and mouse.Y >= y and mouse.Y <= y + height
 end
 
-local function drawToast(screenWidth, screenHeight)
-  if state.queue then
+local function drawToast(screenWidth, screenHeight, hostRect)
+  if state.queue and clamp(math.floor(tonumber(state.queue.total) or 1), 1, 99) > 1 then
     local queue = state.queue
     local total = clamp(math.floor(tonumber(queue.total) or 1), 1, 99)
     local done = clamp(math.floor(tonumber(queue.done) or 0), 0, total)
-    local message = "正在执行 " .. done .. "/" .. total .. "  " .. queue.command
-    drawRect(screenWidth * 0.20, screenHeight - 28, screenWidth * 0.60, 20, COLORS.panel)
-    drawRect(screenWidth * 0.20, screenHeight - 28, screenWidth * 0.60 * (done / total), 2, COLORS.accent)
-    drawText(message, screenWidth * 0.20 + 6, screenHeight - 24, 0.64, TEXT.main)
+    if hostRect then
+      local contentX = hostRect.x + 6
+      local contentW = math.max(1, hostRect.width - 12)
+      local lineH = clamp(safeLineHeight(font10, 10), 10, 16)
+      local textY = hostRect.y + math.floor((hostRect.height - lineH) / 2)
+      drawRect(hostRect.x, hostRect.y, hostRect.width, hostRect.height, COLORS.sidebar)
+      drawRect(hostRect.x, hostRect.y, hostRect.width * (done / total), 2, COLORS.accent)
+      drawText("正在执行 " .. done .. "/" .. total, contentX, textY,
+        0.64, TEXT.main, contentW, true)
+      return
+    end
+    local x, width = screenWidth * 0.20, screenWidth * 0.60
+    local prefix = "正在执行 " .. done .. "/" .. total .. "  "
+    local contentX, contentW = x + 6, math.max(1, width - 12)
+    local prefixW = math.min(contentW, safeTextWidth(font10, prefix))
+    drawRect(x, screenHeight - 28, width, 20, COLORS.panel)
+    drawRect(x, screenHeight - 28, width * (done / total), 2, COLORS.accent)
+    drawText(prefix, contentX, screenHeight - 24, 0.64, TEXT.main, prefixW)
+    drawText(fittingInputText(queue.command, contentW - prefixW), contentX + prefixW,
+      screenHeight - 24, 0.64, TEXT.main, contentW - prefixW)
   elseif state.toast and state.toastFramesRemaining > 0 then
-    local width = math.min(screenWidth - 40, 360)
-    drawRect((screenWidth - width) / 2, screenHeight - 28, width, 20, COLORS.panel)
-    drawText(state.toast.message, (screenWidth - width) / 2 + 6, screenHeight - 24, 0.64, state.toast.color)
+    local maxWidth = hostRect and math.max(1, hostRect.width - 12)
+      or math.max(1, math.min(screenWidth - 40, 360))
+    local lines = Presentation.toastLines(state.toast, math.max(1, maxWidth - 12))
+    local measuredW = 0
+    for _, line in ipairs(lines) do measuredW = math.max(measuredW, safeTextWidth(font10, line)) end
+    local width = hostRect and hostRect.width
+      or clamp(measuredW + 12, math.min(96, maxWidth), maxWidth)
+    local contentW = math.max(1, width - 12)
+    -- Some official localized fonts report generous leading rather than the
+    -- visible 10px glyph height. Toast spacing is capped so that one short
+    -- message cannot turn into a large empty footer-covering panel.
+    local lineH = clamp(safeLineHeight(font10, 10), 10, 16)
+    local height = hostRect and hostRect.height or math.max(20, #lines * lineH + 8)
+    local x = hostRect and hostRect.x or (screenWidth - width) / 2
+    local y = hostRect and hostRect.y or screenHeight - height - 8
+    drawRect(x, y, width, height, hostRect and COLORS.sidebar or COLORS.panel)
+    local textY = y + math.floor((height - #lines * lineH) / 2)
+    for index, line in ipairs(lines) do
+      drawText(line, x + 6, textY + (index - 1) * lineH,
+        0.64, Presentation.toastColors[state.toast.kind or "info"], contentW, hostRect ~= nil)
+    end
   end
 end
 
@@ -2756,7 +2961,7 @@ local function drawMenu(entries)
   local pageStart = (state.page - 1) * ITEMS_PER_PAGE
   if #entries == 0 and category.id == "featured" then
     drawText("暂无收藏", L.contentX, L.gridY + L.cardH, 0.72, TEXT.main, L.contentW, true)
-    drawText("请在其他分类按 F / X 或点击星标添加", L.contentX,
+    drawText(Presentation.emptyFeaturedHint(), L.contentX,
       L.gridY + L.cardH + L.line12 + L.pad, 0.60, TEXT.muted, L.contentW, true)
   end
   for localIndex = 1, ITEMS_PER_PAGE do
@@ -2805,16 +3010,20 @@ local function drawMenu(entries)
           armInputLease("mouse", 1, 0)
           queueCommand(removeCommand, 1)
         else
-          showToast(removalUnavailableMessage(entry, false), TEXT.warning, 120)
+          showToast(removalUnavailableMessage(entry, false), "warning", 120)
         end
       end
     end
   end
 
   drawRect(L.contentX, L.footerY, L.contentW, L.footerH, COLORS.sidebar)
+  local queueTotal = state.queue
+    and clamp(math.floor(tonumber(state.queue.total) or 1), 1, 99) or 0
+  local footerNoticeActive = state.inputMode == nil and (queueTotal > 1
+    or (state.toast ~= nil and state.toastFramesRemaining > 0))
   local footerTextY = L.footerY + L.pad
   local repeatX = L.contentX + L.pad
-  local repeatLabel = "LB/RB"
+  local repeatLabel = Presentation.repeatLabel()
   drawText(repeatLabel, repeatX, footerTextY, 0.60, TEXT.main, L.repeatLabelW)
   local minusX = repeatX + L.repeatLabelW + L.pad
   local countX = minusX + L.stepW + L.pad
@@ -2841,7 +3050,10 @@ local function drawMenu(entries)
       "全部物品可输入全拼、首字母、英文、命令或 ID", "支持拼音、英文、命令或 ID",
     }, fullDetailW), fullDetailX, footerTextY + rowStep, 0.60, TEXT.main, fullDetailW)
     local searchHint = state.controlMode == "controller"
-      and fittingText({ "A完成 · B退出", "A完成/B退出" }, fullDetailW)
+      and fittingText({
+        "Ctrl+A 全选 · Enter/A完成 · Esc/B退出 · × 清空",
+        "Ctrl+A · Enter/A · Esc/B · ×",
+      }, fullDetailW)
       or fittingText({
         "Ctrl+A 全选 · Enter 完成 · Esc 退出 · × 清空", "Ctrl+A · Enter · Esc · × 清空",
       }, fullDetailW)
@@ -2861,7 +3073,10 @@ local function drawMenu(entries)
     local commandHint = awaitingUnknown
       and fittingText({ "未知/第三方命令：再次 Enter 确认单次执行", "未知命令：再次 Enter 确认" }, fullDetailW)
       or (state.controlMode == "controller"
-        and fittingText({ "A执行 · B退出 · LB/RB调次数", "A执行 · B退出 · LB/RB" }, fullDetailW)
+        and fittingText({
+          "↑↓历史 · Ctrl+A · Enter/A执行 · Esc/B退出 · LB/RB调次数",
+          "↑↓ · Ctrl+A · Enter/A · Esc/B · LB/RB",
+        }, fullDetailW)
         or fittingText({
           "↑↓历史 · Ctrl+A · Enter执行 · Esc退出",
           "↑↓历史 · Ctrl+A · Enter · Esc",
@@ -2872,9 +3087,7 @@ local function drawMenu(entries)
     local categoryText = categoryFooterText(footerTarget, greedMode, fullDetailW)
     drawText(categoryText, fullDetailX, footerTextY + rowStep,
       0.60, TEXT.main, fullDetailW)
-    local categoryHint = state.controlMode == "controller"
-      and "右方向/A进入条目"
-      or "→/Enter 进入条目"
+    local categoryHint = Presentation.categoryHint()
     drawText(categoryHint, fullDetailX, footerTextY + rowStep * 2,
       0.60, TEXT.muted, fullDetailW)
   elseif footerMode == "entry" then
@@ -2885,7 +3098,7 @@ local function drawMenu(entries)
       state.detailEntryId = detailEntryId
       state.detailPage = 1
     end
-    local effectLines = wrapText("作用：" .. (activeEntry.desc or "暂无说明"), fullDetailW, 99)
+    local effectLines = Presentation.effectLines(activeEntry, fullDetailW)
     local effectPageCount = math.max(1, #effectLines)
     state.detailPage = ((state.detailPage - 1) % effectPageCount) + 1
     local indicator = (activeEntry.descSource == "EID" and "EID · " or "")
@@ -2904,75 +3117,25 @@ local function drawMenu(entries)
     end
     local effectHitY = footerTextY + rowStep * 2
     if effectPageCount > 1 and clicked and hit(mouse, fullDetailX, effectHitY, fullDetailW, rowStep) then
-      state.detailPage = (state.detailPage % effectPageCount) + 1
+      Presentation.advanceDetails(entries)
     end
-    local controllerMode = state.controlMode == "controller"
-    local pageHint = not controllerMode and effectPageCount > 1 and " · D翻说明" or ""
     local isFavorite = state.favorites[activeEntry.objectKey] == true
-    local favoriteHint = ""
-    if activeEntry.canFavorite then
-      if controllerMode then
-        favoriteHint = isFavorite and "X取消收藏" or "X收藏"
-      elseif state.controlMode == "mouse" then
-        favoriteHint = isFavorite and "点击星标取消收藏" or "点击星标收藏"
-      else
-        favoriteHint = isFavorite and "F取消收藏" or "F收藏"
-      end
-    end
-    local hintCandidates
-    if activeEntry.catalogAction == "disabled" then
-      hintCandidates = favoriteHint == "" and (controllerMode
-        and { "已禁用 · B返回", "已禁用" } or { "已禁用 · 仅供查阅", "已禁用" })
-        or { "已禁用 · " .. favoriteHint, favoriteHint, "已禁用" }
-    elseif activeEntry.catalogAction == "manual" then
-      hintCandidates = favoriteHint == "" and (controllerMode
-        and { "按 C 补全参数 · B返回", "C补全参数" }
-        or { "Enter查看说明 · C补全参数", "C补全参数" })
-        or { "C补全参数 · " .. favoriteHint, favoriteHint, "C补全参数" }
-    elseif controllerMode and removalCommand(activeEntry) then
-      hintCandidates = favoriteHint == "" and {
-        "A点按给予 · 长按移除道具", "A给予/长按移除", "长按A移除",
-      } or {
-        "A点按给予 · 长按移除道具 · " .. favoriteHint,
-        "A给予/长按移除 · " .. favoriteHint,
-        favoriteHint .. " · 长按A移除",
-      }
-    elseif controllerMode then
-      hintCandidates = favoriteHint == "" and {
-        "A执行", "执行",
-      } or {
-        "A执行 · " .. favoriteHint, favoriteHint, "A执行",
-      }
-    elseif removalCommand(activeEntry) then
-      hintCandidates = favoriteHint == "" and {
-        "左键给予 · 右键移除道具" .. pageHint, "给予/移除" .. pageHint,
-      } or {
-        "左键给予 · 右键移除道具 · " .. favoriteHint .. pageHint,
-        "给予/移除 · " .. favoriteHint .. pageHint,
-        favoriteHint .. pageHint,
-      }
-    else
-      hintCandidates = favoriteHint == "" and {
-        "左键执行" .. pageHint, "执行" .. pageHint,
-      } or {
-        "左键执行 · " .. favoriteHint .. pageHint,
-        favoriteHint .. pageHint, "执行" .. pageHint,
-      }
-    end
+    local hintCandidates = Presentation.entryHintCandidates(
+      activeEntry, isFavorite, effectPageCount)
     local commandLabel = "手动命令(C)："
     local commandValue = activeEntry.displayCommand or activeEntry.cmd or ""
     local commandLabelW = safeTextWidth(font10, commandLabel)
     local desiredCommandW = commandLabelW + safeTextWidth(font10, commandValue)
     local commandW = math.min(fullDetailW, desiredCommandW)
     local commandValueW = math.max(1, commandW - commandLabelW)
-    local topHintW = controllerMode
-      and math.max(1, L.contentX + L.contentW - L.pad - indicatorW - detailX - L.pad)
-      or 0
+    local topHintW = math.max(1,
+      L.contentX + L.contentW - L.pad - indicatorW - detailX - L.pad)
     local commandHintW = math.max(1, fullDetailW - commandW - L.pad)
-    local hintW = controllerMode and topHintW or commandHintW
+    local detailHint = Presentation.controllerDetailHint(effectPageCount)
+    local hintW = detailHint and commandHintW or topHintW
     local hint = fittingText(hintCandidates, hintW)
-    local hintOnTop = controllerMode and hint ~= ""
-    if controllerMode and hint == "" then
+    local hintOnTop = not detailHint and hint ~= ""
+    if not detailHint and hint == "" then
       hintW = commandHintW
       hint = fittingText(hintCandidates, hintW)
     end
@@ -2986,6 +3149,9 @@ local function drawMenu(entries)
     drawText(fittingInputText(commandValue, commandValueW),
       fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
     if commandHovered and clicked then beginCommandInput(activeEntry) end
+    if detailHint then
+      drawText(detailHint, detailX, footerTextY, 0.60, TEXT.muted, topHintW)
+    end
     if hintOnTop then
       drawText(hint, detailX, footerTextY, 0.60, TEXT.muted, hintW)
     elseif hint ~= "" and hintW > L.pad then
@@ -3001,7 +3167,11 @@ local function drawMenu(entries)
 
   state.mouseDown = mousePressed
   state.rightMouseDown = rightPressed
-  drawToast(screenWidth, screenHeight)
+  if footerNoticeActive then
+    drawToast(screenWidth, screenHeight, {
+      x = L.contentX, y = L.footerY, width = L.contentW, height = L.footerH,
+    })
+  end
 end
 
 local function onRender()
@@ -3136,7 +3306,8 @@ local function onGameStarted()
   registerMcmSettings()
   if state.startupHintEnabled ~= false and not state.startupHintShown then
     state.startupHintShown = true
-    showToast("以撒中文控制台已加载 · " .. openKeyName(state.openKey) .. " / 长按 L3 打开", TEXT.green, 90)
+    showToast("以撒中文控制台已加载", "success", 90,
+      openKeyName(state.openKey) .. " / 长按 L3 打开")
   end
 end
 

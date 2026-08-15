@@ -15,6 +15,7 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 - `F6` or hold `L3`: open the menu; Mod Config Menu can change the keyboard key, toggle the first-run key hint, and choose whether regular commands close the menu.
 - Arrow keys / D-pad: move through categories and cards, crossing pages automatically.
 - Controller `LT` / `RT`: page the focused category list or entry grid.
+- Controller `Y`: page a multi-page effect description while an entry owns focus.
 - Mouse: select categories, cards, hollow/filled favorite stars, search, repeat count, paging, and close controls.
 - `Enter`, left mouse button, or tap `A`: execute the selected entry.
 - Right mouse button or hold `A` for about 0.5 seconds: remove a removable collectible.
@@ -22,7 +23,7 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 - `/`: search by official English name, common alias, command, or numeric ID.
 - `Ctrl+A` while the search box is focused: select the full query; the next character replaces it, while Backspace/Delete clears it.
 - `C`: edit the current command with ASCII input.
-- `D`: page through a long effect description.
+- `D` or controller `Y`: page through a long effect description; the mouse can click the description area.
 - `-` / `+`: set a repeat count from 1 to 99.
 - Controller `LB` / `RB`: decrease or increase the repeat count.
 

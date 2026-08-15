@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.8"
+local VERSION = "2.5.4-en.9"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -102,19 +102,19 @@ end
 -- The English edition always uses its bundled font pair. This keeps the
 -- measured UI independent of the game's selected language and resource pack.
 local IS_REPENTANCE_PLUS = REPENTANCE_PLUS == true
-local function controllerAction(name)
+function ConsoleUI.controllerAction(name)
   local value = type(ButtonAction) == "table" and ButtonAction[name] or nil
   return type(value) == "number" and value or nil
 end
 
-local CONTROLLER_ACTION_CONFIRM = controllerAction("ACTION_MENUCONFIRM")
-local CONTROLLER_ACTION_BACK = controllerAction("ACTION_MENUBACK")
-local CONTROLLER_ACTION_FAVORITE = controllerAction("ACTION_MENUTAB")
-local CONTROLLER_ACTION_LEFT = controllerAction("ACTION_MENULEFT")
-local CONTROLLER_ACTION_RIGHT = controllerAction("ACTION_MENURIGHT")
-local CONTROLLER_ACTION_UP = controllerAction("ACTION_MENUUP")
-local CONTROLLER_ACTION_DOWN = controllerAction("ACTION_MENUDOWN")
-local CONTROLLER_ACTION_RESTART = controllerAction("ACTION_RESTART")
+local CONTROLLER_ACTION_CONFIRM = ConsoleUI.controllerAction("ACTION_MENUCONFIRM")
+local CONTROLLER_ACTION_BACK = ConsoleUI.controllerAction("ACTION_MENUBACK")
+local CONTROLLER_ACTION_FAVORITE = ConsoleUI.controllerAction("ACTION_MENUTAB")
+local CONTROLLER_ACTION_LEFT = ConsoleUI.controllerAction("ACTION_MENULEFT")
+local CONTROLLER_ACTION_RIGHT = ConsoleUI.controllerAction("ACTION_MENURIGHT")
+local CONTROLLER_ACTION_UP = ConsoleUI.controllerAction("ACTION_MENUUP")
+local CONTROLLER_ACTION_DOWN = ConsoleUI.controllerAction("ACTION_MENUDOWN")
+local CONTROLLER_ACTION_RESTART = ConsoleUI.controllerAction("ACTION_RESTART")
 
 -- Raw values are isolated as verified compatibility data. Logical actions
 -- take priority, so runtimes with complete ButtonAction support need no
@@ -303,6 +303,15 @@ local state = {
   inputLease = nil,
 }
 
+local Presentation = {
+  toastDurations = { success = 30, default = 60 },
+  toastColors = {
+    info = TEXT.main,
+    success = TEXT.green,
+    warning = TEXT.warning,
+    error = TEXT.accent,
+  },
+}
 local lifecycleDispatcher = { registered = false }
 
 function lifecycleDispatcher.disarm()
@@ -749,8 +758,7 @@ local function utf8sub(value, maxChars)
     end
     chars = chars + 1
   end
-  if index <= bytes then return value:sub(1, index - 1) .. "…" end
-  return value
+  return value:sub(1, index - 1)
 end
 
 local function encode(value)
@@ -1017,9 +1025,22 @@ local function clearRunTransientState()
   state.controlMode = "keyboard"
 end
 
-local function showToast(message, color, duration)
-  state.toast = { message = message, color = color or TEXT.main }
-  state.toastFramesRemaining = math.max(1, math.floor(tonumber(duration) or 60))
+local function showToast(message, kind, duration, action, actionFit)
+  kind = kind or "info"
+  assert(Presentation.toastColors[kind] ~= nil, "unknown toast kind: " .. tostring(kind))
+  local combined = tostring(message or "")
+  if action and action ~= "" then combined = combined .. ": " .. tostring(action) end
+  state.toast = {
+    message = combined,
+    primary = tostring(message or ""),
+    action = action,
+    actionFit = actionFit or "leading",
+    kind = kind,
+  }
+  local resolvedDuration = kind == "success"
+    and Presentation.toastDurations.success
+    or (tonumber(duration) or Presentation.toastDurations.default)
+  state.toastFramesRemaining = math.max(1, math.floor(resolvedDuration))
 end
 
 local mcmRegistered = false
@@ -1093,7 +1114,7 @@ local function registerMcmSettings()
     OnChange = function(value)
       local nextKey = tonumber(value)
       if not isValidOpenKey(nextKey) then
-        showToast("That key conflicts with menu controls; binding unchanged", TEXT.warning, 150)
+        showToast("That key conflicts with menu controls", "warning", 150, "Binding unchanged")
         return
       end
       local previousKey = state.openKey or DEFAULT_OPEN_KEY
@@ -1102,10 +1123,11 @@ local function registerMcmSettings()
       if not saved then
         state.openKey = previousKey
         debugLog("open key save failed; rollback: " .. tostring(err))
-        showToast("Keybind save failed; restored " .. openKeyName(previousKey), TEXT.warning, 150)
+        showToast("Keybind save failed", "error", 150,
+          "Restored " .. openKeyName(previousKey))
         return
       end
-      showToast("Open key changed to " .. openKeyName(nextKey), TEXT.green, 120)
+      showToast("Open key changed to " .. openKeyName(nextKey), "success", 120)
     end,
     Popup = function()
       return "Press a new keyboard key.$newlineEsc cancels. Avoid gameplay keys and other Mod shortcuts."
@@ -1135,7 +1157,7 @@ local function registerMcmSettings()
       if value ~= nil and numeric ~= -1 then
         nextButton = normalizeControllerButton(numeric)
         if nextButton == nil then
-          showToast("Invalid controller favorite key; binding unchanged", TEXT.warning, 150)
+          showToast("Invalid controller favorite key", "warning", 150, "Binding unchanged")
           return
         end
       end
@@ -1146,13 +1168,13 @@ local function registerMcmSettings()
       if not saved then
         state.controllerFavoriteButton = previousButton
         debugLog("controller favorite button save failed; rollback: " .. tostring(err))
-        showToast("Controller favorite key save failed; binding restored", TEXT.warning, 150)
+        showToast("Controller favorite key save failed", "error", 150, "Binding restored")
         return
       end
       if nextButton ~= nil then
-        showToast("Controller favorite key set to custom button " .. nextButton, TEXT.green, 120)
+        showToast("Controller favorite key set to custom button " .. nextButton, "success", 120)
       else
-        showToast("Controller favorite key restored to automatic", TEXT.green, 120)
+        showToast("Controller favorite key restored to automatic", "success", 120)
       end
     end,
     Popup = function()
@@ -1184,10 +1206,10 @@ local function registerMcmSettings()
       if not saved then
         state.startupHintEnabled = previousEnabled
         debugLog("startup hint setting save failed; rollback: " .. tostring(err))
-        showToast("Startup hint setting save failed; previous value restored", TEXT.warning, 150)
+        showToast("Startup hint setting save failed", "error", 150, "Previous value restored")
         return
       end
-      showToast("Startup key hint turned " .. (nextEnabled and "on" or "off"), TEXT.green)
+      showToast("Startup key hint turned " .. (nextEnabled and "on" or "off"), "success")
     end,
     Info = {
       "Controls the F6 / L3 hint shown in the first run of each game process.",
@@ -1212,11 +1234,12 @@ local function registerMcmSettings()
       if not saved then
         state.closeAfterRegularCommand = previousEnabled
         debugLog("close-after-command setting save failed; rollback: " .. tostring(err))
-        showToast("Close-after-command setting save failed; previous value restored", TEXT.warning, 150)
+        showToast("Close-after-command setting save failed", "error", 150,
+          "Previous value restored")
         return
       end
       showToast("Close menu after regular commands turned "
-        .. (nextEnabled and "on" or "off"), TEXT.green)
+        .. (nextEnabled and "on" or "off"), "success")
     end,
     Info = {
       "Applies to regular give, remove, spawn, debug, batch, and manual commands.",
@@ -1357,14 +1380,15 @@ end
 local function queueCommand(command, requestedCount, explicitRepeatMax)
   local valid, value, spec = validateCommand(command)
   if not valid then
-    showToast(value, TEXT.warning, 120)
+    showToast(value, "warning", 120)
     return false
   end
 
   if not spec then
     if state.unknownCommandConfirmation ~= value then
       state.unknownCommandConfirmation = value
-      showToast("Unknown or third-party command: press Enter again to run it once", TEXT.warning, 180)
+      showToast("Unknown or third-party command", "warning", 180,
+        "Press Enter again to run it once")
       return false
     end
     state.unknownCommandConfirmation = nil
@@ -1378,13 +1402,13 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
       local message = stageMode == "greed"
       and "That floor is not on the Greed-mode safe list, so the command was blocked"
       or "That floor is not on the Normal-mode safe list, so the command was blocked"
-      showToast(message, TEXT.warning, 180)
+      showToast(message, "warning", 180)
       return false
     end
   end
 
   if state.queue or state.lifecycleRequest or state.lifecycleReceipt then
-    showToast("The previous batch is still running", TEXT.warning, 90)
+    showToast("The previous batch is still running", "warning", 90)
     return false
   end
 
@@ -1394,7 +1418,7 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
   repeatMax = clamp(math.floor(repeatMax), 1, 99)
   local count = math.min(requested, repeatMax)
   if requested > repeatMax then
-    showToast("This command is limited to one execution for safety", TEXT.warning, 120)
+    showToast("This command is limited to one execution for safety", "warning", 120)
   end
 
   if spec and spec.phase == "render" then
@@ -1421,11 +1445,11 @@ end
 local function queueEntry(entry, requestedCount)
   if not entry then return false end
   if entry.catalogAction == "disabled" then
-    showToast(disabledCommandReason(entry.commandSpec), TEXT.warning, 180)
+    showToast(disabledCommandReason(entry.commandSpec), "warning", 180)
     return false
   end
   if entry.catalogAction == "manual" then
-    showToast("Parameter reference: press C to enter the complete command", TEXT.warning, 120)
+    showToast("Parameter reference: press C to enter the full command", "warning", 120)
     return false
   end
   return queueCommand(entry.cmd, requestedCount, entry.repeatMax)
@@ -1441,12 +1465,16 @@ local function finishQueue(queue)
   state.repeatCount = 1
   local saved, saveError = saveState()
   if not saved then
-      showToast("Command completed, but history could not be saved", TEXT.warning, 180)
+      showToast("Command completed", "error", 180, "History could not be saved")
     debugLog("history save failed: " .. tostring(saveError))
   elseif queue.failed then
-    showToast("Partially completed " .. queue.done .. "/" .. queue.total .. ": " .. queue.failed, TEXT.warning, 180)
+    showToast("Partially completed " .. queue.done .. "/" .. queue.total,
+      "error", 180, queue.failed)
   else
-    showToast("Completed: " .. queue.command .. (queue.total > 1 and (" x" .. queue.total) or ""), TEXT.green, 60)
+    showToast(
+      "Completed" .. (queue.total > 1 and (" x" .. queue.total) or ""),
+      "success", 60, queue.command, "trailing")
+    state.toast.inlineAction = true
   end
 end
 
@@ -1493,10 +1521,11 @@ local function finalizeLifecycleReceipt()
   state.repeatCount = 1
   local saved, saveError = saveState()
   if not saved then
-    showToast("Command was dispatched, but history could not be saved", TEXT.warning, 180)
+    showToast("Command was dispatched", "error", 180, "History could not be saved")
     debugLog("lifecycle history save failed: " .. tostring(saveError))
   else
-    showToast("Completed: " .. receipt.command, TEXT.green, 60)
+    showToast("Completed", "success", 60, receipt.command, "trailing")
+    state.toast.inlineAction = true
   end
 end
 
@@ -1634,7 +1663,7 @@ end
 local function toggleFavorite(entry)
   local key = entry and entry.objectKey or nil
   if not entry or not entry.canFavorite or not key then
-    showToast("This entry cannot be favorited", TEXT.warning, 75)
+    showToast("This entry cannot be favorited", "warning", 75)
     return
   end
   FavoriteModel.finalizeOrder(true)
@@ -1646,7 +1675,7 @@ local function toggleFavorite(entry)
     table.remove(state.favoriteOrder, previousIndex)
   else
     if #state.favoriteOrder >= MAX_FAVORITES then
-      showToast("Favorite limit reached", TEXT.warning, 120)
+      showToast("Favorite limit reached", "warning", 120)
       return
     end
     state.favorites[key] = true
@@ -1662,16 +1691,18 @@ local function toggleFavorite(entry)
       assert(state.favoriteOrder[1] == key, "new favorite moved before rollback")
       table.remove(state.favoriteOrder, 1)
     end
-    showToast("Favorite could not be saved; the change was reverted", TEXT.warning, 150)
+    showToast("Favorite could not be saved", "error", 150, "The change was reverted")
     debugLog("favorite save failed: " .. tostring(saveError))
     return
   end
-  showToast(wasFavorite and "Removed from favorites" or "Added to Featured", TEXT.green, 75)
+  showToast(wasFavorite and "Removed from favorites" or "Added to Featured", "success", 75)
 end
 
 local function changeRepeat(delta)
   state.repeatCount = clamp(state.repeatCount + delta, 1, 99)
-  if state.repeatCount > 20 then showToast("More than 20 repeats may cause a brief pause", TEXT.warning, 75) end
+  if state.repeatCount > 20 then
+    showToast("More than 20 repeats may cause a brief pause", "warning", 75)
+  end
 end
 
 local KEY_CHARS = {
@@ -1786,7 +1817,7 @@ end
 
 local function beginCommandInput(entry)
   if entry and entry.catalogAction == "disabled" then
-    showToast(disabledCommandReason(entry.commandSpec), TEXT.warning, 180)
+    showToast(disabledCommandReason(entry.commandSpec), "warning", 180)
     return false
   end
   if entry then
@@ -1904,6 +1935,8 @@ local function controllerMenuEvent()
   event = controllerRoleEvent(candidates, "confirm", "button", CONTROLLER_INPUT_COMPATIBILITY.confirm)
   if event then return event end
   event = controllerRoleEvent(candidates, "favorite", "button", favoriteButton)
+  if event then return event end
+  event = controllerRoleEvent(candidates, "details", "button", controllerButton("BUTTON_Y"))
   if event then return event end
   return controllerShoulderEvent(candidates)
 end
@@ -2086,7 +2119,7 @@ local function updateControllerConfirm()
         armInputLease(source == "action" and "action" or "controller_button", value, index)
         queueCommand(command, 1)
       else
-  showToast(message or "This action has no removable item; tap A to execute it", TEXT.warning, 120)
+  showToast(message or "This action has no removable item; tap A to execute it", "warning", 120)
       end
     end
   else
@@ -2230,8 +2263,9 @@ local function handleKeyboardAndController(entries)
     toggleFavorite(selectedEntry(entries))
     return
   end
-  if keyTriggered(Keyboard.KEY_D) then
-    state.detailPage = state.detailPage + 1
+  if keyTriggered(Keyboard.KEY_D)
+      or (controllerEvent and controllerEvent.role == "details") then
+    Presentation.advanceDetails(entries)
     return
   end
   if keyTriggered(Keyboard.KEY_MINUS) then
@@ -2428,6 +2462,18 @@ local function fittingInputText(value, width)
   return ""
 end
 
+function Presentation.fittingLeadingText(value, width)
+  local text = tostring(value or "")
+  if safeTextWidth(font10, text) <= width then return text end
+  local limit = math.min(#text, 256)
+  while limit > 0 do
+    local candidate = utf8sub(text, limit) .. "..."
+    if safeTextWidth(font10, candidate) <= width then return candidate end
+    limit = limit - 1
+  end
+  return ""
+end
+
 local function resolveFooterContext(entries)
   if state.inputMode == "search" then return "search", nil end
   if state.inputMode == "command" then return "command", nil end
@@ -2478,13 +2524,16 @@ local function wrapText(value, width, maxLines)
     if current ~= "" and safeTextWidth(font10, candidate) > width then
       lines[#lines + 1] = current
       current = char == " " and "" or char
-      if #lines >= maxLines then break end
+      if #lines >= maxLines then
+        current = ""
+        break
+      end
     else
       current = candidate
     end
   end
   if #lines < maxLines and current ~= "" then lines[#lines + 1] = current end
-  return lines
+  return lines, #lines >= maxLines and current == ""
 end
 
 local function computeLayout(screenWidth, screenHeight)
@@ -2536,7 +2585,7 @@ local function computeLayout(screenWidth, screenHeight)
   local cardH = math.floor((gridH - gap * (gridRows - 1)) / gridRows)
 
   local buttonH = line10 + pad * 2
-  local repeatLabelW = safeTextWidth(font10, "LB/RB")
+  local repeatLabelW = math.max(safeTextWidth(font10, "LB/RB"), safeTextWidth(font10, "Repeat"))
   local countW = math.max(safeTextWidth(font10, "99"), line10 + pad)
   local stepW = math.max(safeTextWidth(font10, "+"), line10) + pad * 2
   local repeatW = repeatLabelW + stepW * 2 + countW + pad * 5
@@ -2569,23 +2618,183 @@ local function computeLayout(screenWidth, screenHeight)
   return layout
 end
 
+function Presentation.effectLines(entry, width)
+  return wrapText("Effect: " .. (entry.desc or "No description available"), width, 99)
+end
+
+function Presentation.advanceDetails(entries)
+  if state.inputMode ~= nil or state.sidebarFocus then return false end
+  local entry = selectedEntry(entries)
+  if not entry then return false end
+  local L = computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
+  local lines = Presentation.effectLines(entry, L.contentW - L.pad * 2)
+  if #lines <= 1 then return false end
+  state.detailPage = (state.detailPage % #lines) + 1
+  return true
+end
+
+function Presentation.repeatLabel()
+  return state.controlMode == "controller" and "LB/RB" or "Repeat"
+end
+
+function Presentation.emptyFeaturedHint()
+  if state.controlMode == "controller" then return "Press X in another category to add entries" end
+  if state.controlMode == "mouse" then return "Click a star in another category to add entries" end
+  return "Press F in another category to add entries"
+end
+
+function Presentation.categoryHint()
+  if state.controlMode == "controller" then return "Right / A: enter items" end
+  if state.controlMode == "mouse" then return "Click an item to enter" end
+  return "Right / Enter: enter items"
+end
+
+function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
+  local mode = state.controlMode
+  local actions = {}
+  local function add(value)
+    if value and value ~= "" then actions[#actions + 1] = value end
+  end
+  local favorite
+  if entry.canFavorite then
+    if mode == "controller" then favorite = isFavorite and "X: unfavorite" or "X: favorite"
+    elseif mode == "mouse" then favorite = isFavorite and "Click star: unfavorite" or "Click star: favorite"
+    else favorite = isFavorite and "F: unfavorite" or "F: favorite" end
+  end
+  local details
+  if effectPageCount > 1 and mode ~= "controller" then
+    details = mode == "mouse" and "Click details: next" or "D: details"
+  end
+
+  if entry.catalogAction == "disabled" then
+    add("Disabled")
+  elseif entry.catalogAction == "manual" then
+    if mode == "controller" then add("A: help"); add("C: parameters")
+    elseif mode == "mouse" then
+      if details then add(details); details = nil else add("Click card: help") end
+      add("Click command: edit")
+    else
+      if details then add(details); details = nil else add("Enter: help") end
+      add("C: parameters")
+    end
+  elseif mode == "controller" and removalCommand(entry) then
+    add("A: give / hold: remove")
+  elseif mode == "controller" then
+    add("A: run")
+  elseif mode == "mouse" and removalCommand(entry) then
+    add("LMB: give"); add("RMB: remove")
+  elseif mode == "mouse" then
+    add("LMB: run")
+  elseif removalCommand(entry) then
+    add("Enter: give")
+  else
+    add("Enter: run")
+  end
+  add(details)
+  add(favorite)
+
+  local candidates = { table.concat(actions, " · ") }
+  if mode == "controller" then
+    local primary = entry.catalogAction == "disabled" and "Disabled"
+      or (entry.catalogAction == "manual" and "A: help"
+      or (removalCommand(entry) and "A: give" or "A: run"))
+    candidates[#candidates + 1] = favorite and (primary .. " · " .. favorite) or primary
+    candidates[#candidates + 1] = primary
+  elseif mode == "keyboard" then
+    if #actions > 1 then
+      candidates[#candidates + 1] = table.concat(actions, " · ", 1, #actions - 1)
+    end
+    local compact = {}
+    if entry.catalogAction == "manual" then compact[#compact + 1] = "Enter/C"
+    elseif entry.catalogAction ~= "disabled" then compact[#compact + 1] = "Enter" end
+    if details then compact[#compact + 1] = "D" end
+    if favorite then compact[#compact + 1] = "F" end
+    candidates[#candidates + 1] = table.concat(compact, "/")
+  end
+  if mode ~= "controller" then
+    for last = #actions - 2, 1, -1 do
+      candidates[#candidates + 1] = table.concat(actions, " · ", 1, last)
+    end
+  end
+  return candidates
+end
+
+function Presentation.controllerDetailHint(effectPageCount)
+  if state.controlMode == "controller" and effectPageCount > 1 then return "Y: page" end
+  return nil
+end
+
+function Presentation.toastLines(toast, width)
+  local primary = tostring(toast.primary or toast.message or "")
+  if toast.inlineAction and toast.action and toast.action ~= "" then
+    local label = primary .. ": "
+    local labelW = math.min(width, safeTextWidth(font10, label))
+    local actionW = math.max(1, width - labelW)
+    return { label .. fittingInputText(toast.action, actionW) }
+  end
+  if toast.action and toast.action ~= "" then
+    local action = toast.actionFit == "trailing"
+      and fittingInputText(toast.action, width) or Presentation.fittingLeadingText(toast.action, width)
+    return { Presentation.fittingLeadingText(primary, width), action }
+  end
+  local lines, truncated = wrapText(primary, width, 2)
+  if truncated and #lines > 0 then
+    lines[#lines] = Presentation.fittingLeadingText(lines[#lines] .. "...", width)
+  end
+  return lines
+end
+
 local function hit(mouse, x, y, width, height)
   return mouse.X >= x and mouse.X <= x + width and mouse.Y >= y and mouse.Y <= y + height
 end
 
-local function drawToast(screenWidth, screenHeight)
-  if state.queue then
+local function drawToast(screenWidth, screenHeight, hostRect)
+  if state.queue and clamp(math.floor(tonumber(state.queue.total) or 1), 1, 99) > 1 then
     local queue = state.queue
     local total = clamp(math.floor(tonumber(queue.total) or 1), 1, 99)
     local done = clamp(math.floor(tonumber(queue.done) or 0), 0, total)
-    local message = "Running " .. done .. "/" .. total .. "  " .. queue.command
-    drawRect(screenWidth * 0.20, screenHeight - 28, screenWidth * 0.60, 20, COLORS.panel)
-    drawRect(screenWidth * 0.20, screenHeight - 28, screenWidth * 0.60 * (done / total), 2, COLORS.accent)
-    drawText(message, screenWidth * 0.20 + 6, screenHeight - 24, 0.64, TEXT.main)
+    if hostRect then
+      local contentX = hostRect.x + 6
+      local contentW = math.max(1, hostRect.width - 12)
+      local lineH = clamp(safeLineHeight(font10, 10), 10, 16)
+      local textY = hostRect.y + math.floor((hostRect.height - lineH) / 2)
+      drawRect(hostRect.x, hostRect.y, hostRect.width, hostRect.height, COLORS.sidebar)
+      drawRect(hostRect.x, hostRect.y, hostRect.width * (done / total), 2, COLORS.accent)
+      drawText("Running " .. done .. "/" .. total, contentX, textY,
+        0.64, TEXT.main, contentW, true)
+      return
+    end
+    local x, width = screenWidth * 0.20, screenWidth * 0.60
+    local prefix = "Running " .. done .. "/" .. total .. "  "
+    local contentX, contentW = x + 6, math.max(1, width - 12)
+    local prefixW = math.min(contentW, safeTextWidth(font10, prefix))
+    drawRect(x, screenHeight - 28, width, 20, COLORS.panel)
+    drawRect(x, screenHeight - 28, width * (done / total), 2, COLORS.accent)
+    drawText(prefix, contentX, screenHeight - 24, 0.64, TEXT.main, prefixW)
+    drawText(fittingInputText(queue.command, contentW - prefixW), contentX + prefixW,
+      screenHeight - 24, 0.64, TEXT.main, contentW - prefixW)
   elseif state.toast and state.toastFramesRemaining > 0 then
-    local width = math.min(screenWidth - 40, 360)
-    drawRect((screenWidth - width) / 2, screenHeight - 28, width, 20, COLORS.panel)
-    drawText(state.toast.message, (screenWidth - width) / 2 + 6, screenHeight - 24, 0.64, state.toast.color)
+    local maxWidth = hostRect and math.max(1, hostRect.width - 12)
+      or math.max(1, math.min(screenWidth - 40, 360))
+    local lines = Presentation.toastLines(state.toast, math.max(1, maxWidth - 12))
+    local measuredW = 0
+    for _, line in ipairs(lines) do measuredW = math.max(measuredW, safeTextWidth(font10, line)) end
+    local width = hostRect and hostRect.width
+      or clamp(measuredW + 12, math.min(96, maxWidth), maxWidth)
+    local contentW = math.max(1, width - 12)
+    -- Some official localized fonts report generous leading rather than the
+    -- visible 10px glyph height. Toast spacing is capped so that one short
+    -- message cannot turn into a large empty footer-covering panel.
+    local lineH = clamp(safeLineHeight(font10, 10), 10, 16)
+    local height = hostRect and hostRect.height or math.max(20, #lines * lineH + 8)
+    local x = hostRect and hostRect.x or (screenWidth - width) / 2
+    local y = hostRect and hostRect.y or screenHeight - height - 8
+    drawRect(x, y, width, height, hostRect and COLORS.sidebar or COLORS.panel)
+    local textY = y + math.floor((height - #lines * lineH) / 2)
+    for index, line in ipairs(lines) do
+      drawText(line, x + 6, textY + (index - 1) * lineH,
+        0.64, Presentation.toastColors[state.toast.kind or "info"], contentW, hostRect ~= nil)
+    end
   end
 end
 
@@ -2754,8 +2963,8 @@ local function drawMenu(entries)
   local pageStart = (state.page - 1) * ITEMS_PER_PAGE
   if #entries == 0 and category.id == "featured" then
     drawText("No favorites yet", L.contentX, L.gridY + L.cardH, 0.72, TEXT.main, L.contentW, true)
-    drawText("Press F / X or click a star", L.contentX,
-      L.gridY + L.cardH + L.line12 + L.pad, 0.60, TEXT.muted, L.contentW, true)
+    drawText(Presentation.emptyFeaturedHint(), L.contentX,
+      L.gridY + L.cardH + L.line10 + L.pad, 0.60, TEXT.muted, L.contentW, true)
   end
   for localIndex = 1, ITEMS_PER_PAGE do
     local entry = entries[pageStart + localIndex]
@@ -2803,16 +3012,20 @@ local function drawMenu(entries)
           armInputLease("mouse", 1, 0)
           queueCommand(removeCommand, 1)
         else
-          showToast(removalUnavailableMessage(entry, false), TEXT.warning, 120)
+          showToast(removalUnavailableMessage(entry, false), "warning", 120)
         end
       end
     end
   end
 
   drawRect(L.contentX, L.footerY, L.contentW, L.footerH, COLORS.sidebar)
+  local queueTotal = state.queue
+    and clamp(math.floor(tonumber(state.queue.total) or 1), 1, 99) or 0
+  local footerNoticeActive = state.inputMode == nil and (queueTotal > 1
+    or (state.toast ~= nil and state.toastFramesRemaining > 0))
   local footerTextY = L.footerY + L.pad
   local repeatX = L.contentX + L.pad
-  local repeatLabel = "LB/RB"
+  local repeatLabel = Presentation.repeatLabel()
   drawText(repeatLabel, repeatX, footerTextY, 0.60, TEXT.main, L.repeatLabelW)
   local minusX = repeatX + L.repeatLabelW + L.pad
   local countX = minusX + L.stepW + L.pad
@@ -2841,7 +3054,10 @@ local function drawMenu(entries)
       "Name / alias / ID",
     }, fullDetailW), fullDetailX, footerTextY + rowStep, 0.60, TEXT.main, fullDetailW)
     local searchHint = state.controlMode == "controller"
-      and fittingText({ "A: done · B: back", "A/B: done/back" }, fullDetailW)
+      and fittingText({
+        "Ctrl+A: select all · Enter/A: done · Esc/B: back",
+        "Ctrl+A · Enter/A · Esc/B",
+      }, fullDetailW)
       or fittingText({
         "Ctrl+A: select all · Enter: done · Esc: back",
         "Ctrl+A · Enter · Esc",
@@ -2862,7 +3078,10 @@ local function drawMenu(entries)
     local commandHint = awaitingUnknown
       and fittingText({ "Unknown/third-party command: press Enter again to run once", "Unknown: press Enter again" }, fullDetailW)
       or (state.controlMode == "controller"
-        and fittingText({ "A: run · B: back · LB/RB: count", "A: run · B: back · LB/RB" }, fullDetailW)
+        and fittingText({
+          "History Up/Down · Ctrl+A · Enter/A: run · Esc/B: back · LB/RB: count",
+          "History ↑↓ · Ctrl+A · Enter/A · Esc/B · LB/RB",
+        }, fullDetailW)
         or fittingText({
           "Up/Down history · Ctrl+A · Enter · Esc",
           "History ↑↓ · Ctrl+A · Enter · Esc",
@@ -2873,9 +3092,7 @@ local function drawMenu(entries)
     local categoryText = categoryFooterText(footerTarget, greedMode, fullDetailW)
     drawText(categoryText, fullDetailX, footerTextY + rowStep,
       0.60, TEXT.main, fullDetailW)
-    local categoryHint = state.controlMode == "controller"
-      and "Right/A: enter items"
-      or "Right/Enter: enter items"
+    local categoryHint = Presentation.categoryHint()
     drawText(categoryHint, fullDetailX, footerTextY + rowStep * 2,
       0.60, TEXT.muted, fullDetailW)
   elseif footerMode == "entry" then
@@ -2886,7 +3103,7 @@ local function drawMenu(entries)
       state.detailEntryId = detailEntryId
       state.detailPage = 1
     end
-    local effectLines = wrapText("Effect: " .. (activeEntry.desc or "No description available"), fullDetailW, 99)
+    local effectLines = Presentation.effectLines(activeEntry, fullDetailW)
     local effectPageCount = math.max(1, #effectLines)
     state.detailPage = ((state.detailPage - 1) % effectPageCount) + 1
     local indicator = (activeEntry.descSource == "EID" and "EID · " or "")
@@ -2907,85 +3124,25 @@ local function drawMenu(entries)
     end
     local effectHitY = footerTextY + rowStep * 2
     if effectPageCount > 1 and clicked and hit(mouse, fullDetailX, effectHitY, fullDetailW, rowStep) then
-      state.detailPage = (state.detailPage % effectPageCount) + 1
+      Presentation.advanceDetails(entries)
     end
-    local controllerMode = state.controlMode == "controller"
-    local pageHint = not controllerMode and effectPageCount > 1 and " · D: details" or ""
     local isFavorite = state.favorites[activeEntry.objectKey] == true
-    local favoriteHint, favoriteShort, favoriteTiny = "", "", ""
-    if activeEntry.canFavorite then
-      if controllerMode then
-        favoriteHint = isFavorite and "X: unfavorite" or "X: favorite"
-        favoriteShort = isFavorite and "X:-fav" or "X:+fav"
-        favoriteTiny = isFavorite and "X-" or "X+"
-      elseif state.controlMode == "mouse" then
-        favoriteHint = isFavorite and "Click star: unfavorite" or "Click star: favorite"
-        favoriteShort = isFavorite and "Star:-fav" or "Star:+fav"
-        favoriteTiny = isFavorite and "Star-" or "Star+"
-      else
-        favoriteHint = isFavorite and "F: unfavorite" or "F: favorite"
-        favoriteShort = isFavorite and "F:-fav" or "F:+fav"
-        favoriteTiny = isFavorite and "F-" or "F+"
-      end
-    end
-    local hintCandidates
-    if activeEntry.catalogAction == "disabled" then
-      hintCandidates = favoriteHint == "" and (controllerMode
-        and { "Disabled · B: back", "Disabled" }
-        or { "Disabled · reference only", "Disabled" })
-        or { "Disabled · " .. favoriteHint, favoriteHint, favoriteShort, "Disabled" }
-    elseif activeEntry.catalogAction == "manual" then
-      hintCandidates = favoriteHint == "" and (controllerMode
-        and { "Press C to complete · B: back", "C: complete" }
-        or { "Enter: info · C: complete parameters", "C: complete" })
-        or { "C: complete · " .. favoriteHint, favoriteHint, favoriteShort, "C: complete" }
-    elseif controllerMode and removalCommand(activeEntry) then
-      hintCandidates = favoriteHint == "" and {
-        "Tap A: give · Hold A: remove", "A: give/hold remove", "Hold A: remove",
-      } or {
-        "Tap A: give · Hold A: remove · " .. favoriteHint,
-        "A: give/hold remove · " .. favoriteHint,
-        favoriteHint .. " · Hold A: remove",
-        favoriteShort .. " · HoldA:rm",
-        favoriteTiny .. " HoldA:rm",
-      }
-    elseif controllerMode then
-      hintCandidates = favoriteHint == "" and {
-        "A: run", "Run",
-      } or {
-        "A: run · " .. favoriteHint, favoriteHint, favoriteShort, "A: run",
-      }
-    elseif removalCommand(activeEntry) then
-      hintCandidates = favoriteHint == "" and {
-        "LMB: give · RMB: remove" .. pageHint, "Give/remove" .. pageHint,
-      } or {
-        "LMB: give · RMB: remove · " .. favoriteHint .. pageHint,
-        "Give/remove · " .. favoriteHint .. pageHint,
-        favoriteHint .. pageHint,
-        favoriteShort .. pageHint,
-      }
-    else
-      hintCandidates = favoriteHint == "" and {
-        "LMB: run" .. pageHint, "Run" .. pageHint,
-      } or {
-        "LMB: run · " .. favoriteHint .. pageHint,
-        favoriteHint .. pageHint, favoriteShort .. pageHint, "Run" .. pageHint,
-      }
-    end
+    local hintCandidates = Presentation.entryHintCandidates(
+      activeEntry, isFavorite, effectPageCount)
     local commandLabel = "Manual command (C): "
     local commandValue = activeEntry.displayCommand or activeEntry.cmd or ""
     local commandLabelW = safeTextWidth(font10, commandLabel)
     local desiredCommandW = commandLabelW + safeTextWidth(font10, commandValue)
     local commandW = math.min(fullDetailW, desiredCommandW)
     local commandValueW = math.max(1, commandW - commandLabelW)
-    local topHintW = controllerMode
-      and math.max(1, L.contentX + L.contentW - L.pad - indicatorW - detailX - L.pad)
-      or 0
+    local topHintW = math.max(1,
+      L.contentX + L.contentW - L.pad - indicatorW - detailX - L.pad)
     local commandHintW = math.max(1, fullDetailW - commandW - L.pad)
-    local hintW = controllerMode and topHintW or commandHintW
+    local detailHint = Presentation.controllerDetailHint(effectPageCount)
+    local hintW = detailHint and commandHintW or topHintW
     local hint = fittingText(hintCandidates, hintW)
-    local hintOnTop = controllerMode and hint ~= ""
-    if controllerMode and hint == "" then
+    local hintOnTop = not detailHint and hint ~= ""
+    if not detailHint and hint == "" then
       hintW = commandHintW
       hint = fittingText(hintCandidates, hintW)
     end
@@ -2999,6 +3156,9 @@ local function drawMenu(entries)
     drawText(fittingInputText(commandValue, commandValueW),
       fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
     if commandHovered and clicked then beginCommandInput(activeEntry) end
+    if detailHint then
+      drawText(detailHint, detailX, footerTextY, 0.60, TEXT.muted, topHintW)
+    end
     if hintOnTop then
       drawText(hint, detailX, footerTextY, 0.60, TEXT.muted, hintW)
     elseif hint ~= "" and hintW > L.pad then
@@ -3014,7 +3174,11 @@ local function drawMenu(entries)
 
   state.mouseDown = mousePressed
   state.rightMouseDown = rightPressed
-  drawToast(screenWidth, screenHeight)
+  if footerNoticeActive then
+    drawToast(screenWidth, screenHeight, {
+      x = L.contentX, y = L.footerY, width = L.contentW, height = L.footerH,
+    })
+  end
 end
 
 local function onRender()
@@ -3149,7 +3313,8 @@ local function onGameStarted()
   registerMcmSettings()
   if state.startupHintEnabled ~= false and not state.startupHintShown then
     state.startupHintShown = true
-    showToast("Console UI loaded · " .. openKeyName(state.openKey) .. " / hold L3 to open", TEXT.green, 90)
+    showToast("Console UI loaded", "success", 90,
+      openKeyName(state.openKey) .. " / hold L3 to open")
   end
 end
 

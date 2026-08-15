@@ -20,7 +20,7 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 [*]Complete official collectible, trinket, card/rune, and pill-effect catalogs loaded lazily
 [*]Optional EID en_us descriptions, with ItemConfig fallback
 [*]Optional Mod Config Menu settings for the keyboard open key, controller favorite key, startup key hint, and whether regular commands close the menu
-[*]Measured low-resolution layout with paged long descriptions
+[*]Measured low-resolution layout with mouse, keyboard D, and controller Y paging for long descriptions
 [*]giveitem and spawn can repeat 1-99 times; unsafe commands remain single-run
 [*]No key injection, native console popup, network access, or external programs
 [/list]
@@ -30,7 +30,7 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 2. Use the arrow keys, mouse, or D-pad to navigate.
 3. Press Enter, left-click, or tap A to execute.
 4. Right-click or hold A for about 0.5 seconds to remove a removable collectible or trinket.
-5. Press F or controller X to favorite; use LT/RT to page the focused category or entry area and LB/RB to change the repeat count.
+5. Press F or controller X to favorite; use LT/RT to page the focused category or entry area, LB/RB to change the repeat count, and Y to page a multi-page description.
 6. The Mod overlay hides while the native pause menu is open and restores after resuming.
 
 [b]Removing a collectible is not a full undo.[/b] Coins, keys, bombs, health, spawned entities, room state, and scripted pickup effects may remain after the item itself is removed.
@@ -42,7 +42,7 @@ Console UI and Isaac Chinese Console both use F6 and L3. Install both if you wis
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 If you report a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.8</version>
+    <version>2.5.4.9</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.8"
-METADATA_VERSION = "2.5.4.8"
+DISPLAY_VERSION = "2.5.4-en.9"
+METADATA_VERSION = "2.5.4.9"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -216,13 +216,18 @@ def main() -> int:
         "named raw left trigger": 'controllerButton("TRIGGER_LEFT")',
         "named raw right trigger": 'controllerButton("TRIGGER_RIGHT")',
         "physical shoulder resolver": "local function controllerShoulderEvent(candidates)",
+        "named controller Y details": 'controllerButton("BUTTON_Y")',
+        "semantic details paging": "function Presentation.advanceDetails(entries)",
+        "contextual device help": "function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)",
+        "semantic Toast layout": "function Presentation.toastLines(toast, width)",
+        "semantic Toast colors": "Presentation.toastColors[kind]",
         "focused category paging": 'if state.sidebarFocus then',
         "entry page command": "local function changeEntryPage(delta, entries)",
         "category page command": "local function changeCategoryPage(delta)",
         "wrapped descriptions": 'wrapText("Effect: "',
         "clickable manual command label": 'local commandLabel = "Manual command (C): "',
         "duplicate-name suppression": 'activeEntry.en ~= detailTitle',
-        "favorite save rollback": "Favorite could not be saved; the change was reverted",
+        "favorite save rollback message": 'showToast("Favorite could not be saved", "error", 150, "The change was reverted")',
         "favorite marker": "local function drawFavoriteStar(",
         "favorite marker on every card": "local favoriteW = entry.canFavorite and L.starW or 0",
         "queue clamp": "queue.total = clamp(math.floor(rawTotal), 1, 99)",

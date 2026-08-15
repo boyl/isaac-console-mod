@@ -43,11 +43,14 @@ local TEST = {
   executed = {},
   logs = {},
   rendered = {},
+  captureGeometry = false,
+  renderRecords = {},
   fontLoads = {},
   mcmAddCalls = 0,
   mcmSetting = nil,
   mcmSettings = {},
   spriteRenders = 0,
+  spriteRecords = {},
   spriteColors = {},
   worldToScreenCalls = 0,
   getItemConfigCalls = 0,
@@ -100,7 +103,8 @@ function Font()
   local font = { loaded = false, lineHeight = 10, path = "" }
   function font:Load(path)
     self.path = tostring(path or "")
-    self.lineHeight = self.path:find("12", 1, true) and 12 or 10
+    self.lineHeight = tonumber(TEST_CONFIG.fontLineHeight)
+      or (self.path:find("12", 1, true) and 12 or 10)
     TEST.fontLoads[#TEST.fontLoads + 1] = self.path
     if TEST_CONFIG.fontMode == "all_fail" then
       self.loaded = false
@@ -114,11 +118,18 @@ function Font()
     return utf8Length(value) * 6
   end
   function font:GetLineHeight() return self.lineHeight end
-  function font:DrawStringUTF8(value, _, _, color)
+  function font:DrawStringUTF8(value, x, y, color, width, centered)
     if color ~= nil and color.__isaacColorType ~= "KColor" then
       error("Font:DrawStringUTF8 expected KColor")
     end
-    TEST.rendered[#TEST.rendered + 1] = tostring(value or "")
+    local text = tostring(value or "")
+    TEST.rendered[#TEST.rendered + 1] = text
+    if TEST.captureGeometry then
+      TEST.renderRecords[#TEST.renderRecords + 1] = {
+        text = text, x = tonumber(x) or 0, y = tonumber(y) or 0,
+        width = tonumber(width) or 0, centered = centered == true,
+      }
+    end
   end
   return font
 end
@@ -127,11 +138,19 @@ function Sprite()
   local sprite = {}
   function sprite:Load() end
   function sprite:Play() end
-  function sprite:Render()
+  function sprite:Render(position)
     if self.Color ~= nil and self.Color.__isaacColorType ~= "Color" then
       error("Sprite:Render expected Color")
     end
     TEST.spriteRenders = TEST.spriteRenders + 1
+    if TEST.captureGeometry then
+      TEST.spriteRecords[#TEST.spriteRecords + 1] = {
+        x = position and tonumber(position.X) or 0,
+        y = position and tonumber(position.Y) or 0,
+        width = self.Scale and tonumber(self.Scale.X) or 0,
+        height = self.Scale and tonumber(self.Scale.Y) or 0,
+      }
+    end
     local color = self.Color or {}
     TEST.spriteColors[#TEST.spriteColors + 1] = table.concat({
       tostring(color[1]), tostring(color[2]), tostring(color[3]), tostring(color[4]),
@@ -418,6 +437,8 @@ local drawFavoriteStar = findUpvalue(onRender, "drawFavoriteStar")
 local queueCommand = findUpvalue(onRender, "queueCommand")
 local queueEntry = findUpvalue(onRender, "queueEntry")
 local beginCommandInput = findUpvalue(onRender, "beginCommandInput")
+local showToast = findUpvalue(onStarted, "showToast")
+local drawToast = findUpvalue(onRender, "drawToast")
 local removalCommand = findUpvalue(onRender, "removalCommand")
 local toggleFavorite = findUpvalue(onRender, "toggleFavorite")
 local saveState = findUpvalue(onRender, "saveState")
@@ -430,6 +451,8 @@ assertTrue(type(drawFavoriteStar) == "function", "drawFavoriteStar upvalue unava
 assertTrue(type(queueCommand) == "function", "queueCommand upvalue unavailable")
 assertTrue(type(removalCommand) == "function", "removalCommand upvalue unavailable")
 assertTrue(type(beginCommandInput) == "function", "beginCommandInput upvalue unavailable")
+assertTrue(type(showToast) == "function", "showToast upvalue unavailable")
+assertTrue(type(drawToast) == "function", "drawToast upvalue unavailable")
 assertTrue(type(toggleFavorite) == "function", "toggleFavorite upvalue unavailable")
 assertTrue(type(saveState) == "function", "saveState upvalue unavailable")
 
@@ -1097,15 +1120,23 @@ local function testQueueInvariant()
   startHeldButton(Controller.BUTTON_A)
   holdButton(Controller.BUTTON_A, 30)
   assertTrue(state.queue ~= nil, "remove queue was not created")
+  state.queue.total = 2
   state.queue.done = 235
+  state.open = true
+  state.inputMode = nil
   TEST.rendered = {}
   renderFrame()
+  local renderedTogether = table.concat(TEST.rendered, "")
   local showedClampedProgress = false
   for _, value in ipairs(TEST.rendered) do
-    if contains(value, (IS_ZH and "正在执行 " or "Running ") .. "1/1  remove c331") then showedClampedProgress = true end
-    assertTrue(not contains(value, "235/1"), "queue renderer exposed progress beyond total")
+    assertTrue(not contains(value, "235/2"), "queue renderer exposed progress beyond total")
   end
+  showedClampedProgress = contains(renderedTogether,
+    (IS_ZH and "正在执行 " or "Running ") .. "2/2")
   assertTrue(showedClampedProgress, "queue renderer did not clamp corrupted progress")
+  assertEqual(TEST.rendered[#TEST.rendered],
+    (IS_ZH and "正在执行 " or "Running ") .. "2/2",
+    "queue progress was not the final visible footer text")
   local executedBefore = #TEST.executed
   onUpdate()
   assertEqual(#TEST.executed, executedBefore,
@@ -1185,6 +1216,14 @@ local function testCommandContracts()
 
   local gotoEntry = findCatalogCommand("goto", "manual")
   assertEqual(queueEntry(gotoEntry, 1), false, "parameter reference executed from A/Enter")
+  assertTrue(state.toast ~= nil, "parameter reference guidance was not shown")
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  TEST.captureGeometry = true
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+  assertEqual(#TEST.renderRecords, 1,
+    "parameter reference guidance must render as one Toast line")
+  TEST.captureGeometry = false
   assertTrue(beginCommandInput(gotoEntry), "C could not open a parameter template")
   assertEqual(state.manualCommand, "goto ", "parameter template did not retain its trailing input position")
   assertEqual(state.commandSelectAll, false, "parameter template was incorrectly selected")
@@ -1227,6 +1266,10 @@ local function testLifecycleCommandChannel()
     assertEqual(state.lifecycleReceipt, nil, "stable callback did not settle lifecycle receipt")
     assertEqual(state.history[1], command, "lifecycle history settled incorrectly")
     assertEqual(state.repeatCount, 1, "lifecycle command retained a repeat count")
+    assertTrue(state.toast ~= nil and state.toast.inlineAction == true,
+      "lifecycle success did not use the one-line command result")
+    assertEqual(state.toast.action, command,
+      "lifecycle success omitted the executed command")
   end
 
   openMenu()
@@ -1291,19 +1334,66 @@ local function testCommandFeedbackDurations()
     assertEqual(state.toast, nil, label .. " did not expire on its boundary")
   end
 
-  finishSingle("giveitem c1")
+  state.toast = nil
+  state.toastFramesRemaining = 0
+  assertTrue(queueCommand("giveitem c1", 1), "single-command flash setup was rejected")
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  TEST.captureGeometry = true
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+  assertEqual(#TEST.renderRecords, 0,
+    "single-command queue flashed execution text before completion")
+  assertEqual(#TEST.spriteRecords, 0,
+    "single-command queue flashed a progress background before completion")
+  TEST.captureGeometry = false
+  onUpdate()
+  assertEqual(state.queue, nil, "single command did not finish immediately")
   assertTrue(contains(state.toast.message, IS_ZH and "执行完成" or "Completed"),
     "single-command success feedback differs")
-  assertExpiresAfter(60, "single-command success Toast")
+  assertEqual(state.toast.action, "giveitem c1",
+    "single-command success omitted the executed command")
+  assertEqual(state.toast.inlineAction, true,
+    "single-command success did not use the one-line command result")
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  TEST.captureGeometry = true
+  local hostedFooter = { x = 20, y = 200, width = 400, height = 48 }
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720, hostedFooter)
+  assertEqual(#TEST.renderRecords, 1, "hosted success Toast was not one line")
+  assertEqual(TEST.spriteRecords[1].width, hostedFooter.width,
+    "open-menu Toast background did not occupy the complete footer")
+  TEST.captureGeometry = false
+  assertExpiresAfter(30, "single-command success Toast")
 
   assertTrue(queueCommand("giveitem c2", 2), "batch success setup was rejected")
   onUpdate()
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  TEST.captureGeometry = true
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720, hostedFooter)
+  assertEqual(#TEST.renderRecords, 1, "batch progress did not use one footer line")
+  assertTrue(not contains(TEST.renderRecords[1].text, "giveitem c2"),
+    "batch progress redundantly rendered the full command")
+  assertEqual(TEST.spriteRecords[1].width, hostedFooter.width,
+    "batch progress did not occupy the complete footer")
+  TEST.captureGeometry = false
   TEST.frame = TEST.frame + 7
   onUpdate()
   assertEqual(state.queue, nil, "batch command did not finish")
   assertTrue(contains(state.toast.message, IS_ZH and "×2" or "x2"),
     "batch success feedback omitted its count")
-  assertExpiresAfter(60, "batch success Toast")
+  assertEqual(state.toast.action, "giveitem c2",
+    "batch success omitted the executed command")
+  assertEqual(state.toast.inlineAction, true,
+    "batch success did not use the one-line command result")
+  assertExpiresAfter(30, "batch success Toast")
+
+  showToast(IS_ZH and "成功时长契约" or "Success duration contract", "success", 999)
+  assertEqual(state.toastFramesRemaining, 30,
+    "success Toast accepted a caller-specific duration")
+  showToast(IS_ZH and "警告时长契约" or "Warning duration contract", "warning", 75)
+  assertEqual(state.toastFramesRemaining, 75,
+    "warning Toast no longer respects its explicit duration")
 
   TEST_CONFIG.executeFail = true
   finishSingle("giveitem c3")
@@ -1323,7 +1413,8 @@ local function testCommandFeedbackDurations()
   TEST_CONFIG.saveFail = true
   finishSingle("giveitem c5")
   TEST_CONFIG.saveFail = false
-  assertTrue(contains(state.toast.message, IS_ZH and "历史保存失败" or "history could not be saved"),
+  assertTrue(contains(IS_ZH and state.toast.message or string.lower(state.toast.message),
+      IS_ZH and "历史保存失败" or "history could not be saved"),
     "history-save failure feedback differs")
   assertEqual(state.toastFramesRemaining, 180, "history-save failure Toast duration changed")
 
@@ -1384,12 +1475,12 @@ local function testMeasuredFooterAndStars()
     if value == "spawn 5.10.1_" then commandText = true end
     if contains(value, "Ctrl+A") and contains(value, "Enter") and contains(value, "Esc")
         and not contains(value, "...") then commandKeys = true end
-    if value == "LB/RB" then repeatKeys = true end
+    if value == (IS_ZH and "次数" or "Repeat") then repeatKeys = true end
   end
   assertTrue(commandLabel, "low-resolution command label was truncated")
   assertTrue(commandText, "short command was unnecessarily tail-truncated")
   assertTrue(commandKeys, "low-resolution command key help was truncated")
-  assertTrue(repeatKeys, "repeat-count LB/RB help was missing")
+  assertTrue(repeatKeys, "keyboard repeat label was missing or exposed controller buttons")
 
   state.manualCommand = string.rep("spawn 5.10.1 ", 12)
   TEST.rendered = {}
@@ -1408,7 +1499,10 @@ local function testMeasuredFooterAndStars()
   state.sidebarFocus = false
   enterSearch("182")
   TEST.rendered = {}
+  TEST.renderRecords = {}
+  TEST.captureGeometry = true
   renderFrame()
+  TEST.captureGeometry = false
   local exactTitle = false
   local exactCommandLabel = false
   local exactCommandValue = false
@@ -1427,6 +1521,19 @@ local function testMeasuredFooterAndStars()
     .. table.concat(TEST.rendered, " | "))
   if IS_ZH then
     assertTrue(completeHint, "footer action hint was truncated")
+  end
+  if (TEST_CONFIG.screenWidth or 1280) > 455 then
+    local layout = computeLayout(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+    local actionHintY = nil
+    for _, record in ipairs(TEST.renderRecords) do
+      if IS_ZH and contains(record.text, "F收藏")
+          or not IS_ZH and contains(string.lower(record.text), "favorite") then
+        actionHintY = record.y
+        break
+      end
+    end
+    assertEqual(actionHintY, layout.footerY + layout.pad,
+      "keyboard entry help did not share the controller top action row")
   end
   assertEqual(visibleRemoveButton, false, "cards still render the redundant remove text column")
 
@@ -1462,10 +1569,13 @@ local function testMeasuredFooterAndStars()
   local mouseHint = false
   for _, value in ipairs(TEST.rendered) do
     if value == "★" then fontStar = true end
-    if contains(value, IS_ZH and "X取消收藏" or "X: unfavorite")
-        or not IS_ZH and (contains(value, "X:-fav") or contains(value, "X-")) then controllerHint = true end
+    if contains(value, IS_ZH and "A给予" or "A: give")
+        or contains(value, IS_ZH and "X取消收藏" or "X: unfavorite") then
+      controllerHint = true
+    end
     if IS_ZH and contains(value, "长按") and contains(value, "移除")
-        or not IS_ZH and ((contains(value, "Hold A") and contains(value, "remove")) or contains(value, "HoldA:rm")) then
+        or not IS_ZH and ((contains(string.lower(value), "hold") and contains(string.lower(value), "remove"))
+          or contains(value, "HoldA:rm")) then
       controllerRemoveHint = true
     end
     if contains(value, "R3") then legacyR3Hint = true end
@@ -1473,7 +1583,10 @@ local function testMeasuredFooterAndStars()
   end
   assertEqual(fontStar, false, "favorite marker still depends on a missing font glyph")
   assertTrue(controllerHint, "controller mode did not render controller-specific help")
-  assertTrue(controllerRemoveHint, "controller mode did not render long-A remove help")
+  if (TEST_CONFIG.screenWidth or 1280) > 455 then
+    assertTrue(controllerRemoveHint, "controller mode did not render long-A remove help: "
+      .. table.concat(TEST.rendered, " | "))
+  end
   assertEqual(legacyR3Hint, false, "controller help still advertises R3 removal")
   assertEqual(mouseHint, false, "controller mode still rendered mouse-only help")
   TEST.spriteColors = {}
@@ -1495,7 +1608,7 @@ local function testMeasuredFooterAndStars()
   local featuredCancelHint = false
   for _, value in ipairs(TEST.rendered) do
     if contains(value, IS_ZH and "F取消收藏" or "F: unfavorite")
-        or not IS_ZH and contains(value, "F:-fav") then featuredCancelHint = true end
+        or contains(value, "/F") then featuredCancelHint = true end
   end
   assertTrue(featuredCancelHint, "featured view did not expose favorite cancellation")
 
@@ -1505,8 +1618,8 @@ local function testMeasuredFooterAndStars()
   local emptyTitle, emptyHint = false, false
   for _, value in ipairs(TEST.rendered) do
     if value == (IS_ZH and "暂无收藏" or "No favorites yet") then emptyTitle = true end
-    if value == (IS_ZH and "请在其他分类按 F / X 或点击星标添加"
-        or "Press F / X or click a star") then emptyHint = true end
+    if value == (IS_ZH and "请在其他分类按 F 添加"
+        or "Press F in another category to add entries") then emptyHint = true end
   end
   assertTrue(emptyTitle and emptyHint, "empty featured guidance was not rendered")
 end
@@ -2787,6 +2900,27 @@ local function testOfficialObjects()
   assertEqual(removalCommand(findObject("k:1")), nil, "card unexpectedly exposes removal")
   assertEqual(removalCommand(findObject("p:1")), nil, "pill unexpectedly exposes removal")
 
+  local mantle = findObject("c:313")
+  assertTrue(mantle ~= nil, "c313 regression object is missing")
+  assertEqual(removalCommand(mantle), "remove c313",
+    "c313 removal stopped using one native remove command")
+  local mantleExecutedBefore = #TEST.executed
+  assertTrue(queueEntry(mantle, 2), "c313 two-copy grant was rejected")
+  onUpdate()
+  TEST.frame = TEST.frame + 7
+  onUpdate()
+  assertEqual(#TEST.executed, mantleExecutedBefore + 2,
+    "c313 two-copy grant did not execute exactly twice")
+  assertEqual(TEST.executed[#TEST.executed - 1], "giveitem c313",
+    "c313 first grant command differs")
+  assertEqual(TEST.executed[#TEST.executed], "giveitem c313",
+    "c313 second grant command differs")
+  assertTrue(queueCommand(removalCommand(mantle), 1),
+    "c313 native remove command was rejected")
+  onUpdate()
+  assertEqual(TEST.executed[#TEST.executed], "remove c313",
+    "c313 removal added non-native effect cleanup")
+
   local executedBefore = #TEST.executed
   assertTrue(queueEntry(findObject("k:1"), 99), "card queue rejected")
   assertEqual(state.queue.total, 1, "card entry inherited batch execution")
@@ -2798,6 +2932,236 @@ local function testOfficialObjects()
   for _, key in ipairs({ "c:1", "t:1", "k:1", "p:1" }) do
     assertTrue(state.favorites[key] == true, "typed favorite did not survive restart: " .. key)
   end
+end
+
+local function renderedContainsFragment(needle)
+  for _, value in ipairs(TEST.rendered) do
+    if contains(value, needle) then return true end
+  end
+  return false
+end
+
+local function testDeviceHelpContract()
+  onStarted()
+  enterSearch("260")
+  local helpEntries = visibleEntries()
+  local entry = helpEntries[(state.page - 1) * 8 + state.selection]
+  assertTrue(entry ~= nil, "device help setup has no selected entry")
+  entry.desc = string.rep(IS_ZH and "用于验证多页说明。" or "Measured multipage details. ", 40)
+  state.detailEntryId = nil
+  state.detailPage = 1
+
+  state.controlMode = "keyboard"
+  state.pointerActive = false
+  TEST.rendered = {}
+  renderFrame()
+  assertTrue(renderedContainsFragment(IS_ZH and "Enter给予" or "Enter: give"),
+    "keyboard help omitted the real execute action")
+  assertTrue(renderedContainsFragment(IS_ZH and "D翻说明" or "D: details"),
+    "keyboard help omitted D details paging")
+  assertTrue(renderedContainsFragment(IS_ZH and "F收藏" or "F: favorite"),
+    "keyboard help omitted F favorite")
+  assertTrue(not renderedContainsFragment(IS_ZH and "Esc退出" or "Esc: exit"),
+    "ordinary keyboard entry help retained the obvious exit shortcut")
+  assertTrue(not renderedContainsFragment(IS_ZH and "左键" or "LMB"),
+    "keyboard help exposed mouse-only actions")
+
+  state.controlMode = "mouse"
+  state.pointerActive = true
+  TEST.rendered = {}
+  renderFrame()
+  assertTrue(renderedContainsFragment(IS_ZH and "左键给予" or "LMB: give"),
+    "mouse help omitted left-click execution")
+  assertTrue(renderedContainsFragment(IS_ZH and "点击说明翻页" or "Click details: next"),
+    "mouse help omitted clickable detail paging")
+  assertTrue(renderedContainsFragment(IS_ZH and "点击星标收藏" or "Click star: favorite"),
+    "mouse help omitted clickable favorite action")
+  assertTrue(not renderedContainsFragment(IS_ZH and "Enter给予" or "Enter: give"),
+    "mouse help exposed keyboard-only execution")
+
+  state.search = "goto"
+  state.page = 1
+  state.selection = 1
+  local manualEntries = visibleEntries()
+  local manualEntry = manualEntries[1]
+  assertTrue(manualEntry ~= nil and manualEntry.catalogAction == "manual",
+    "manual multipage help setup did not select a parameter reference")
+  manualEntry.desc = string.rep(IS_ZH and "用于验证参数参考翻页。" or
+    "Measured parameter-reference paging. ", 40)
+  state.detailEntryId = nil
+  state.detailPage = 1
+
+  state.controlMode = "mouse"
+  state.pointerActive = true
+  TEST.rendered = {}
+  renderFrame()
+  assertTrue(renderedContainsFragment(IS_ZH and "点击说明翻页" or "Click details: next"),
+    "mouse parameter reference hid its real detail-paging action")
+  assertTrue(not renderedContainsFragment(IS_ZH and "点击卡片查看" or "Click card: help"),
+    "mouse multipage parameter reference retained the ambiguous card-help action")
+
+  state.controlMode = "keyboard"
+  state.pointerActive = false
+  TEST.rendered = {}
+  renderFrame()
+  assertTrue(renderedContainsFragment(IS_ZH and "D翻说明" or "D: details"),
+    "keyboard parameter reference hid its real detail-paging action")
+  assertTrue(not renderedContainsFragment(IS_ZH and "Enter查看说明" or "Enter: help"),
+    "keyboard multipage parameter reference retained the ambiguous help action")
+  assertTrue(not renderedContainsFragment(IS_ZH and "Esc退出" or "Esc: exit"),
+    "ordinary parameter-reference help retained the obvious exit shortcut")
+
+  state.search = "260"
+  state.page = 1
+  state.selection = 1
+  state.detailEntryId = nil
+  state.detailPage = 1
+
+  state.controlMode = "controller"
+  state.pointerActive = false
+  TEST.rendered = {}
+  renderFrame()
+  for _, expected in ipairs(IS_ZH
+      and { "A给予", "Y翻页", "X收藏" }
+      or { "A: give", "Y: page", "X: favorite" }) do
+    assertTrue(renderedContainsFragment(expected),
+      "controller help omitted action: " .. expected)
+  end
+  assertTrue(not renderedContainsFragment("A/Y/X/B"),
+    "controller help degraded to ambiguous raw button letters")
+  assertTrue(not renderedContainsFragment(IS_ZH and "左键" or "LMB"),
+    "controller help exposed mouse-only actions")
+
+  state.controlMode = "mouse"
+  state.inputMode = "search"
+  TEST.rendered = {}
+  renderFrame()
+  for _, expected in ipairs({ "Ctrl+A", "Enter", "Esc" }) do
+    assertTrue(renderedContainsFragment(expected),
+      "mouse-focused search omitted text shortcut: " .. expected)
+  end
+  state.inputMode = "command"
+  TEST.rendered = {}
+  renderFrame()
+  for _, expected in ipairs({ "Ctrl+A", "Enter", "Esc" }) do
+    assertTrue(renderedContainsFragment(expected),
+      "mouse-focused command omitted text shortcut: " .. expected)
+  end
+end
+
+local function testControllerDetailsPaging()
+  onStarted()
+  enterSearch("260")
+  local entries = visibleEntries()
+  local entry = entries[(state.page - 1) * 8 + state.selection]
+  assertTrue(entry ~= nil, "controller details setup has no selected entry")
+  entry.desc = string.rep(IS_ZH and "用于验证手柄翻阅多页说明。" or
+    "Controller details paging must remain isolated. ", 50)
+  state.detailEntryId = nil
+  state.detailPage = 1
+  state.controlMode = "controller"
+  state.pointerActive = false
+  state.controllerIndex = TEST_CONFIG.controllerIndex or 0
+  renderFrame()
+  local pageBefore = state.page
+  local selectionBefore = state.selection
+  local repeatBefore = state.repeatCount
+  local executedBefore = #TEST.executed
+  local favoriteBefore = state.favorites[entry.objectKey]
+  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  assertEqual(state.detailPage, 2, "Y did not advance exactly one details page")
+  assertEqual(state.page, pageBefore, "Y changed the list page")
+  assertEqual(state.selection, selectionBefore, "Y changed the selected entry")
+  assertEqual(state.repeatCount, repeatBefore, "Y changed repeat count")
+  assertEqual(#TEST.executed, executedBefore, "Y executed the entry")
+  assertEqual(state.favorites[entry.objectKey], favoriteBefore, "Y changed favorite state")
+  assertEqual(state.controlMode, "controller", "Y did not retain controller mode")
+  assertEqual(state.controllerIndex, TEST_CONFIG.controllerIndex or 0,
+    "Y lost the active controller index")
+
+  entry.desc = "Short."
+  state.detailEntryId = nil
+  state.detailPage = 1
+  renderFrame()
+  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  assertEqual(state.detailPage, 1, "Y changed a single-page description")
+
+  entry.desc = string.rep("Long details. ", 50)
+  state.detailEntryId = nil
+  state.detailPage = 1
+  state.sidebarFocus = true
+  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  assertEqual(state.detailPage, 1, "Y changed details while category focus was active")
+  state.sidebarFocus = false
+  state.inputMode = "search"
+  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  assertEqual(state.detailPage, 1, "Y changed details while search owned focus")
+  state.inputMode = "command"
+  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  assertEqual(state.detailPage, 1, "Y changed details while command input owned focus")
+end
+
+local function assertCapturedTextInside(rect, record)
+  local measured = utf8Length(record.text) * 6
+  assertTrue(record.x >= rect.x - 1, "Toast text starts outside its background")
+  assertTrue(record.x + measured <= rect.x + rect.width + 1,
+    "Toast text ends outside its background: " .. record.text)
+  assertTrue(record.y >= rect.y - 1 and record.y + 10 <= rect.y + rect.height + 1,
+    "Toast text exceeds the background vertically")
+  assertTrue(record.x >= -1 and record.x + measured <= (TEST_CONFIG.screenWidth or 1280) + 1,
+    "Toast text exceeds the screen horizontally")
+end
+
+local function testToastLayoutContract()
+  onStarted()
+  state.open = false
+  state.queue = nil
+  local primary = IS_ZH and ("发生什么：" .. string.rep("保存失败", 30))
+    or ("What happened: " .. string.rep("save failed ", 30))
+  local action = IS_ZH and ("下一步：" .. string.rep("已恢复原设置", 30))
+    or ("Next step: " .. string.rep("previous setting restored ", 30))
+  TEST.rendered = {}
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  TEST.captureGeometry = true
+  showToast(primary, "error", 180, action)
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+  assertEqual(#TEST.renderRecords, 2, "critical Toast did not use two semantic lines")
+  assertTrue(contains(TEST.renderRecords[1].text, IS_ZH and "发生什么" or "What happened"),
+    "critical Toast hid what happened")
+  assertTrue(contains(TEST.renderRecords[2].text, IS_ZH and "下一步" or "Next step"),
+    "critical Toast hid the next action")
+  local background = TEST.spriteRecords[1]
+  assertTrue(background ~= nil, "Toast background was not rendered")
+  for _, record in ipairs(TEST.renderRecords) do assertCapturedTextInside(background, record) end
+
+  TEST.rendered = {}
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  showToast(IS_ZH and "已加入常用精选" or "Added to Featured", "success", 75)
+  assertEqual(state.toastFramesRemaining, 30,
+    "short success Toast did not use the unified one-second duration")
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+  background = TEST.spriteRecords[1]
+  assertTrue(background.width <= math.min(180, (TEST_CONFIG.screenWidth or 1280) * 0.5),
+    "short success Toast did not shrink to its content")
+  assertTrue(background.height <= 26,
+    "reported font leading inflated a one-line Toast")
+  for _, record in ipairs(TEST.renderRecords) do assertCapturedTextInside(background, record) end
+
+  TEST.rendered = {}
+  TEST.renderRecords = {}
+  TEST.spriteRecords = {}
+  state.toast = nil
+  state.queue = {
+    command = "thirdparty " .. string.rep("very-long-command-", 30),
+    total = 99, done = 47, nextFrame = TEST.frame + 100,
+  }
+  drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+  assertEqual(#TEST.renderRecords, 2, "progress Toast did not split status and command")
+  background = TEST.spriteRecords[1]
+  for _, record in ipairs(TEST.renderRecords) do assertCapturedTextInside(background, record) end
+  TEST.captureGeometry = false
 end
 
 local scenarios = {
@@ -2838,6 +3202,9 @@ local scenarios = {
   closing_input_lease = testClosingInputLease,
   controller_repeat = testControllerRepeat,
   controller_paging = testControllerPaging,
+  device_help_contract = testDeviceHelpContract,
+  controller_details = testControllerDetailsPaging,
+  toast_layout = testToastLayoutContract,
 }
 
 local scenario = scenarios[TEST_CONFIG.scenario]

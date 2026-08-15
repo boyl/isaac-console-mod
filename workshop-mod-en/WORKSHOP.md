@@ -2,6 +2,10 @@
 
 Use the description embedded in `metadata.xml` as the canonical Workshop page text.
 
+## 2.5.4-en.9 update note
+
+Contextual help now reflects the active keyboard, mouse, or controller path. Controller Y pages multi-page descriptions without affecting execution, favorites, repeat count, or list pages. Measured one- or two-line Toasts stay within their background and preserve the cause plus next action for critical messages.
+
 ## 2.5.4-en.8 update note
 
 Optional MCM can now keep the menu open after regular commands, retaining the current category, page, selection, and command text for repeated testing. The default remains to close, and lifecycle commands that change the run always close and release input first. User-facing command descriptions now focus on effects and restrictions rather than implementation details.
@@ -22,8 +26,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.8`
-- Metadata version: `2.5.4.8`
+- In-game version: `2.5.4-en.9`
+- Metadata version: `2.5.4.9`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional
