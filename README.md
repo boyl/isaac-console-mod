@@ -4,8 +4,8 @@
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前版本 `2.5.12`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.7`、metadata `2.5.4.7`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前版本 `2.5.13`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.8`、metadata `2.5.4.8`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：Lua Mock 回归和英文发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
 

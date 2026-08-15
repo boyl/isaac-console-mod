@@ -685,6 +685,8 @@ end
 
 local function testUpgradeSave()
   onStarted()
+  assertEqual(state.closeAfterRegularCommand, true,
+    "legacy save did not preserve the default close-after-command behavior")
   assertTrue(state.favorites["c:260"] == true, "v2.4.2 dynamic favorite did not migrate")
   assertTrue(state.favorites["c:182"] == true, "v2.4.2 curated favorite did not migrate")
   assertEqual(#state.history, 2, "v2.4.2 history did not load")
@@ -696,6 +698,8 @@ local function testUpgradeSave()
   assertEqual(state.favoriteOrder[2], "c:260", "legacy dynamic favorite migration order differs")
   assertTrue(contains(TEST.saveData, "favoriteOrder=recent\n"),
     "legacy favorite order migration was not marked complete")
+  assertTrue(contains(TEST.saveData, "closeAfterRegularCommand=1\n"),
+    "legacy save migration did not persist the command-close default")
   enterSearch("260")
   pressKey(Keyboard.KEY_F)
   assertTrue(state.favorites["c:260"] == nil, "upgrade favorite mutation failed")
@@ -1138,8 +1142,21 @@ local function testCommandContracts()
   assertTrue(findCatalogCommand("goto", "manual") ~= nil, "goto reference entry missing")
   assertTrue(findCatalogCommand("listcollectibles", "disabled") ~= nil,
     "native-output entry is not visibly disabled")
-  assertTrue(findCatalogCommand("rewind") ~= nil,
-    "rewind lifecycle entry is missing")
+  local lifecycleDescriptions = IS_ZH and {
+    rewind = "回到上一个房间状态。",
+    restart = "以当前角色重新开始一局。",
+    reseed = "重新生成当前楼层。",
+  } or {
+    rewind = "Returns to the previous room state.",
+    restart = "Restarts with the current character.",
+    reseed = "Regenerates the current floor.",
+  }
+  for commandId, description in pairs(lifecycleDescriptions) do
+    local entry = findCatalogCommand(commandId)
+    assertTrue(entry ~= nil, commandId .. " lifecycle entry is missing")
+    assertEqual(entry.desc, description,
+      commandId .. " description exposes implementation details or differs from the user-facing contract")
+  end
 
   for _, command in ipairs({
       "listcollectibles", "copy", "clear", "luamem", "testbosspool",
@@ -1529,7 +1546,7 @@ end
 local function testMcmKeybind()
   assertTrue(TEST_CONFIG.mcm, "MCM keybind scenario requires optional MCM")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 3, "MCM settings were not registered exactly once each")
+  assertEqual(TEST.mcmAddCalls, 4, "MCM settings were not registered exactly once each")
   assertEqual(TEST.mcmCategory, IS_ZH and "Isaac Chinese Console" or "Console UI", "MCM category changed")
   assertEqual(TEST.mcmSubcategory, IS_ZH and "设置" or "Settings", "MCM subcategory changed")
   assertTrue(type(TEST.mcmSetting) == "table", "MCM keybind setting missing")
@@ -1558,7 +1575,7 @@ local function testMcmKeybind()
   state.loaded = false
   onStarted()
   assertEqual(state.openKey, Keyboard.KEY_F7, "persisted custom key did not reload")
-  assertEqual(TEST.mcmAddCalls, 3, "rewind duplicated the MCM settings")
+  assertEqual(TEST.mcmAddCalls, 4, "rewind duplicated the MCM settings")
 end
 
 local function testEidOverlayIsolation()
@@ -1924,7 +1941,7 @@ local function testCategoryDescriptionMatrix()
     debug = { "无敌、高伤、无限充能与信息显示开关。再次点击同一 debug 命令可关闭。", "切换调试能力" },
     supply = { "生成资源、回复与当前房间辅助。", "生成资源与房间辅助" },
     stage = { "按当前模式显示安全楼层：正常模式 45 项，贪婪模式 7 项。", "按模式显示安全楼层" },
-    run_control = { "安全执行调试开关、刷新及会重建游戏对象的运行命令。", "调试、刷新与运行控制" },
+    run_control = { "执行调试开关、刷新、回溯、重开和楼层重置等运行命令。", "调试、刷新与运行控制" },
     command_reference = { "官方命令语法参考；参数命令需按 C 补全，禁用项只供查阅。", "官方语法与安全状态" },
   } or {
     featured = { "Your most recently favorited entries appear first.", "Recent favorite entries." },
@@ -1942,7 +1959,7 @@ local function testCategoryDescriptionMatrix()
     debug = { "Invincibility, extreme damage, unlimited charge, and diagnostic overlays. Run the same debug command again to turn it off.", "Toggle debug flags." },
     supply = { "Spawn pickups, restore resources, and control the current room.", "Spawn pickups and resources." },
     stage = { "Shows the safe route for the current mode: 45 Normal/Hard destinations or 7 Greed destinations.", "Warp along the safe route." },
-    run_control = { "Safely run debug toggles, refresh actions, and commands that rebuild game objects.", "Debug, refresh, and lifecycle control" },
+    run_control = { "Run debug toggles, refresh actions, rewinds, restarts, and floor resets.", "Debug, refresh, and run control" },
     command_reference = { "Official syntax reference. Press C to complete parameter commands; disabled entries are reference-only.", "Official syntax and safety status" },
   }
 
@@ -2434,16 +2451,44 @@ end
 local function testMcmSettings254()
   assertTrue(TEST_CONFIG.mcm, "MCM 2.5.4 scenario requires optional MCM")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 3, "MCM did not register all three settings")
-  local favoriteSetting, startupSetting
+  assertEqual(TEST.mcmAddCalls, 4, "MCM did not register all four settings")
+  local favoriteSetting, startupSetting, closeSetting
   for _, setting in ipairs(TEST.mcmSettings) do
     if setting.Type == ModConfigMenu.OptionType.KEYBIND_CONTROLLER then favoriteSetting = setting end
-    if setting.Type == ModConfigMenu.OptionType.BOOLEAN then startupSetting = setting end
+    if setting.Type == ModConfigMenu.OptionType.BOOLEAN then
+      local display = type(setting.Display) == "function" and tostring(setting.Display()) or ""
+      if contains(display, IS_ZH and "进入游戏时显示键位提示" or "Show startup key hint") then
+        startupSetting = setting
+      elseif contains(display, IS_ZH and "普通命令执行后关闭界面" or "Close menu after regular commands") then
+        closeSetting = setting
+      end
+    end
   end
   assertTrue(type(favoriteSetting) == "table", "controller favorite setting missing")
   assertTrue(type(startupSetting) == "table", "startup hint setting missing")
+  assertTrue(type(closeSetting) == "table", "regular-command close setting missing")
+  if IS_ZH then
+    local displays = {}
+    for _, setting in ipairs(TEST.mcmSettings) do
+      if type(setting.Display) == "function" then displays[#displays + 1] = tostring(setting.Display()) end
+    end
+    local expectedDisplays = {
+      "键盘呼出键: F6",
+      "手柄收藏键: 自动",
+      "进入游戏时显示键位提示: 开启",
+      "普通命令执行后关闭界面: 开启",
+    }
+    for _, expected in ipairs(expectedDisplays) do
+      local found = false
+      for _, display in ipairs(displays) do
+        if display == expected then found = true break end
+      end
+      assertTrue(found, "MCM display does not use a visible ASCII separator: " .. expected)
+    end
+  end
   assertEqual(favoriteSetting.CurrentSetting(), -1, "controller favorite default is not Automatic")
   assertEqual(startupSetting.CurrentSetting(), true, "startup hint default is not enabled")
+  assertEqual(closeSetting.CurrentSetting(), true, "regular-command close default is not enabled")
 
   startupSetting.OnChange(false)
   assertEqual(state.startupHintEnabled, false, "startup hint setting did not turn off")
@@ -2454,17 +2499,63 @@ local function testMcmSettings254()
   favoriteSetting.OnChange(32)
   assertEqual(state.controllerFavoriteButton, 9, "invalid favorite button replaced the binding")
 
+  closeSetting.OnChange(false)
+  assertEqual(state.closeAfterRegularCommand, false, "regular-command close setting did not turn off")
+  assertTrue(contains(TEST.saveData, "closeAfterRegularCommand=0\n"),
+    "regular-command close setting was not persisted")
+
+  openMenu()
+  state.categoryIndex = 2
+  state.categoryPage = 1
+  state.page = 2
+  state.selection = 3
+  state.sidebarFocus = false
+  state.inputMode = "command"
+  state.manualCommand = "giveitem c5"
+  assertTrue(queueCommand(state.manualCommand, 1), "ordinary command was rejected with keep-open enabled")
+  assertEqual(state.open, true, "ordinary command closed the menu despite keep-open setting")
+  assertEqual(state.inputMode, nil, "ordinary command left the command editor active")
+  assertEqual(state.manualCommand, "giveitem c5", "ordinary command text was not retained")
+  assertEqual(state.categoryIndex, 2, "ordinary command changed the selected category")
+  assertEqual(state.page, 2, "ordinary command changed the selected page")
+  assertEqual(state.selection, 3, "ordinary command changed the selected entry")
+  assertEqual(queueCommand("giveitem c6", 1), false, "ordinary command queue accepted concurrent work")
+  onUpdate()
+  assertEqual(state.queue, nil, "ordinary keep-open command did not finish")
+  assertEqual(TEST.executed[#TEST.executed], "giveitem c5", "ordinary keep-open command executed incorrectly")
+  assertEqual(state.open, true, "ordinary command closed the menu after queue completion")
+
+  assertEqual(queueCommand("lua error('blocked')", 1), false, "disabled command bypassed the safety gate")
+  assertEqual(state.open, true, "disabled command closed the menu")
+  state.inputMode = "command"
+  state.manualCommand = "thirdparty_keep_open"
+  assertEqual(queueCommand(state.manualCommand, 1), false, "unknown command skipped confirmation")
+  assertEqual(state.open, true, "unknown-command confirmation closed the menu")
+  state.unknownCommandConfirmation = nil
+  state.inputMode = nil
+
+  assertTrue(queueCommand("rewind", 1), "lifecycle command was rejected with keep-open enabled")
+  assertEqual(state.open, false, "lifecycle command did not force the menu closed")
+  assertTrue(state.lifecycleRequest ~= nil, "lifecycle command did not enter the render dispatcher")
+  onStarted()
+  assertEqual(state.closeAfterRegularCommand, false,
+    "lifecycle boundary did not retain the regular-command close setting")
+
   TEST_CONFIG.saveFail = true
   startupSetting.OnChange(true)
   assertEqual(state.startupHintEnabled, false, "failed startup setting save did not roll back")
   favoriteSetting.OnChange(10)
   assertEqual(state.controllerFavoriteButton, 9, "failed favorite setting save did not roll back")
+  closeSetting.OnChange(true)
+  assertEqual(state.closeAfterRegularCommand, false,
+    "failed regular-command close setting save did not roll back")
   TEST_CONFIG.saveFail = false
 
   state.loaded = false
   onStarted()
   assertEqual(state.startupHintEnabled, false, "startup hint setting did not reload")
   assertEqual(state.controllerFavoriteButton, 9, "favorite button setting did not reload")
+  assertEqual(state.closeAfterRegularCommand, false, "regular-command close setting did not reload")
 end
 local function findObject(key)
   for _, entry in ipairs(allEntries) do
@@ -2491,6 +2582,19 @@ local function testAllEntryFavorites()
   assertEqual(#allEntries, 1162, "complete favoriteable catalog count differs")
   assertEqual(objectCount, 1056, "official object favorite count differs")
   assertEqual(commandCount, 106, "command favorite count differs")
+
+  local forbiddenDescriptionTerms = IS_ZH
+    and { "ItemConfig", "生命周期", "回调", "派发", "运行对象" }
+    or { "itemconfig", "lifecycle", "callback", "dispatcher", "dispatch", "live game objects" }
+  for _, entry in ipairs(allEntries) do
+    if entry.kind == "command" then
+      local description = IS_ZH and tostring(entry.desc or "") or string.lower(tostring(entry.desc or ""))
+      for _, term in ipairs(forbiddenDescriptionTerms) do
+        assertTrue(not string.find(description, term, 1, true),
+          "command description exposes implementation detail '" .. term .. "': " .. tostring(entry.commandId))
+      end
+    end
+  end
 
   local expectedCommands = {
     { "m:debug:execute:any:debug%2012", "execute" },

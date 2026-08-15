@@ -12,7 +12,7 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 
 ## Controls
 
-- `F6` or hold `L3`: open the menu; Mod Config Menu can change the keyboard key and turn the first-run key hint on or off.
+- `F6` or hold `L3`: open the menu; Mod Config Menu can change the keyboard key, toggle the first-run key hint, and choose whether regular commands close the menu.
 - Arrow keys / D-pad: move through categories and cards, crossing pages automatically.
 - Controller `LT` / `RT`: page the focused category list or entry grid.
 - Mouse: select categories, cards, hollow/filled favorite stars, search, repeat count, paging, and close controls.
@@ -27,6 +27,8 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 - Controller `LB` / `RB`: decrease or increase the repeat count.
 
 Only `giveitem` and `spawn` can repeat. Debug flags, stage warps, `kill`, and other one-shot commands are forced to a single execution.
+
+Regular commands close the menu by default for backward compatibility. With optional MCM, this can be turned off to keep the current category, page, selection, and manual-command text visible. Run-changing lifecycle commands still close the menu before execution.
 
 ## Catalog and EID
 

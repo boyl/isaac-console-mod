@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.7"
-METADATA_VERSION = "2.5.4.7"
+DISPLAY_VERSION = "2.5.4-en.8"
+METADATA_VERSION = "2.5.4.8"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -193,7 +193,9 @@ def main() -> int:
         "optional MCM keybind": 'ModConfigMenu.OptionType.KEYBIND_KEYBOARD',
         "optional MCM controller favorite": 'ModConfigMenu.OptionType.KEYBIND_CONTROLLER',
         "optional MCM startup hint": 'ModConfigMenu.OptionType.BOOLEAN',
+        "optional MCM command-close setting": 'Close menu after regular commands',
         "startup hint persistence": 'startupHintEnabled=',
+        "command-close persistence": 'closeAfterRegularCommand=',
         "controller favorite persistence": 'controllerFavoriteButton=',
         "shared focused Ctrl+A editor": "local function captureEditableText(value, selectAll)",
         "custom open key": 'keyTriggered(state.openKey or DEFAULT_OPEN_KEY)',

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.4-en.8
+
+- Added an optional persistent MCM setting that chooses whether regular commands close the menu. It defaults to On, preserving existing saves and behavior when MCM is absent.
+- When disabled, give, remove, spawn, debug, repeat, and manual commands keep the current category, page, selection, and command text visible while still leaving the editor and preventing concurrent queue submissions.
+- Run-changing lifecycle commands such as rewind, restart, reseed, seed, challenge, goto, and stage always close the menu and release input before dispatch, regardless of this setting.
+- Reworded run control, parameter limits, and resource-grant descriptions around user-visible effects and restrictions instead of internal callback, dispatcher, ItemConfig, or lifecycle details.
+
 ## 2.5.4-en.7
 
 - Extended Featured favorites to all 1,162 right-side entries: 1,056 official objects and 106 command or command-reference entries. Category rows remain navigation-only.

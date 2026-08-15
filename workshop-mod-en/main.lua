@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.7"
+local VERSION = "2.5.4-en.8"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -272,6 +272,7 @@ local state = {
   lastGameFrame = nil,
   startupHintShown = false,
   startupHintEnabled = true,
+  closeAfterRegularCommand = true,
   loaded = false,
   layoutSignature = nil,
   detailEntryId = nil,
@@ -830,6 +831,7 @@ local function saveState()
     "version=" .. VERSION .. "\n"
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
+      .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
       .. (state.favoriteOrderNeedsCatalogMigration and "" or "favoriteOrder=recent\n")
       .. "favorites=" .. table.concat(favoriteKeys, ",") .. "\n"
@@ -856,6 +858,7 @@ local function loadState()
   state.history = {}
   state.openKey = DEFAULT_OPEN_KEY
   state.startupHintEnabled = true
+  state.closeAfterRegularCommand = true
   state.controllerFavoriteButton = nil
 
   local hasDataOk, hasData = pcall(function() return ConsoleUI:HasData() end)
@@ -889,6 +892,14 @@ local function loadState()
   elseif savedStartupHint == "1" then
     state.startupHintEnabled = true
   elseif savedStartupHint ~= nil then
+    migrated = true
+  end
+  local savedCloseAfterRegularCommand = parseRaw:match("closeAfterRegularCommand=([^\n]*)")
+  if savedCloseAfterRegularCommand == "0" then
+    state.closeAfterRegularCommand = false
+  elseif savedCloseAfterRegularCommand == "1" then
+    state.closeAfterRegularCommand = true
+  elseif savedCloseAfterRegularCommand ~= nil then
     migrated = true
   end
   local savedFavoriteButton = parseRaw:match("controllerFavoriteButton=([^\n]*)")
@@ -1184,6 +1195,35 @@ local function registerMcmSettings()
       "Controller A uses the runtime's logical menu-confirm action.",
     },
   } or nil
+  local closeAfterRegularCommandSetting = ModConfigMenu.OptionType.BOOLEAN ~= nil and {
+    Type = ModConfigMenu.OptionType.BOOLEAN,
+    CurrentSetting = function() return state.closeAfterRegularCommand ~= false end,
+    Default = true,
+    Display = function()
+      return "Close menu after regular commands: "
+        .. (state.closeAfterRegularCommand ~= false and "On" or "Off")
+    end,
+    OnChange = function(value)
+      local nextEnabled = value == true
+      local previousEnabled = state.closeAfterRegularCommand ~= false
+      if nextEnabled == previousEnabled then return end
+      state.closeAfterRegularCommand = nextEnabled
+      local saved, err = saveState()
+      if not saved then
+        state.closeAfterRegularCommand = previousEnabled
+        debugLog("close-after-command setting save failed; rollback: " .. tostring(err))
+        showToast("Close-after-command setting save failed; previous value restored", TEXT.warning, 150)
+        return
+      end
+      showToast("Close menu after regular commands turned "
+        .. (nextEnabled and "on" or "off"), TEXT.green)
+    end,
+    Info = {
+      "Applies to regular give, remove, spawn, debug, batch, and manual commands.",
+      "When off, the current page and selection remain; command editing ends but text is kept.",
+      "Rewind, restart, warp, and other run-changing commands always close the menu.",
+    },
+  } or nil
   local ok, err = pcall(function()
     ModConfigMenu.AddSetting("Console UI", "Settings", keybindSetting)
     if controllerFavoriteSetting then
@@ -1191,6 +1231,9 @@ local function registerMcmSettings()
     end
     if startupHintSetting then
       ModConfigMenu.AddSetting("Console UI", "Settings", startupHintSetting)
+    end
+    if closeAfterRegularCommandSetting then
+      ModConfigMenu.AddSetting("Console UI", "Settings", closeAfterRegularCommandSetting)
     end
   end)
   if ok then
@@ -1201,6 +1244,9 @@ local function registerMcmSettings()
     end
     if not startupHintSetting then
       debugLog("optional Mod Config Menu boolean setting unavailable; startup hint option skipped")
+    end
+    if not closeAfterRegularCommandSetting then
+      debugLog("optional Mod Config Menu boolean setting unavailable; close-after-command option skipped")
     end
   else
     debugLog("optional Mod Config Menu registration failed: " .. tostring(err))
@@ -1296,6 +1342,18 @@ local function addHistory(command, count)
   while #state.history > MAX_HISTORY do table.remove(state.history) end
 end
 
+local function applyPostCommandMenuPolicy(spec)
+  if (spec and spec.phase == "render") or state.closeAfterRegularCommand ~= false then
+    setMenuOpen(false)
+    return
+  end
+  state.inputMode = nil
+  state.commandSelectAll = false
+  state.commandHistoryIndex = nil
+  state.commandHistoryDraft = nil
+  state.commandHistoryDraftRepeat = nil
+end
+
 local function queueCommand(command, requestedCount, explicitRepeatMax)
   local valid, value, spec = validateCommand(command)
   if not valid then
@@ -1343,7 +1401,7 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
     state.lifecycleRequest = { command = value }
     state.repeatCount = 1
     state.inputLease = nil
-    setMenuOpen(false)
+    applyPostCommandMenuPolicy(spec)
     lifecycleDispatcher.arm()
     return true
   end
@@ -1356,7 +1414,7 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
     failed = nil,
     finished = false,
   }
-  setMenuOpen(false)
+  applyPostCommandMenuPolicy(spec)
   return true
 end
 

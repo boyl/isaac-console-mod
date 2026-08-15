@@ -2,6 +2,10 @@
 
 Use the description embedded in `metadata.xml` as the canonical Workshop page text.
 
+## 2.5.4-en.8 update note
+
+Optional MCM can now keep the menu open after regular commands, retaining the current category, page, selection, and command text for repeated testing. The default remains to close, and lifecycle commands that change the run always close and release input first. User-facing command descriptions now focus on effects and restrictions rather than implementation details.
+
 ## 2.5.4-en.7 update note
 
 All 1,162 right-side entries can now be added to Featured with F, controller X, or each card's hollow/filled star. Featured is ordered by most recent favorite, while old saves migrate in their existing catalog order. Command favorites remain references to their original execution contracts and never bypass manual, lifecycle, native-console-only, or blocked safety rules.
@@ -18,8 +22,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.7`
-- Metadata version: `2.5.4.7`
+- In-game version: `2.5.4-en.8`
+- Metadata version: `2.5.4.8`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional
