@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.4-en.10
+
+- Steam Deck and Steam Input shoulder controls now prefer semantic menu actions and retain named physical-button fallbacks across Repentance, Repentance+, and REPENTOGON.
+- LB/RB still change only the repeat count, while LT/RT still page only the focused area; simultaneous semantic and physical reports produce one action.
+- Analog triggers use separate press and release thresholds, so holding LT/RT cannot repeat pages until the trigger is released and pressed again.
+- Bilingual regressions now cover semantic-only Steam Input shoulders, analog triggers, raw fallbacks, and non-zero controller indices without adding settings or SaveData fields.
+
 ## 2.5.4-en.9
 
 - Contextual help now reflects the active keyboard, mouse, or controller path instead of mixing unavailable actions; search and command editors keep the required text-editing shortcuts.

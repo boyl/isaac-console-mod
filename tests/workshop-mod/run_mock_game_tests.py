@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.9"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.10"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -286,7 +286,7 @@ def scenarios() -> list[dict[str, object]]:
             },
             {
                 "scenario": "controller_repeat",
-                "label": "Repentance LB/RB outrank ambiguous menu-tab actions controller 2",
+                "label": "Repentance LB/RB compatibility controller 2",
                 "repPlus": False,
                 "eid": False,
                 "controllerIndex": 2,
@@ -301,21 +301,21 @@ def scenarios() -> list[dict[str, object]]:
             },
             {
                 "scenario": "controller_repeat",
-                "label": "Repentance+ LB/RB outrank ambiguous menu-tab actions controller 3",
+                "label": "Repentance+ semantic Steam Input LB/RB controller 3",
                 "repPlus": True,
                 "eid": False,
                 "controllerIndex": 3,
             },
             {
                 "scenario": "controller_repeat",
-                "label": "REPENTOGON LB/RB outrank ambiguous menu-tab actions controller 0",
+                "label": "REPENTOGON semantic Steam Input LB/RB controller 0",
                 "repPlus": True,
                 "eid": False,
                 "controllerIndex": 0,
             },
             {
                 "scenario": "controller_repeat",
-                "label": "REPENTOGON LB/RB outrank ambiguous menu-tab actions controller 3",
+                "label": "REPENTOGON semantic Steam Input LB/RB controller 3",
                 "repPlus": True,
                 "eid": False,
                 "controllerIndex": 3,
@@ -332,7 +332,7 @@ def scenarios() -> list[dict[str, object]]:
             },
             {
                 "scenario": "controller_paging",
-                "label": "Repentance LT/RT raw identity with menu-tab noise controller 2",
+                "label": "Repentance analog LT/RT latch controller 2",
                 "repPlus": False,
                 "eid": False,
                 "controllerIndex": 2,
@@ -351,21 +351,21 @@ def scenarios() -> list[dict[str, object]]:
             },
             {
                 "scenario": "controller_paging",
-                "label": "Repentance+ LT/RT raw identity with menu-tab noise controller 3",
+                "label": "Repentance+ semantic and analog Steam Input LT/RT controller 3",
                 "repPlus": True,
                 "eid": False,
                 "controllerIndex": 3,
             },
             {
                 "scenario": "controller_paging",
-                "label": "REPENTOGON LT/RT raw identity with menu-tab noise controller 0",
+                "label": "REPENTOGON semantic and analog Steam Input LT/RT controller 0",
                 "repPlus": True,
                 "eid": False,
                 "controllerIndex": 0,
             },
             {
                 "scenario": "controller_paging",
-                "label": "REPENTOGON LT/RT raw identity with menu-tab noise controller 3",
+                "label": "REPENTOGON semantic and analog Steam Input LT/RT controller 3",
                 "repPlus": True,
                 "eid": False,
                 "controllerIndex": 3,

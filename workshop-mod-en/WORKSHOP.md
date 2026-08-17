@@ -2,6 +2,10 @@
 
 Use the description embedded in `metadata.xml` as the canonical Workshop page text.
 
+## 2.5.4-en.10 update note
+
+Steam Deck and Steam Input shoulder controls now support semantic actions plus named physical fallbacks. LB/RB remain repeat-count controls, LT/RT remain focus-aware paging controls, and held analog triggers page only once until released.
+
 ## 2.5.4-en.9 update note
 
 Contextual help now reflects the active keyboard, mouse, or controller path. Controller Y pages multi-page descriptions without affecting execution, favorites, repeat count, or list pages. Measured one- or two-line Toasts stay within their background and preserve the cause plus next action for critical messages.
@@ -26,8 +30,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.9`
-- Metadata version: `2.5.4.9`
+- In-game version: `2.5.4-en.10`
+- Metadata version: `2.5.4.10`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional

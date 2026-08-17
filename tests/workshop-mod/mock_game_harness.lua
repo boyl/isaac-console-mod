@@ -31,6 +31,7 @@ local TEST = {
   keyTriggers = {},
   buttonTriggers = {},
   actionTriggers = {},
+  actionValues = {},
   actionPressed = {},
   buttonPressed = {},
   buttonPressedCalls = 0,
@@ -177,6 +178,10 @@ ButtonAction = {
   ACTION_RESTART = 17,
   ACTION_JOINMULTIPLAYER = 19,
 }
+if TEST_CONFIG.repPlus then
+  ButtonAction.ACTION_MENULB = 15
+  ButtonAction.ACTION_MENURB = 16
+end
 Controller = {
   DPAD_LEFT = 0, DPAD_RIGHT = 1, DPAD_UP = 2, DPAD_DOWN = 3,
   BUTTON_A = 4, BUTTON_B = 5, BUTTON_X = 6, BUTTON_Y = 7,
@@ -252,6 +257,12 @@ function game:GetFrameCount() return TEST.frame end
 function game:GetNumPlayers()
   return type(TEST_CONFIG.playerControllerIndexes) == "table"
     and #TEST_CONFIG.playerControllerIndexes or 1
+end
+function Input.GetActionValue(action, controllerIndex)
+  if TEST_CONFIG.actionsUnavailable then return 0 end
+  local byController = TEST.actionValues[action]
+  local value = type(byController) == "table" and byController[controllerIndex or 0] or 0
+  return tonumber(value) or 0
 end
 function game:IsGreedMode() return TEST_CONFIG.greedMode == true end
 function game:IsPaused() return TEST.paused end
@@ -2411,30 +2422,42 @@ local function testControllerRepeat()
   local index = TEST_CONFIG.controllerIndex or 0
   state.repeatCount = 1
   state.page = 1
-  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  if ButtonAction.ACTION_MENURB then
+    TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
+  end
   TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
   renderFrame()
   assertEqual(state.repeatCount, 2, "RB did not increase repeat exactly once")
-  assertEqual(state.page, 1, "ambiguous MENURT action turned RB into page-next")
-  TEST.actionTriggers[ButtonAction.ACTION_MENULT] = { [index] = true }
+  assertEqual(state.page, 1, "RB turned into page-next")
+  if ButtonAction.ACTION_MENULB then
+    TEST.actionTriggers[ButtonAction.ACTION_MENULB] = { [index] = true }
+  end
   TEST.buttonTriggers[Controller.BUMPER_LEFT] = { [index] = true }
   renderFrame()
   assertEqual(state.repeatCount, 1, "LB did not decrease repeat exactly once")
-  assertEqual(state.page, 1, "ambiguous MENULT action turned LB into page-previous")
+  assertEqual(state.page, 1, "LB turned into page-previous")
 
-  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
-  renderFrame()
-  assertEqual(state.repeatCount, 1, "ambiguous menu-tab action changed repeat without a raw button")
-  assertEqual(state.page, 1, "ambiguous menu-tab action paged without a raw trigger")
+  if ButtonAction.ACTION_MENURB and not TEST_CONFIG.actionsUnavailable then
+    TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
+    renderFrame()
+    assertEqual(state.repeatCount, 2, "Steam Input semantic RB did not increase repeat")
+    TEST.actionTriggers[ButtonAction.ACTION_MENULB] = { [index] = true }
+    renderFrame()
+    assertEqual(state.repeatCount, 1, "Steam Input semantic LB did not decrease repeat")
+  end
 
   state.inputMode = "command"
-  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  if ButtonAction.ACTION_MENURB then
+    TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
+  end
   TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
   renderFrame()
   assertEqual(state.repeatCount, 2, "RB did not change repeat in command mode")
   state.inputMode = "search"
   TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
-  TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+  if ButtonAction.ACTION_MENURB then
+    TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
+  end
   renderFrame()
   assertEqual(state.repeatCount, 2, "RB changed repeat in search mode")
   state.inputMode = nil
@@ -2453,7 +2476,7 @@ local function renderedCount(expected)
 end
 
 local function triggerControllerPage(action, button, controllerIndex)
-  TEST.actionTriggers[action] = { [controllerIndex] = true }
+  if action ~= nil then TEST.actionTriggers[action] = { [controllerIndex] = true } end
   TEST.buttonTriggers[button] = { [controllerIndex] = true }
   renderFrame()
 end
@@ -2478,6 +2501,24 @@ local function testControllerPaging()
   assertEqual(state.repeatCount, 7, "RT changed the repeat count")
   assertEqual(renderedCount("LT"), 1, "grid focus did not show one active LT hint")
   assertEqual(renderedCount("RT"), 1, "grid focus did not show one active RT hint")
+
+  if not TEST_CONFIG.actionsUnavailable then
+    state.page = 1
+    state.selection = 1
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.75 }
+    renderFrame()
+    assertEqual(state.page, 2, "Steam Deck analog RT did not page")
+    renderFrame()
+    assertEqual(state.page, 2, "held analog RT repeated without release")
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.2 }
+    renderFrame()
+    assertEqual(state.page, 2, "analog RT release changed the page")
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.75 }
+    renderFrame()
+    assertEqual(state.page, 3, "analog RT did not re-arm after release")
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = nil
+    state.page = 2
+  end
 
   triggerControllerPage(ButtonAction.ACTION_MENULT, Controller.TRIGGER_LEFT, index)
   assertEqual(state.page, 1, "semantic/raw LT did not return one entry page")

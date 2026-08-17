@@ -18,8 +18,8 @@ def run(arguments: list[str]) -> None:
 
 def main() -> int:
     profiles = (
-        ("workshop-mod", "Isaac Chinese Console", "2.5.14"),
-        ("workshop-mod-en", "Console UI", "2.5.4-en.9"),
+        ("workshop-mod", "Isaac Chinese Console", "2.5.15"),
+        ("workshop-mod-en", "Console UI", "2.5.4-en.10"),
     )
     for directory, mod_name, version in profiles:
         run([

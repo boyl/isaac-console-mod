@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.9"
-METADATA_VERSION = "2.5.4.9"
+DISPLAY_VERSION = "2.5.4-en.10"
+METADATA_VERSION = "2.5.4.10"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -237,15 +237,25 @@ def main() -> int:
         if needle not in main_lua:
             fail(f"missing implementation: {label}")
 
-    ambiguous_shoulder_actions = [
+    semantic_shoulder_actions = [
         'controllerAction("ACTION_MENULB")',
         'controllerAction("ACTION_MENURB")',
         'controllerAction("ACTION_MENULT")',
         'controllerAction("ACTION_MENURT")',
     ]
-    for needle in ambiguous_shoulder_actions:
-        if needle in main_lua:
-            fail(f"physical shoulder role uses ambiguous action: {needle}")
+    for needle in semantic_shoulder_actions:
+        if needle not in main_lua:
+            fail(f"missing Steam Input semantic shoulder action: {needle}")
+    shoulder_contract = [
+        "controllerShoulderLatch",
+        "triggerPressThreshold = 0.55",
+        "triggerReleaseThreshold = 0.35",
+        "if previousAction == CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction then previousAction = nil end",
+        "if nextAction == CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction then nextAction = nil end",
+    ]
+    for needle in shoulder_contract:
+        if needle not in main_lua:
+            fail(f"missing Steam Input shoulder contract: {needle}")
 
     forbidden_source = [
         "scripts.pinyin_aliases",

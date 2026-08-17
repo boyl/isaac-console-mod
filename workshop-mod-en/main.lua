@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.9"
+local VERSION = "2.5.4-en.10"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -115,7 +115,6 @@ local CONTROLLER_ACTION_RIGHT = ConsoleUI.controllerAction("ACTION_MENURIGHT")
 local CONTROLLER_ACTION_UP = ConsoleUI.controllerAction("ACTION_MENUUP")
 local CONTROLLER_ACTION_DOWN = ConsoleUI.controllerAction("ACTION_MENUDOWN")
 local CONTROLLER_ACTION_RESTART = ConsoleUI.controllerAction("ACTION_RESTART")
-
 -- Raw values are isolated as verified compatibility data. Logical actions
 -- take priority, so runtimes with complete ButtonAction support need no
 -- edition-specific branch. Repentance+ gameplay can omit MENUTAB; its
@@ -130,6 +129,12 @@ else
     favorite = CONTROLLER_FAVORITE,
   }
 end
+CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction = ConsoleUI.controllerAction("ACTION_MENULB")
+CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction = ConsoleUI.controllerAction("ACTION_MENURB")
+CONTROLLER_INPUT_COMPATIBILITY.pagePreviousAction = ConsoleUI.controllerAction("ACTION_MENULT")
+CONTROLLER_INPUT_COMPATIBILITY.pageNextAction = ConsoleUI.controllerAction("ACTION_MENURT")
+CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold = 0.55
+CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold = 0.35
 
 local fontRoot = "resources/font/"
 local fontKind = "bundled Fusion Pixel"
@@ -301,6 +306,7 @@ local state = {
   nativePauseSuspended = false,
   keyboardEnterPressed = false,
   inputLease = nil,
+  controllerShoulderLatch = {},
 }
 
 local Presentation = {
@@ -319,7 +325,6 @@ function lifecycleDispatcher.disarm()
   ConsoleUI:RemoveCallback(ModCallbacks.MC_POST_RENDER, lifecycleDispatcher.dispatch)
   lifecycleDispatcher.registered = false
 end
-
 function lifecycleDispatcher.arm()
   if lifecycleDispatcher.registered then return end
   assert(type(lifecycleDispatcher.dispatch) == "function", "lifecycle dispatcher is not initialized")
@@ -384,6 +389,7 @@ local function setMenuOpen(open)
     state.controllerConfirmIndex = nil
     state.controllerConfirmSource = nil
     state.controllerConfirmValue = nil
+    state.controllerShoulderLatch = {}
   end
 end
 
@@ -1021,6 +1027,7 @@ local function clearRunTransientState()
   state.controllerConfirmIndex = nil
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
+  state.controllerShoulderLatch = {}
   state.pointerActive = false
   state.controlMode = "keyboard"
 end
@@ -1903,18 +1910,62 @@ local function controllerRoleEvent(candidates, role, source, value)
   return nil
 end
 
+function ConsoleUI.controllerActionValueAt(action, index)
+  if action == nil or type(Input.GetActionValue) ~= "function" then return 0 end
+  local ok, value = pcall(Input.GetActionValue, action, index)
+  value = ok and tonumber(value) or 0
+  return value or 0
+end
+
+function ConsoleUI.controllerShoulderRoleEvent(candidates, role, action, button, analog)
+  for _, index in ipairs(candidates) do
+    local latchKey = role .. ":" .. tostring(index)
+    local value = analog and ConsoleUI.controllerActionValueAt(action, index) or 0
+    if analog and value <= CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold then
+      state.controllerShoulderLatch[latchKey] = nil
+    end
+    if controllerActionTriggeredAt(action, index) then
+      if analog and value > CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold then
+        state.controllerShoulderLatch[latchKey] = true
+      end
+      markControllerInput(index)
+      return { role = role, source = "action", value = action, index = index }
+    end
+    if analog and value >= CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold
+        and not state.controllerShoulderLatch[latchKey] then
+      state.controllerShoulderLatch[latchKey] = true
+      markControllerInput(index)
+      return { role = role, source = "action_value", value = action, index = index }
+    end
+    if controllerButtonTriggeredAt(button, index) then
+      if analog then state.controllerShoulderLatch[latchKey] = true end
+      markControllerInput(index)
+      return { role = role, source = "button", value = button, index = index }
+    end
+  end
+  return nil
+end
+
 local function controllerShoulderEvent(candidates)
-  -- ACTION_MENULT/MENURT are menu-tab actions, not reliable physical-trigger
-  -- identities: some runtimes report them for LB/RB. Named raw buttons keep
-  -- bumpers and triggers unambiguous. Existing LB/RB behavior wins if a
-  -- runtime ever aliases two named constants to the same value.
-  local event = controllerRoleEvent(candidates, "repeat_decrease", "button", CONTROLLER_REPEAT_DECREASE)
+  -- Steam Input may expose shoulder controls only through semantic actions,
+  -- while older runtimes may expose only named raw buttons. Resolve the four
+  -- physical roles independently and let the existing business dispatcher
+  -- consume a single event. Bumpers retain priority if a runtime aliases names.
+  local event = ConsoleUI.controllerShoulderRoleEvent(candidates, "repeat_decrease",
+    CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction, CONTROLLER_REPEAT_DECREASE, false)
   if event then return event end
-  event = controllerRoleEvent(candidates, "repeat_increase", "button", CONTROLLER_REPEAT_INCREASE)
+  event = ConsoleUI.controllerShoulderRoleEvent(candidates, "repeat_increase",
+    CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction, CONTROLLER_REPEAT_INCREASE, false)
   if event then return event end
-  event = controllerRoleEvent(candidates, "page_previous", "button", CONTROLLER_PAGE_PREVIOUS)
+  local previousAction = CONTROLLER_INPUT_COMPATIBILITY.pagePreviousAction
+  if previousAction == CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction then previousAction = nil end
+  event = ConsoleUI.controllerShoulderRoleEvent(candidates, "page_previous",
+    previousAction, CONTROLLER_PAGE_PREVIOUS, true)
   if event then return event end
-  return controllerRoleEvent(candidates, "page_next", "button", CONTROLLER_PAGE_NEXT)
+  local nextAction = CONTROLLER_INPUT_COMPATIBILITY.pageNextAction
+  if nextAction == CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction then nextAction = nil end
+  return ConsoleUI.controllerShoulderRoleEvent(candidates, "page_next",
+    nextAction, CONTROLLER_PAGE_NEXT, true)
 end
 
 local function controllerMenuEvent()
