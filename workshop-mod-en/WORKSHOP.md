@@ -2,6 +2,10 @@
 
 Use the description embedded in `metadata.xml` as the canonical Workshop page text.
 
+## 2.5.4-en.11 update note
+
+Fixed Steam Input carrying one LB/RB press into later frames as a same-side LT/RT analog signal. Bumpers now retain their repeat-count role until fully released, while real triggers continue to page the focused list.
+
 ## 2.5.4-en.10 update note
 
 Steam Deck and Steam Input shoulder controls now support semantic actions plus named physical fallbacks. LB/RB remain repeat-count controls, LT/RT remain focus-aware paging controls, and held analog triggers page only once until released.
@@ -30,8 +34,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.10`
-- Metadata version: `2.5.4.10`
+- In-game version: `2.5.4-en.11`
+- Metadata version: `2.5.4.11`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional

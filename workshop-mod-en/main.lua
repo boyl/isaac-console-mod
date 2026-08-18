@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.10"
+local VERSION = "2.5.4-en.11"
 local REPEAT_DELAY_FRAMES = 7
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
@@ -1946,24 +1946,80 @@ function ConsoleUI.controllerShoulderRoleEvent(candidates, role, action, button,
   return nil
 end
 
+function ConsoleUI.controllerShoulderOwnerActive(side, index, repeatAction, repeatButton, pageAction)
+  local ownerKey = "owner:" .. side .. ":" .. tostring(index)
+  if not state.controllerShoulderLatch[ownerKey] then return false end
+  local actionPressed = false
+  if repeatAction ~= nil and type(Input.IsActionPressed) == "function" then
+    local ok, pressed = pcall(Input.IsActionPressed, repeatAction, index)
+    actionPressed = ok and pressed == true
+  end
+  local pageValue = ConsoleUI.controllerActionValueAt(pageAction, index)
+  if actionPressed or controllerButtonPressed(repeatButton, index)
+      or pageValue > CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold then
+    return true
+  end
+  state.controllerShoulderLatch[ownerKey] = nil
+  return false
+end
+
 local function controllerShoulderEvent(candidates)
   -- Steam Input may expose shoulder controls only through semantic actions,
   -- while older runtimes may expose only named raw buttons. Resolve the four
   -- physical roles independently and let the existing business dispatcher
   -- consume a single event. Bumpers retain priority if a runtime aliases names.
-  local event = ConsoleUI.controllerShoulderRoleEvent(candidates, "repeat_decrease",
-    CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction, CONTROLLER_REPEAT_DECREASE, false)
-  if event then return event end
-  event = ConsoleUI.controllerShoulderRoleEvent(candidates, "repeat_increase",
-    CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction, CONTROLLER_REPEAT_INCREASE, false)
-  if event then return event end
   local previousAction = CONTROLLER_INPUT_COMPATIBILITY.pagePreviousAction
   if previousAction == CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction then previousAction = nil end
-  event = ConsoleUI.controllerShoulderRoleEvent(candidates, "page_previous",
-    previousAction, CONTROLLER_PAGE_PREVIOUS, true)
-  if event then return event end
   local nextAction = CONTROLLER_INPUT_COMPATIBILITY.pageNextAction
   if nextAction == CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction then nextAction = nil end
+  local event = ConsoleUI.controllerShoulderRoleEvent(candidates, "repeat_decrease",
+    CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction, CONTROLLER_REPEAT_DECREASE, false)
+  if event then
+    local bumperEvidence = controllerButtonTriggeredAt(CONTROLLER_REPEAT_DECREASE, event.index)
+      or controllerButtonPressed(CONTROLLER_REPEAT_DECREASE, event.index)
+    local triggerEvidence = controllerButtonTriggeredAt(CONTROLLER_PAGE_PREVIOUS, event.index)
+      or controllerButtonPressed(CONTROLLER_PAGE_PREVIOUS, event.index)
+      or controllerActionTriggeredAt(previousAction, event.index)
+      or ConsoleUI.controllerActionValueAt(previousAction, event.index)
+        >= CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold
+    if bumperEvidence or not triggerEvidence then
+      state.controllerShoulderLatch["owner:left:" .. tostring(event.index)] = true
+      return event
+    end
+  end
+  event = ConsoleUI.controllerShoulderRoleEvent(candidates, "repeat_increase",
+    CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction, CONTROLLER_REPEAT_INCREASE, false)
+  if event then
+    local bumperEvidence = controllerButtonTriggeredAt(CONTROLLER_REPEAT_INCREASE, event.index)
+      or controllerButtonPressed(CONTROLLER_REPEAT_INCREASE, event.index)
+    local triggerEvidence = controllerButtonTriggeredAt(CONTROLLER_PAGE_NEXT, event.index)
+      or controllerButtonPressed(CONTROLLER_PAGE_NEXT, event.index)
+      or controllerActionTriggeredAt(nextAction, event.index)
+      or ConsoleUI.controllerActionValueAt(nextAction, event.index)
+        >= CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold
+    if bumperEvidence or not triggerEvidence then
+      state.controllerShoulderLatch["owner:right:" .. tostring(event.index)] = true
+      return event
+    end
+  end
+  local previousSuppressed = false
+  for _, index in ipairs(candidates) do
+    if ConsoleUI.controllerShoulderOwnerActive("left", index,
+        CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction, CONTROLLER_REPEAT_DECREASE,
+        previousAction) then previousSuppressed = true end
+  end
+  if not previousSuppressed then
+    event = ConsoleUI.controllerShoulderRoleEvent(candidates, "page_previous",
+      previousAction, CONTROLLER_PAGE_PREVIOUS, true)
+    if event then return event end
+  end
+  local nextSuppressed = false
+  for _, index in ipairs(candidates) do
+    if ConsoleUI.controllerShoulderOwnerActive("right", index,
+        CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction, CONTROLLER_REPEAT_INCREASE,
+        nextAction) then nextSuppressed = true end
+  end
+  if nextSuppressed then return nil end
   return ConsoleUI.controllerShoulderRoleEvent(candidates, "page_next",
     nextAction, CONTROLLER_PAGE_NEXT, true)
 end

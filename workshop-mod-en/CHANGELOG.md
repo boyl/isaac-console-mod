@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.4-en.11
+
+- Fixed Steam Input carrying one LB/RB press into later frames as the same-side LT/RT analog value, which changed the repeat count and then paged a category or entry list.
+- A bumper now owns its side until both the physical button and analog signal return to rest; real LT/RT paging remains unchanged.
+- Bilingual regressions cover both sides, cross-frame alias reports, both focus targets, and non-zero controller indices.
+
 ## 2.5.4-en.10
 
 - Steam Deck and Steam Input shoulder controls now prefer semantic menu actions and retain named physical-button fallbacks across Repentance, Repentance+, and REPENTOGON.

@@ -2446,7 +2446,86 @@ local function testControllerRepeat()
     assertEqual(state.repeatCount, 1, "Steam Input semantic LB did not decrease repeat")
   end
 
+  -- Steam Input can report one physical bumper as a bumper trigger first, then
+  -- keep the same-side trigger action value high on following frames. The
+  -- bumper owns that press until every same-side signal has returned to rest.
+  state.page = 1
+  TEST.buttonTriggers[Controller.BUMPER_RIGHT] = { [index] = true }
+  TEST.buttonPressed[Controller.BUMPER_RIGHT] = { [index] = true }
+  if ButtonAction.ACTION_MENURB then
+    TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
+    TEST.actionPressed[ButtonAction.ACTION_MENURB] = { [index] = true }
+  end
+  TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.75 }
+  renderFrame()
+  assertEqual(state.repeatCount, 2, "RB collision did not adjust repeat exactly once")
+  assertEqual(state.page, 1, "RB collision paged on its trigger frame")
+  if ButtonAction.ACTION_MENURB then TEST.actionPressed[ButtonAction.ACTION_MENURB] = nil end
+  renderFrame()
+  assertEqual(state.repeatCount, 2, "held RB collision repeated the count")
+  assertEqual(state.page, 1, "held RB collision paged on a later frame")
+  TEST.buttonPressed[Controller.BUMPER_RIGHT] = nil
+  TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.2 }
+  renderFrame()
+  TEST.actionValues[ButtonAction.ACTION_MENURT] = nil
+
+  state.page = 2
+  TEST.buttonTriggers[Controller.BUMPER_LEFT] = { [index] = true }
+  TEST.buttonPressed[Controller.BUMPER_LEFT] = { [index] = true }
+  if ButtonAction.ACTION_MENULB then
+    TEST.actionTriggers[ButtonAction.ACTION_MENULB] = { [index] = true }
+    TEST.actionPressed[ButtonAction.ACTION_MENULB] = { [index] = true }
+  end
+  TEST.actionValues[ButtonAction.ACTION_MENULT] = { [index] = 0.75 }
+  renderFrame()
+  assertEqual(state.repeatCount, 1, "LB collision did not adjust repeat exactly once")
+  assertEqual(state.page, 2, "LB collision paged on its trigger frame")
+  if ButtonAction.ACTION_MENULB then TEST.actionPressed[ButtonAction.ACTION_MENULB] = nil end
+  renderFrame()
+  assertEqual(state.repeatCount, 1, "held LB collision repeated the count")
+  assertEqual(state.page, 2, "held LB collision paged on a later frame")
+  TEST.buttonPressed[Controller.BUMPER_LEFT] = nil
+  TEST.actionValues[ButtonAction.ACTION_MENULT] = { [index] = 0.2 }
+  renderFrame()
+  TEST.actionValues[ButtonAction.ACTION_MENULT] = nil
+
+  -- The reverse collision must also be stable: a real trigger can emit a
+  -- same-side bumper semantic action under Steam Input. Analog/trigger
+  -- evidence wins when the physical bumper is not held.
+  state.repeatCount = 7
+  if ButtonAction.ACTION_MENULB and ButtonAction.ACTION_MENURB
+      and ButtonAction.ACTION_MENULT and ButtonAction.ACTION_MENURT then
+    state.page = 1
+    TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
+    TEST.actionTriggers[ButtonAction.ACTION_MENURT] = { [index] = true }
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.75 }
+    TEST.buttonTriggers[Controller.TRIGGER_RIGHT] = { [index] = true }
+    TEST.buttonPressed[Controller.TRIGGER_RIGHT] = { [index] = true }
+    renderFrame()
+    assertEqual(state.repeatCount, 7, "RT collision changed the repeat count")
+    assertEqual(state.page, 2, "RT collision did not page exactly once")
+    TEST.buttonPressed[Controller.TRIGGER_RIGHT] = nil
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = { [index] = 0.2 }
+    renderFrame()
+    TEST.actionValues[ButtonAction.ACTION_MENURT] = nil
+
+    state.page = 2
+    TEST.actionTriggers[ButtonAction.ACTION_MENULB] = { [index] = true }
+    TEST.actionTriggers[ButtonAction.ACTION_MENULT] = { [index] = true }
+    TEST.actionValues[ButtonAction.ACTION_MENULT] = { [index] = 0.75 }
+    TEST.buttonTriggers[Controller.TRIGGER_LEFT] = { [index] = true }
+    TEST.buttonPressed[Controller.TRIGGER_LEFT] = { [index] = true }
+    renderFrame()
+    assertEqual(state.repeatCount, 7, "LT collision changed the repeat count")
+    assertEqual(state.page, 1, "LT collision did not page exactly once")
+    TEST.buttonPressed[Controller.TRIGGER_LEFT] = nil
+    TEST.actionValues[ButtonAction.ACTION_MENULT] = { [index] = 0.2 }
+    renderFrame()
+    TEST.actionValues[ButtonAction.ACTION_MENULT] = nil
+  end
+
   state.inputMode = "command"
+  state.repeatCount = 1
   if ButtonAction.ACTION_MENURB then
     TEST.actionTriggers[ButtonAction.ACTION_MENURB] = { [index] = true }
   end
