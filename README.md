@@ -30,3 +30,22 @@
 使用 `tests/workshop-mod/run_all_tests.py` 作为中英文统一入口，两套 88 项 Lua Mock 与冷启动回归任一失败即停止。构建后再对中英文候选分别运行 `validate_workshop_mod_zh.py` 和 `validate_workshop_mod.py`。
 
 发布前还需在 Repentance、Repentance+ 和 REPENTOGON 中分别手工验收；构建候选不等于上传授权。
+
+## Workshop 自动发布
+
+`tools/publish-workshop.ps1` 将固定发布流程固化为可审计状态机。默认只做双语测试、候选构建、Git HEAD/远端同步、Workshop 身份和远端预览图核验，不会启动上传器：
+
+```powershell
+pwsh -NoLogo -NoProfile -File .\tools\publish-workshop.ps1
+```
+
+人工验收完成且源码已提交、推送后，显式传入 `-Publish` 和对应语言的更新说明才会上传：
+
+```powershell
+pwsh -NoLogo -NoProfile -File .\tools\publish-workshop.ps1 `
+  -Language zh,en -Publish `
+  -ChineseChangeNotes '中文更新说明' `
+  -EnglishChangeNotes 'English change notes'
+```
+
+自动化会在每个 GUI 操作前重新枚举并确认前台窗口，上传按钮对每个项目至多点击一次；上传后只轮询 Steam 的只读接口。证据和发布清单位于 `dist/workshop-publish/`。超时或状态不符时停止并保留截图，不会自动重复上传。

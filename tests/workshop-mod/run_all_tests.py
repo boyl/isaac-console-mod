@@ -17,6 +17,19 @@ def run(arguments: list[str]) -> None:
 
 
 def main() -> int:
+    publish_script = ROOT / "tools" / "publish-workshop.ps1"
+    parse_command = (
+        "$errors=$null; "
+        f"[void][System.Management.Automation.Language.Parser]::ParseFile('{publish_script}',[ref]$null,[ref]$errors); "
+        "if($errors.Count){$errors | ForEach-Object { Write-Error $_ }; exit 1}"
+    )
+    run(["pwsh", "-NoLogo", "-NoProfile", "-Command", parse_command])
+
+    publish_source = publish_script.read_text(encoding="utf-8-sig")
+    assert publish_source.count("Click-Relative -Window $main -X 0.26 -Y 0.16") == 1
+    assert "if (-not $Publish)" in publish_source
+    assert "之后只轮询远端，不重复点击" in publish_source
+
     profiles = (
         ("workshop-mod", "Isaac Chinese Console", "2.5.17"),
         ("workshop-mod-en", "Console UI", "2.5.4-en.12"),
