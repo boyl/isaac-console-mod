@@ -2,6 +2,57 @@
 
 Use the description embedded in `metadata.xml` as the canonical Workshop page text.
 
+## Current Workshop description
+
+# Console UI
+
+**A self-contained in-game command menu with no required Mods, external downloads, PowerShell, or native debug console.**
+
+Subscribe, enable the Mod, start a run, and press **F6** or hold the left stick button (L3) for about 0.5 seconds.
+
+## Core Features
+
+- 18 categories covering 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 official command/reference entries, and Custom Commands;
+- all 1,162 built-in object and command entries can be favorited; Featured shows recent favorites first without changing command permissions;
+- Custom Commands support optional names, creation, search, favorites, editing, deletion, and history recall with no artificial item-count limit; the complete SaveData retains its 64 KiB safety gate;
+- all 1,056 valid official objects include stable IDs and English-name indexing for cross-category search;
+- mode-aware stage lists provide 45 Normal/Hard and 7 Greed/Greedier destinations; lifecycle commands use a separate safe path;
+- collectibles and safe supplies can repeat 1–99 times; entries unsuitable for repetition remain single-run;
+- keyboard, mouse, and controller support includes focus navigation, favorites, removal, repeat counts, list paging, and multi-page descriptions;
+- measured layout adapts to the screen and bundled font metrics, including low resolutions;
+- the game HUD hides while the menu is open; the overlay yields to the native pause menu and restores after resuming;
+- no key injection, native console popup, or stray backtick.
+
+## Controls
+
+1. Press F6, or hold L3 for about 0.5 seconds, to open or close the menu.
+2. Use the arrow keys, mouse, or D-pad to navigate.
+3. Press Enter, left-click, or tap A to execute.
+4. Right-click or hold A for about 0.5 seconds to remove a removable collectible or trinket.
+5. Press F, controller X, or a card's star to favorite; use LT/RT to page the focused area, LB/RB to change the repeat count, and D, the description area, or controller Y to page long descriptions.
+6. Press C to edit a complete command; use Up/Down in the input field to recall command history.
+
+**Removing an item is not a full undo.** Coins, keys, bombs, health, spawned entities, room state, and scripted pickup effects may remain after the item itself is removed.
+
+## Optional Mod Integrations — Not Required
+
+**Without these Mods, the catalog, search, execution, favorites, and Custom Commands remain fully usable.**
+
+- **External Item Descriptions (EID)**: can supplement names and descriptions for additional objects; Console UI does not copy or modify EID files;
+- **Mod Config Menu (MCM)**: can configure the keyboard open key, controller favorite key, startup hint, and whether regular commands close the menu; defaults remain active when MCM is absent.
+
+## Compatibility and Language Versions
+
+One subscription supports Repentance, Repentance+, and REPENTOGON without a second runtime-specific edition.
+
+Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may subscribe to both, but enable only one language version at a time.
+
+## Safety and Usage Limits
+
+This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
+
+This Mod does not access the network or launch external programs. When reporting a problem, include the game version, DLC/runtime, enabled Mod list, and relevant `log.txt` lines.
+
 ## 2.5.4-en.12 update note
 
 Added Custom Commands with optional names, search, favorites, editing, confirmed deletion, and Up/Down recall of recently executed commands. Stable IDs preserve favorites through edits. This advanced raw-command passthrough accepts unknown, third-party, output, high-risk, and otherwise unvalidated commands at the user's own risk; recognized lifecycle commands still use the safe Render path. Capacity remains protected by the 120-byte command and 64 KiB transactional SaveData gates.
