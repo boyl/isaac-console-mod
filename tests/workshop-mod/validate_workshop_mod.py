@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.11"
-METADATA_VERSION = "2.5.4.11"
+DISPLAY_VERSION = "2.5.4-en.12"
+METADATA_VERSION = "2.5.4.12"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -82,6 +82,7 @@ def main() -> int:
         "scripts/data.lua",
         "scripts/command_specs.lua",
         "scripts/command_catalog.lua",
+        "scripts/custom_commands.lua",
         "scripts/english_aliases.lua",
         "scripts/official_objects.lua",
         "resources/font/fusion/10.fnt",
@@ -225,7 +226,7 @@ def main() -> int:
         "entry page command": "local function changeEntryPage(delta, entries)",
         "category page command": "local function changeCategoryPage(delta)",
         "wrapped descriptions": 'wrapText("Effect: "',
-        "clickable manual command label": 'local commandLabel = "Manual command (C): "',
+        "clickable manual command label": 'or "Manual command (C): "',
         "duplicate-name suppression": 'activeEntry.en ~= detailTitle',
         "favorite save rollback message": 'showToast("Favorite could not be saved", "error", 150, "The change was reverted")',
         "favorite marker": "local function drawFavoriteStar(",
@@ -318,7 +319,7 @@ def main() -> int:
     item_count = len(re.findall(r'^\s*\{ id = \d+, cat =', data_lua, re.M))
     command_count = len(re.findall(r'^\s*\{ cat = "[^"]+", name = .*? cmd =', data_lua, re.M))
     command_count += len(re.findall(r'^\s*\{ commandId = "[^"]+", cat =', command_catalog_lua, re.M))
-    if (category_count, item_count, command_count) != (17, 74, 106):
+    if (category_count, item_count, command_count) != (18, 74, 106):
         fail(f"catalog counts mismatch: {(category_count, item_count, command_count)}")
     if len(re.findall(r'^\s*\{ id = \d+, cat = .*? desc = "[^"]+"', data_lua, re.M)) != 74:
         fail("not every curated item has an English explanation")

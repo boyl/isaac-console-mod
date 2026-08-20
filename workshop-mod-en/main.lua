@@ -5,17 +5,19 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.11"
-local REPEAT_DELAY_FRAMES = 7
+local VERSION = "2.5.4-en.12"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
 local MAX_HISTORY = 8
 local MAX_SAVE_BYTES = 64 * 1024
 local MAX_FAVORITES = 2048
-local MAX_CONTROLLER_BUTTON = 31
-local CONTROLLER_OPEN_HOLD_FRAMES = 30
-local CONTROLLER_REMOVE_HOLD_FRAMES = 30
+local LIMITS = {
+  repeatDelayFrames = 7,
+  maxControllerButton = 31,
+  controllerOpenHoldFrames = 30,
+  controllerRemoveHoldFrames = 30,
+}
 local DEFAULT_OPEN_KEY = Keyboard.KEY_F6
 
 local OPEN_KEY_NAMES = {}
@@ -55,7 +57,7 @@ end
 local function normalizeControllerButton(value)
   value = tonumber(value)
   if value == nil or value ~= math.floor(value)
-      or value < 0 or value > MAX_CONTROLLER_BUTTON then return nil end
+      or value < 0 or value > LIMITS.maxControllerButton then return nil end
   return value
 end
 
@@ -295,6 +297,8 @@ local state = {
   controllerConfirmIndex = nil,
   controllerConfirmSource = nil,
   controllerConfirmValue = nil,
+  controllerConfirmTrustedUnknown = false,
+  controllerConfirmRawPassthrough = false,
   pointerActive = false,
   lastMouseX = nil,
   lastMouseY = nil,
@@ -307,6 +311,15 @@ local state = {
   keyboardEnterPressed = false,
   inputLease = nil,
   controllerShoulderLatch = {},
+  customCommands = include("scripts.custom_commands").new(),
+  customEditId = nil,
+  customEditStage = nil,
+  customDraftCommand = "",
+  customDraftName = "",
+  customSelectAll = false,
+  customHistoryIndex = nil,
+  customHistoryDraft = nil,
+  customDeleteConfirmationId = nil,
 }
 
 local Presentation = {
@@ -379,6 +392,10 @@ local function setMenuOpen(open)
     state.commandHistoryDraft = nil
     state.commandHistoryDraftRepeat = nil
     state.unknownCommandConfirmation = nil
+    state.customEditId = nil
+    state.customEditStage = nil
+    state.customSelectAll = false
+    state.customDeleteConfirmationId = nil
     state.nativePauseSuspended = false
     state.controllerConfirmHold = 0
     state.controllerConfirmCommand = nil
@@ -389,6 +406,8 @@ local function setMenuOpen(open)
     state.controllerConfirmIndex = nil
     state.controllerConfirmSource = nil
     state.controllerConfirmValue = nil
+    state.controllerConfirmTrustedUnknown = false
+    state.controllerConfirmRawPassthrough = false
     state.controllerShoulderLatch = {}
   end
 end
@@ -520,6 +539,74 @@ for _, command in ipairs(Catalog.commands) do
     stageCommandWhitelists[mode][tostring(command.cmd or ""):lower()] = true
   end
   allEntries[#allEntries + 1] = command
+end
+
+local CustomCommandUI = {
+  addEntry = {
+    id = "custom_add",
+    cat = "custom_commands",
+    name = "+ Add Custom Command",
+    en = "",
+    icon = "+",
+    tier = "A",
+    desc = "Enter a raw console command, then an optional name, and save it. Advanced; use at your own risk.",
+    kind = "custom_add",
+    catalogAction = "add",
+    canFavorite = false,
+    canRemove = false,
+  },
+}
+
+function CustomCommandUI.rebuildEntries()
+  for index = #allEntries, 1, -1 do
+    local entry = allEntries[index]
+    if entry.kind == "custom_command" then
+      FavoriteModel.entryByKey[entry.objectKey] = nil
+      table.remove(allEntries, index)
+    end
+  end
+  for _, record in ipairs(state.customCommands.records) do
+    local verb = record.command:lower():match("^(%S+)")
+    local spec = CommandSpecs.byVerb[verb]
+    local displayName = record.name ~= "" and record.name or record.command
+    local description
+    if spec and spec.phase == "render" then
+      description = "Advanced passthrough: lifecycle command; dispatched once through the safe Render path."
+    elseif spec and spec.mode == "output" then
+      description = "Advanced passthrough: runs as entered; inspect output in the native console or log."
+    elseif spec and spec.mode == "disabled" then
+      description = "Advanced passthrough (high risk): may quit, reload, change progress, or run arbitrary code."
+    elseif spec then
+      description = "Advanced passthrough: recognized command; runs exactly as saved."
+    else
+      description = "Advanced passthrough: unknown or third-party command; runs exactly as saved."
+    end
+    local entry = {
+      id = record.id,
+      customId = record.id,
+      cat = "custom_commands",
+      name = displayName,
+      en = record.name ~= "" and record.command or "",
+      icon = "CUS",
+      tier = spec and (spec.phase == "render" and "S"
+        or ((spec.mode == "disabled" or spec.mode == "output") and "D" or "A")) or "B",
+      desc = description,
+      cmd = record.command,
+      displayCommand = record.command,
+      commandSpec = spec,
+      kind = "custom_command",
+      catalogAction = "execute",
+      objectKey = state.customCommands:key(record.id),
+      canFavorite = true,
+      canRemove = false,
+      repeatMax = spec and spec.phase == "render" and 1 or 99,
+      trustedUnknown = true,
+      rawPassthrough = true,
+    }
+    entry.searchText = buildSearchText(entry)
+    FavoriteModel.registerEntry(entry)
+    allEntries[#allEntries + 1] = entry
+  end
 end
 
 local function cleanConfigText(value, fallback)
@@ -789,6 +876,7 @@ local function validFavoriteKey(value)
   end
   local entry = FavoriteModel.entryByKey[text]
   if entry and entry.kind == "command" then return text, "m" end
+  if entry and entry.kind == "custom_command" then return text, "u" end
   return nil
 end
 
@@ -834,14 +922,14 @@ local function debugStateStats(label, rawBytes)
   end)
 end
 
-local function saveState()
+function CustomCommandUI.buildSavePayload()
   local favoriteKeys = FavoriteModel.orderedKeys()
 
   local history = {}
   for index = 1, math.min(#state.history, MAX_HISTORY) do
     history[#history + 1] = encode(state.history[index])
   end
-  local payload =
+  return
     "version=" .. VERSION .. "\n"
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
@@ -849,10 +937,16 @@ local function saveState()
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
       .. (state.favoriteOrderNeedsCatalogMigration and "" or "favoriteOrder=recent\n")
       .. "favorites=" .. table.concat(favoriteKeys, ",") .. "\n"
-      .. "history=" .. table.concat(history, "|")
+      .. "history=" .. table.concat(history, "|") .. "\n"
+      .. "customCommandNextId=" .. tostring(state.customCommands.nextId) .. "\n"
+      .. "customCommands=" .. state.customCommands:serialize()
+end
+
+local function saveState()
+  local payload = CustomCommandUI.buildSavePayload()
   if #payload > MAX_SAVE_BYTES then
     debugLog("state save rejected: " .. #payload .. " bytes")
-    return false, "Save data is unexpectedly large"
+    return false, "Storage full (" .. #payload .. "/" .. MAX_SAVE_BYTES .. " bytes); delete or shorten a custom command"
   end
   local ok, err = pcall(function() ConsoleUI:SaveData(payload) end)
   if not ok then
@@ -874,6 +968,8 @@ local function loadState()
   state.startupHintEnabled = true
   state.closeAfterRegularCommand = true
   state.controllerFavoriteButton = nil
+  state.customCommands:load("", nil)
+  CustomCommandUI.rebuildEntries()
 
   local hasDataOk, hasData = pcall(function() return ConsoleUI:HasData() end)
   if not hasDataOk or not hasData then
@@ -932,6 +1028,10 @@ local function loadState()
     state.favoriteOrderNeedsCatalogMigration = true
     if favoriteOrderMode ~= nil then migrated = true end
   end
+  local customPayload = parseRaw:match("customCommands=([^\n]*)") or ""
+  local customNextId = parseRaw:match("customCommandNextId=([^\n]*)")
+  if state.customCommands:load(customPayload, customNextId) then migrated = true end
+  CustomCommandUI.rebuildEntries()
   local favorites = parseRaw:match("favorites=([^\n]*)") or ""
   local favoriteCount = 0
   for token in favorites:gmatch("([^,]+)") do
@@ -1012,6 +1112,10 @@ local function clearRunTransientState()
   state.commandHistoryIndex = nil
   state.commandHistoryDraft = nil
   state.commandHistoryDraftRepeat = nil
+  state.customEditId = nil
+  state.customEditStage = nil
+  state.customSelectAll = false
+  state.customDeleteConfirmationId = nil
   state.nativePauseSuspended = false
   state.inputLease = nil
   state.controllerIndex = nil
@@ -1027,6 +1131,8 @@ local function clearRunTransientState()
   state.controllerConfirmIndex = nil
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
+  state.controllerConfirmTrustedUnknown = false
+  state.controllerConfirmRawPassthrough = false
   state.controllerShoulderLatch = {}
   state.pointerActive = false
   state.controlMode = "keyboard"
@@ -1384,14 +1490,33 @@ local function applyPostCommandMenuPolicy(spec)
   state.commandHistoryDraftRepeat = nil
 end
 
-local function queueCommand(command, requestedCount, explicitRepeatMax)
-  local valid, value, spec = validateCommand(command)
-  if not valid then
-    showToast(value, "warning", 120)
-    return false
+local function queueCommand(command, requestedCount, explicitRepeatMax, trustedUnknown, rawPassthrough)
+  local valid, value, spec
+  if rawPassthrough then
+    value = trim(command)
+    if value == "" then
+      showToast("Command cannot be empty", "warning", 120)
+      return false
+    end
+    if #value > 120 then
+      showToast("Command is too long", "warning", 120)
+      return false
+    end
+    if value:find("\0", 1, true) then
+      showToast("Command contains an invalid character", "warning", 120)
+      return false
+    end
+    spec = select(1, commandSpec(value))
+    valid = true
+  else
+    valid, value, spec = validateCommand(command)
+    if not valid then
+      showToast(value, "warning", 120)
+      return false
+    end
   end
 
-  if not spec then
+  if not rawPassthrough and not spec and not trustedUnknown then
     if state.unknownCommandConfirmation ~= value then
       state.unknownCommandConfirmation = value
       showToast("Unknown or third-party command", "warning", 180,
@@ -1403,7 +1528,7 @@ local function queueCommand(command, requestedCount, explicitRepeatMax)
     state.unknownCommandConfirmation = nil
   end
 
-  if isStageCommand(value) then
+  if not rawPassthrough and isStageCommand(value) then
     local stageMode = isGreedMode() and "greed" or "normal"
     if not stageCommandWhitelists[stageMode][value:lower()] then
       local message = stageMode == "greed"
@@ -1451,6 +1576,9 @@ end
 
 local function queueEntry(entry, requestedCount)
   if not entry then return false end
+  if entry.kind == "custom_add" then
+    return CustomCommandUI.beginEdit(nil)
+  end
   if entry.catalogAction == "disabled" then
     showToast(disabledCommandReason(entry.commandSpec), "warning", 180)
     return false
@@ -1459,7 +1587,8 @@ local function queueEntry(entry, requestedCount)
     showToast("Parameter reference: press C to enter the full command", "warning", 120)
     return false
   end
-  return queueCommand(entry.cmd, requestedCount, entry.repeatMax)
+  return queueCommand(entry.cmd, requestedCount, entry.repeatMax,
+    entry.trustedUnknown, entry.rawPassthrough == true)
 end
 
 local function finishQueue(queue)
@@ -1514,7 +1643,7 @@ local function processQueue()
   if queue.done >= queue.total then
     finishQueue(queue)
   else
-    queue.nextFrame = frame + REPEAT_DELAY_FRAMES
+    queue.nextFrame = frame + LIMITS.repeatDelayFrames
   end
 end
 
@@ -1595,6 +1724,11 @@ local function visibleEntries()
     end
   elseif category.id == "all_items" then
     for _, entry in ipairs(completeEntries) do result[#result + 1] = entry end
+  elseif category.id == "custom_commands" then
+    result[#result + 1] = CustomCommandUI.addEntry
+    for _, entry in ipairs(allEntries) do
+      if entry.kind == "custom_command" then result[#result + 1] = entry end
+    end
   else
     for _, entry in ipairs(allEntries) do
       if entry.cat == category.id then result[#result + 1] = entry end
@@ -1618,6 +1752,7 @@ local function visibleEntries()
 end
 
 local function resetSelection()
+  state.customDeleteConfirmationId = nil
   state.selection = 1
   state.page = 1
   state.detailEntryId = nil
@@ -1643,6 +1778,7 @@ local function changeEntryPage(delta, entries)
   local pageCount = math.max(1, math.ceil(#entries / ITEMS_PER_PAGE))
   local targetPage = clamp(state.page + delta, 1, pageCount)
   if targetPage == state.page then return false end
+  state.customDeleteConfirmationId = nil
   state.page = targetPage
   state.selection = 1
   return true
@@ -1837,6 +1973,187 @@ local function beginCommandInput(entry)
     and state.manualCommand ~= ""
   state.unknownCommandConfirmation = nil
   clearCommandHistoryNavigation()
+  return true
+end
+
+function CustomCommandUI.cancelEdit()
+  state.inputMode = nil
+  state.customEditId = nil
+  state.customEditStage = nil
+  state.customDraftCommand = ""
+  state.customDraftName = ""
+  state.customSelectAll = false
+  state.customHistoryIndex = nil
+  state.customHistoryDraft = nil
+end
+
+function CustomCommandUI.beginEdit(entry)
+  local record = entry and state.customCommands:find(entry.customId) or nil
+  state.customEditId = record and record.id or nil
+  state.customEditStage = "command"
+  state.customDraftCommand = record and record.command or ""
+  state.customDraftName = record and record.name or ""
+  state.customSelectAll = record ~= nil and state.customDraftCommand ~= ""
+  state.customHistoryIndex = nil
+  state.customHistoryDraft = nil
+  state.customDeleteConfirmationId = nil
+  state.inputMode = "custom_command"
+  state.searchSelectAll = false
+  state.commandSelectAll = false
+  return true
+end
+
+function CustomCommandUI.captureText()
+  local field = state.customEditStage == "name" and "customDraftName" or "customDraftCommand"
+  local value, selectAll, changed = captureEditableText(state[field], state.customSelectAll)
+  state[field] = value
+  state.customSelectAll = selectAll
+  if changed and state.customEditStage == "command" then
+    state.customHistoryIndex = nil
+    state.customHistoryDraft = nil
+  end
+end
+
+function CustomCommandUI.recallHistory(delta)
+  if state.customEditStage ~= "command" or #state.history == 0 then return false end
+  if state.customHistoryIndex == nil then
+    if delta < 0 then return false end
+    state.customHistoryDraft = state.customDraftCommand
+    state.customHistoryIndex = 1
+  else
+    local target = state.customHistoryIndex + delta
+    if target < 1 then
+      state.customDraftCommand = state.customHistoryDraft or ""
+      state.customHistoryIndex = nil
+      state.customHistoryDraft = nil
+      state.customSelectAll = false
+      return true
+    end
+    state.customHistoryIndex = clamp(target, 1, #state.history)
+  end
+  state.customDraftCommand = decodeHistoryEntry(state.history[state.customHistoryIndex])
+  state.customSelectAll = false
+  return true
+end
+
+function CustomCommandUI.selectRecord(id)
+  local category = categoryById.custom_commands
+  if category then setCategory(category.index) end
+  local entries = visibleEntries()
+  for index, entry in ipairs(entries) do
+    if entry.customId == id then
+      state.page = math.floor((index - 1) / ITEMS_PER_PAGE) + 1
+      state.selection = ((index - 1) % ITEMS_PER_PAGE) + 1
+      state.sidebarFocus = false
+      return
+    end
+  end
+end
+
+function CustomCommandUI.confirmCommandStage()
+  local value = trim(state.customDraftCommand)
+  if value == "" then
+    showToast("Command cannot be empty", "warning", 180)
+    return false
+  end
+  if #value > 120 then
+    showToast("Command is too long", "warning", 180)
+    return false
+  end
+  if value:find("\0", 1, true) then
+    showToast("Command contains an invalid character", "warning", 180)
+    return false
+  end
+  local duplicate = state.customCommands:findByCommand(value)
+  if duplicate and duplicate.id ~= state.customEditId then
+    CustomCommandUI.cancelEdit()
+    CustomCommandUI.selectRecord(duplicate.id)
+    showToast("Command already saved", "warning", 120, "Located the existing entry")
+    return false
+  end
+  state.customDraftCommand = value
+  state.customEditStage = "name"
+  state.customSelectAll = state.customDraftName ~= ""
+  showToast("Command confirmed", "info", 60, "Enter an optional name; Enter saves")
+  return true
+end
+
+function CustomCommandUI.saveDraft()
+  local name = trim(state.customDraftName)
+  if utf8sub(name, 40) ~= name then
+    showToast("Name is limited to 40 characters", "warning", 120)
+    return false
+  end
+  if name:find("[\r\n]") then
+    showToast("Name cannot contain a line break", "warning", 120)
+    return false
+  end
+  local modelSnapshot = state.customCommands:snapshot()
+  local favoriteSnapshot, orderSnapshot = {}, {}
+  for key, enabled in pairs(state.favorites) do favoriteSnapshot[key] = enabled end
+  for index, key in ipairs(state.favoriteOrder) do orderSnapshot[index] = key end
+  local ok, record = pcall(function()
+    if state.customEditId then
+      return state.customCommands:update(state.customEditId,
+        state.customDraftCommand, name, true)
+    end
+    return state.customCommands:add(state.customDraftCommand, name, true)
+  end)
+  if not ok then
+    showToast("Could not save custom command", "error", 180, tostring(record))
+    return false
+  end
+  CustomCommandUI.rebuildEntries()
+  local saved, err = saveState()
+  if not saved then
+    state.customCommands:restore(modelSnapshot)
+    state.favorites, state.favoriteOrder = favoriteSnapshot, orderSnapshot
+    CustomCommandUI.rebuildEntries()
+    showToast("Custom command was not saved", "error", 180, err)
+    return false
+  end
+  local id = record.id
+  CustomCommandUI.cancelEdit()
+  CustomCommandUI.selectRecord(id)
+  showToast("Custom command saved", "success")
+  return true
+end
+
+function CustomCommandUI.submitEdit()
+  if state.customEditStage == "command" then return CustomCommandUI.confirmCommandStage() end
+  return CustomCommandUI.saveDraft()
+end
+
+function CustomCommandUI.requestDelete(entry)
+  if not entry or entry.kind ~= "custom_command" then return false end
+  if state.customDeleteConfirmationId ~= entry.customId then
+    state.customDeleteConfirmationId = entry.customId
+    showToast("Delete “" .. tostring(entry.name) .. "”?", "warning", 180,
+      "Press Delete or right-click again")
+    return false
+  end
+  local modelSnapshot = state.customCommands:snapshot()
+  local favoriteSnapshot, orderSnapshot = {}, {}
+  for key, enabled in pairs(state.favorites) do favoriteSnapshot[key] = enabled end
+  for index, key in ipairs(state.favoriteOrder) do orderSnapshot[index] = key end
+  local key = entry.objectKey
+  state.customCommands:remove(entry.customId)
+  state.favorites[key] = nil
+  for index = #state.favoriteOrder, 1, -1 do
+    if state.favoriteOrder[index] == key then table.remove(state.favoriteOrder, index) end
+  end
+  state.customDeleteConfirmationId = nil
+  CustomCommandUI.rebuildEntries()
+  local saved, err = saveState()
+  if not saved then
+    state.customCommands:restore(modelSnapshot)
+    state.favorites, state.favoriteOrder = favoriteSnapshot, orderSnapshot
+    CustomCommandUI.rebuildEntries()
+    showToast("Custom command was not deleted", "error", 180, err)
+    return false
+  end
+  resetSelection()
+  showToast("Custom command deleted", "success")
   return true
 end
 
@@ -2066,6 +2383,7 @@ local function moveGridSelection(entries, delta)
   if #entries == 0 then return end
   local current = (state.page - 1) * ITEMS_PER_PAGE + state.selection
   local target = clamp(current + delta, 1, #entries)
+  if target ~= current then state.customDeleteConfirmationId = nil end
   state.page = math.floor((target - 1) / ITEMS_PER_PAGE) + 1
   state.selection = ((target - 1) % ITEMS_PER_PAGE) + 1
   state.detailEntryId = nil
@@ -2210,6 +2528,8 @@ local function clearControllerConfirm()
   state.controllerConfirmIndex = nil
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
+  state.controllerConfirmTrustedUnknown = false
+  state.controllerConfirmRawPassthrough = false
 end
 
 local function updateControllerConfirm()
@@ -2217,7 +2537,7 @@ local function updateControllerConfirm()
   local index = state.controllerConfirmIndex or state.controllerIndex or 0
   if controllerConfirmPressed(index) then
     state.controllerConfirmHold = state.controllerConfirmHold + 1
-    if state.controllerConfirmHold >= CONTROLLER_REMOVE_HOLD_FRAMES then
+    if state.controllerConfirmHold >= LIMITS.controllerRemoveHoldFrames then
       local command = state.controllerConfirmRemoveCommand
       local message = state.controllerConfirmRemoveMessage
       local source, value = state.controllerConfirmSource, state.controllerConfirmValue
@@ -2233,10 +2553,12 @@ local function updateControllerConfirm()
     local command = state.controllerConfirmCommand
     local repeatCount = state.controllerConfirmRepeat
     local repeatMax = state.controllerConfirmRepeatMax
+    local trustedUnknown = state.controllerConfirmTrustedUnknown
+    local rawPassthrough = state.controllerConfirmRawPassthrough
     local source, value = state.controllerConfirmSource, state.controllerConfirmValue
     clearControllerConfirm()
     armInputLease(source == "action" and "action" or "controller_button", value, index)
-    queueCommand(command, repeatCount, repeatMax)
+    queueCommand(command, repeatCount, repeatMax, trustedUnknown, rawPassthrough)
   end
   return true
 end
@@ -2249,7 +2571,7 @@ local function handleKeyboardAndController(entries)
     if state.controllerOpenIndex ~= openIndex then state.controllerOpenHold = 0 end
     state.controllerOpenIndex = openIndex
     state.controllerOpenHold = state.controllerOpenHold + 1
-    if state.controllerOpenHold >= CONTROLLER_OPEN_HOLD_FRAMES and not state.controllerOpenLatched then
+    if state.controllerOpenHold >= LIMITS.controllerOpenHoldFrames and not state.controllerOpenLatched then
       state.controllerOpenLatched = true
       state.controllerIndex = openIndex
       state.pointerActive = false
@@ -2324,6 +2646,20 @@ local function handleKeyboardAndController(entries)
       changeRepeat(1)
     end
     return
+  elseif state.inputMode == "custom_command" then
+    if state.customEditStage == "command" and keyTriggered(Keyboard.KEY_UP) then
+      CustomCommandUI.recallHistory(1)
+    elseif state.customEditStage == "command" and keyTriggered(Keyboard.KEY_DOWN) then
+      CustomCommandUI.recallHistory(-1)
+    elseif editableTextTriggered() then
+      CustomCommandUI.captureText()
+    elseif keyTriggered(Keyboard.KEY_ESCAPE) or (controllerEvent and controllerEvent.role == "back") then
+      CustomCommandUI.cancelEdit()
+    elseif keyboardEnter then
+      armInputLease("keyboard", Keyboard.KEY_ENTER, 0)
+      CustomCommandUI.submitEdit()
+    end
+    return
   end
 
   if updateControllerConfirm() then return end
@@ -2346,7 +2682,16 @@ local function handleKeyboardAndController(entries)
     return
   end
   if keyTriggered(Keyboard.KEY_C) then
-    beginCommandInput(selectedEntry(entries))
+    local entry = selectedEntry(entries)
+    if entry and (entry.kind == "custom_command" or entry.kind == "custom_add") then
+      CustomCommandUI.beginEdit(entry.kind == "custom_command" and entry or nil)
+    else
+      beginCommandInput(entry)
+    end
+    return
+  end
+  if keyTriggered(Keyboard.KEY_DELETE) then
+    CustomCommandUI.requestDelete(selectedEntry(entries))
     return
   end
   if controllerEvent and (controllerEvent.role == "page_previous"
@@ -2441,6 +2786,8 @@ local function handleKeyboardAndController(entries)
       state.controllerConfirmRemoveMessage = removalUnavailableMessage(entry, true)
       state.controllerConfirmRepeat = state.repeatCount
       state.controllerConfirmRepeatMax = entry.repeatMax
+      state.controllerConfirmTrustedUnknown = entry.trustedUnknown == true
+      state.controllerConfirmRawPassthrough = entry.rawPassthrough == true
       state.controllerConfirmSource = controllerEvent.source
       state.controllerConfirmValue = controllerEvent.value
       state.controllerConfirmIndex = controllerEvent.index or state.controllerIndex or 0
@@ -2584,6 +2931,7 @@ end
 local function resolveFooterContext(entries)
   if state.inputMode == "search" then return "search", nil end
   if state.inputMode == "command" then return "command", nil end
+  if state.inputMode == "custom_command" then return "custom_command", nil end
   if state.sidebarFocus then return "category", currentCategory() end
   local entry = selectedEntry(entries)
   if entry then return "entry", entry end
@@ -2773,7 +3121,15 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
     details = mode == "mouse" and "Click details: next" or "D: details"
   end
 
-  if entry.catalogAction == "disabled" then
+  if entry.kind == "custom_add" then
+    if mode == "controller" then add("A: add (keyboard input)")
+    elseif mode == "mouse" then add("Click: add")
+    else add("Enter: add") end
+  elseif entry.kind == "custom_command" then
+    if mode == "controller" then add("A: run")
+    elseif mode == "mouse" then add("LMB: run"); add("Click command: edit"); add("RMB: delete")
+    else add("Enter: run"); add("C: edit"); add("Delete: delete") end
+  elseif entry.catalogAction == "disabled" then
     add("Disabled")
   elseif entry.catalogAction == "manual" then
     if mode == "controller" then add("A: help"); add("C: parameters")
@@ -3103,6 +3459,10 @@ local function drawMenu(entries)
         drawFavoriteStar(favoriteX, y, favoriteW, L.cardH, isFavorite)
       end
       if hovered then
+        local previousEntry = selectedEntry(entries)
+        if not previousEntry or previousEntry.customId ~= entry.customId then
+          state.customDeleteConfirmationId = nil
+        end
         state.selection = localIndex
         state.sidebarFocus = false
       end
@@ -3115,7 +3475,9 @@ local function drawMenu(entries)
           queueEntry(entry, state.repeatCount)
         end
       elseif hovered and rightClicked then
-        if removeCommand then
+        if entry.kind == "custom_command" then
+          CustomCommandUI.requestDelete(entry)
+        elseif removeCommand then
           armInputLease("mouse", 1, 0)
           queueCommand(removeCommand, 1)
         else
@@ -3128,8 +3490,11 @@ local function drawMenu(entries)
   drawRect(L.contentX, L.footerY, L.contentW, L.footerH, COLORS.sidebar)
   local queueTotal = state.queue
     and clamp(math.floor(tonumber(state.queue.total) or 1), 1, 99) or 0
-  local footerNoticeActive = state.inputMode == nil and (queueTotal > 1
-    or (state.toast ~= nil and state.toastFramesRemaining > 0))
+  local visibleToast = state.toast ~= nil and state.toastFramesRemaining > 0
+  local customEditorNotice = state.inputMode == "custom_command" and visibleToast
+    and (state.toast.kind == "warning" or state.toast.kind == "error")
+  local footerNoticeActive = (state.inputMode == nil and (queueTotal > 1 or visibleToast))
+    or customEditorNotice
   local footerTextY = L.footerY + L.pad
   local repeatX = L.contentX + L.pad
   local repeatLabel = Presentation.repeatLabel()
@@ -3195,6 +3560,22 @@ local function drawMenu(entries)
         }, fullDetailW))
     drawText(commandHint, fullDetailX, footerTextY + rowStep * 2,
       0.60, awaitingUnknown and TEXT.warning or TEXT.muted, fullDetailW)
+  elseif footerMode == "custom_command" then
+    local editingName = state.customEditStage == "name"
+    local label = editingName and "Name (optional): " or "Custom command: "
+    local value = editingName and state.customDraftName or state.customDraftCommand
+    local labelW = math.min(fullDetailW, safeTextWidth(font10, label) + L.pad)
+    local inputW = math.max(1, fullDetailW - labelW)
+    local input = state.customSelectAll and ("[" .. value .. "]") or (value .. "_")
+    drawText(label, fullDetailX, footerTextY + rowStep, 0.60, TEXT.accent, labelW)
+    drawText(fittingInputText(input, inputW), fullDetailX + labelW,
+      footerTextY + rowStep, 0.60, TEXT.accent, inputW)
+    local hint = editingName and "Name may be blank · Enter saves · Esc cancels"
+      or "Up/Down history · Advanced raw passthrough · Enter continues · Esc cancels"
+    drawText(fittingText({ hint }, fullDetailW), fullDetailX, footerTextY + rowStep * 2,
+      0.60, TEXT.muted, fullDetailW)
+    drawText("64 KiB total storage limit; an oversized change is fully rolled back",
+      fullDetailX, footerTextY + rowStep * 3, 0.60, TEXT.muted, fullDetailW)
   elseif footerMode == "category" then
     local categoryText = categoryFooterText(footerTarget, greedMode, fullDetailW)
     drawText(categoryText, fullDetailX, footerTextY + rowStep,
@@ -3236,8 +3617,10 @@ local function drawMenu(entries)
     local isFavorite = state.favorites[activeEntry.objectKey] == true
     local hintCandidates = Presentation.entryHintCandidates(
       activeEntry, isFavorite, effectPageCount)
-    local commandLabel = "Manual command (C): "
-    local commandValue = activeEntry.displayCommand or activeEntry.cmd or ""
+    local isCustomAdd = activeEntry.kind == "custom_add"
+    local commandLabel = isCustomAdd and "Action: " or "Manual command (C): "
+    local commandValue = isCustomAdd and "Press Enter/A or click the card to add"
+      or (activeEntry.displayCommand or activeEntry.cmd or "")
     local commandLabelW = safeTextWidth(font10, commandLabel)
     local desiredCommandW = commandLabelW + safeTextWidth(font10, commandValue)
     local commandW = math.min(fullDetailW, desiredCommandW)
@@ -3262,7 +3645,13 @@ local function drawMenu(entries)
       commandColor, commandLabelW)
     drawText(fittingInputText(commandValue, commandValueW),
       fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
-    if commandHovered and clicked then beginCommandInput(activeEntry) end
+    if commandHovered and clicked then
+      if activeEntry.kind == "custom_command" or activeEntry.kind == "custom_add" then
+        CustomCommandUI.beginEdit(activeEntry.kind == "custom_command" and activeEntry or nil)
+      else
+        beginCommandInput(activeEntry)
+      end
+    end
     if detailHint then
       drawText(detailHint, detailX, footerTextY, 0.60, TEXT.muted, topHintW)
     end

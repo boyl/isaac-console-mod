@@ -27,15 +27,17 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 - `-` / `+`: set a repeat count from 1 to 99.
 - Controller `LB` / `RB`: decrease or increase the repeat count.
 
-Only `giveitem` and `spawn` can repeat. Debug flags, stage warps, `kill`, and other one-shot commands are forced to a single execution.
+Custom Commands is an advanced raw-command passthrough. Enter the command text, then an optional name; Up/Down recalls recent executed commands while editing the command field. Saved entries can be searched, favorited, edited with `C`, or deleted with `Delete`/right-click confirmation. Unknown, third-party, output, high-risk, and otherwise unvalidated commands can be saved and run at the user's own risk. Recognized lifecycle commands still use the one-shot safe Render path. The 120-byte command limit and 64 KiB total SaveData gate are technical capacity limits.
+
+In the built-in catalog, only `giveitem` and `spawn` can repeat. Custom raw commands may use the selected repeat count; recognized lifecycle commands remain single-use.
 
 Regular commands close the menu by default for backward compatibility. With optional MCM, this can be turned off to keep the current category, page, selection, and manual-command text visible. Run-changing lifecycle commands still close the menu before execution.
 
 ## Catalog and EID
 
-The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 106 command or command-reference entries across 17 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. All 1,162 right-side entries can be favorited, and Featured shows the most recently favorited entry first. Favoriting a blocked or reference-only command never changes its execution permission.
+The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 built-in command or command-reference entries, and Custom Commands across 18 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. All 1,162 built-in right-side entries and saved custom commands can be favorited, and Featured shows the most recently favorited entry first. Favoriting a blocked or reference-only command never changes its execution permission.
 
-Commands are classified by runtime safety. Lifecycle-changing commands use a one-shot final Render dispatcher, commands whose output requires the native console remain reference-only, and dangerous commands are blocked with an explicit reason. `rewind` is single-use and waits for a stable lifecycle receipt before the interface can submit another command.
+Built-in catalog and ordinary manual commands are classified by runtime safety. Lifecycle-changing commands use a one-shot final Render dispatcher, commands whose output requires the native console remain reference-only, and dangerous commands are blocked with an explicit reason. Custom Commands is the explicitly advanced raw-passthrough exception. `rewind` is single-use and waits for a stable lifecycle receipt before the interface can submit another command.
 
 External Item Descriptions is optional. When EID is enabled, Console UI reads its public `en_us` tables to enrich descriptions. If EID is missing or incompatible, official game data remains available and all commands continue to work.
 

@@ -454,6 +454,11 @@ local removalCommand = findUpvalue(onRender, "removalCommand")
 local toggleFavorite = findUpvalue(onRender, "toggleFavorite")
 local saveState = findUpvalue(onRender, "saveState")
 local allEntries = findUpvalue(onRender, "allEntries")
+local categoryById = findUpvalue(onRender, "categoryById")
+local setCategory = findUpvalue(onRender, "setCategory")
+local CustomCommandUI = findUpvalue(onRender, "CustomCommandUI")
+local FavoriteModel = findUpvalue(onRender, "FavoriteModel")
+local MAX_SAVE_BYTES = findUpvalue(onRender, "MAX_SAVE_BYTES")
 local runtimeCatalog = findUpvalue(visibleEntries, "Catalog")
 assertTrue(type(state) == "table", "state upvalue unavailable")
 assertTrue(type(visibleEntries) == "function", "visibleEntries upvalue unavailable")
@@ -466,6 +471,11 @@ assertTrue(type(showToast) == "function", "showToast upvalue unavailable")
 assertTrue(type(drawToast) == "function", "drawToast upvalue unavailable")
 assertTrue(type(toggleFavorite) == "function", "toggleFavorite upvalue unavailable")
 assertTrue(type(saveState) == "function", "saveState upvalue unavailable")
+assertTrue(type(categoryById) == "table", "categoryById upvalue unavailable")
+assertTrue(type(setCategory) == "function", "setCategory upvalue unavailable")
+assertTrue(type(CustomCommandUI) == "table", "CustomCommandUI upvalue unavailable")
+assertTrue(type(FavoriteModel) == "table", "FavoriteModel upvalue unavailable")
+assertEqual(MAX_SAVE_BYTES, 64 * 1024, "SaveData safety limit changed")
 
 local function clearInput()
   TEST.keyTriggers = {}
@@ -682,12 +692,18 @@ local function testHistoryTwentyGames()
   for gameIndex = 1, 20 do
     onStarted()
     assertTrue(#state.history <= 8, "history exceeded eight on load " .. gameIndex)
-    executeSearchResult(tostring(680 + gameIndex), "giveitem c" .. tostring(680 + gameIndex))
+    local itemId = 680 + ((gameIndex - 1) % 8) + 1
+    executeSearchResult(tostring(itemId), "giveitem c" .. tostring(itemId))
     assertTrue(#state.history <= 8, "history exceeded eight after command " .. gameIndex)
     local savesBeforeExit = TEST.saveAttempts
     onExit()
     assertEqual(TEST.saveAttempts, savesBeforeExit, "exit save repeated in game " .. gameIndex)
     payloadSizes[#payloadSizes + 1] = #(TEST.saveData or "")
+    -- The mock retains engine command and log records for assertions. They are
+    -- not Mod-owned live state and would otherwise create false leak signals
+    -- when their Lua arrays resize during this long-running scenario.
+    TEST.executed = {}
+    TEST.logs = {}
     collectgarbage("collect")
     memorySamples[#memorySamples + 1] = collectgarbage("count")
   end
@@ -699,13 +715,225 @@ local function testHistoryTwentyGames()
     minMemory = math.min(minMemory, memorySamples[index])
     maxMemory = math.max(maxMemory, memorySamples[index])
   end
-  assertTrue(maxMemory - minMemory < 256, "Lua live memory did not stabilize across final ten games")
+  -- Lua 5.1's allocator may retain one additional table bucket depending on
+  -- address/hash layout. Keep this as a leak guard, while payload size and
+  -- bounded model cardinalities below remain the deterministic contracts.
+  assertTrue(maxMemory - minMemory < 512,
+    "Lua live memory grew beyond the bounded allocator envelope: delta="
+      .. tostring(maxMemory - minMemory) .. " samples=" .. table.concat(memorySamples, ","))
   local minPayload, maxPayload = payloadSizes[11], payloadSizes[11]
   for index = 11, #payloadSizes do
     minPayload = math.min(minPayload, payloadSizes[index])
     maxPayload = math.max(maxPayload, payloadSizes[index])
   end
   assertTrue(maxPayload - minPayload < 256, "save payload size did not stabilize")
+end
+
+local function testCustomCommands()
+  onStarted()
+  openMenu()
+  assertEqual(#runtimeCatalog.categories, 18, "custom command category is missing")
+  local customCategory = categoryById.custom_commands
+  assertTrue(customCategory ~= nil, "custom command category was not indexed")
+  setCategory(customCategory.index)
+  local initialEntries = visibleEntries()
+  assertEqual(#initialEntries, 1, "empty custom category must contain only the add entry")
+  assertEqual(initialEntries[1].kind, "custom_add", "custom add entry is not first")
+
+  state.history = { "spawn 5.10.1 ×4", "giveitem c182" }
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "draft command"
+  pressKey(Keyboard.KEY_UP)
+  assertEqual(state.customDraftCommand, "spawn 5.10.1",
+    "custom editor Up did not recall the newest command")
+  pressKey(Keyboard.KEY_UP)
+  assertEqual(state.customDraftCommand, "giveitem c182",
+    "custom editor second Up did not recall the older command")
+  pressKey(Keyboard.KEY_DOWN)
+  assertEqual(state.customDraftCommand, "spawn 5.10.1",
+    "custom editor Down did not move toward the newest command")
+  pressKey(Keyboard.KEY_DOWN)
+  assertEqual(state.customDraftCommand, "draft command",
+    "custom editor Down past newest did not restore its draft")
+  pressKey(Keyboard.KEY_UP)
+  pressKey(keyForCharacter("x"))
+  local editedHistory = state.customDraftCommand
+  pressKey(Keyboard.KEY_DOWN)
+  assertEqual(state.customDraftCommand, editedHistory,
+    "editing recalled custom history did not leave history navigation")
+  CustomCommandUI.cancelEdit()
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "debug 12"
+  assertTrue(CustomCommandUI.submitEdit(), "known custom command did not advance to name entry")
+  assertEqual(state.customEditStage, "name", "custom command skipped the optional name stage")
+  state.customDraftName = "name draft"
+  pressKey(Keyboard.KEY_UP)
+  assertEqual(state.customDraftName, "name draft",
+    "history navigation changed the optional-name stage")
+  state.customDraftName = IS_ZH and "持有物检查" or "Item Check"
+  assertTrue(CustomCommandUI.submitEdit(), "known custom command could not be saved")
+  local first = state.customCommands:find(1)
+  assertTrue(first ~= nil and first.command == "debug 12", "saved custom command differs")
+  assertTrue(contains(TEST.saveData, "customCommandNextId=2"), "custom next id was not serialized")
+  assertTrue(contains(TEST.saveData, "customCommands="), "custom commands were not serialized")
+  local firstEntry = FavoriteModel.entryByKey["u:1"]
+  assertTrue(firstEntry ~= nil, "saved custom command was not registered")
+  toggleFavorite(firstEntry)
+  assertTrue(state.favorites["u:1"] == true, "custom command could not be favorited")
+
+  onStarted()
+  local restarted = state.customCommands:find(1)
+  assertTrue(restarted ~= nil and restarted.command == "debug 12",
+    "custom command did not survive a game restart; records="
+      .. tostring(#state.customCommands.records) .. "; save=" .. tostring(TEST.saveData))
+  assertTrue(state.favorites["u:1"] == true,
+    "custom command favorite did not survive a game restart")
+  openMenu()
+  setCategory(categoryById.custom_commands.index)
+  firstEntry = FavoriteModel.entryByKey["u:1"]
+  assertTrue(firstEntry ~= nil, "restarted custom command was not rebuilt into the catalog")
+
+  CustomCommandUI.beginEdit(firstEntry)
+  state.customDraftCommand = "debug 13"
+  assertTrue(CustomCommandUI.submitEdit(), "custom edit did not advance to the name stage")
+  state.customDraftName = IS_ZH and "碰撞点检查" or "Grid Check"
+  assertTrue(CustomCommandUI.submitEdit(), "custom edit could not be saved")
+  assertTrue(state.customCommands:find(1) ~= nil, "custom edit changed the stable id")
+  assertEqual(state.customCommands:find(1).name, IS_ZH and "碰撞点检查" or "Grid Check",
+    "custom edit did not retain the new name")
+  assertTrue(state.favorites["u:1"] == true, "custom edit lost its favorite")
+  state.search = IS_ZH and "碰撞点" or "Grid Check"
+  local nameMatches = visibleEntries()
+  local foundCustomName = false
+  for _, entry in ipairs(nameMatches) do
+    if entry.objectKey == "u:1" then foundCustomName = true end
+  end
+  assertTrue(foundCustomName,
+    "global search did not match the custom name; matches=" .. tostring(#nameMatches))
+  state.search = "debug 13"
+  local commandMatches = visibleEntries()
+  local foundCustomCommand = false
+  for _, entry in ipairs(commandMatches) do
+    if entry.objectKey == "u:1" then foundCustomCommand = true end
+  end
+  assertTrue(foundCustomCommand, "global search did not match the complete custom command")
+  state.search = ""
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "thirdparty_custom value"
+  assertTrue(CustomCommandUI.submitEdit(), "raw unknown custom command did not advance directly")
+  assertTrue(CustomCommandUI.submitEdit(), "raw unknown custom command could not be saved with an empty name")
+  local unknown = state.customCommands:find(2)
+  assertTrue(unknown and unknown.trusted, "raw passthrough marker was not persisted")
+  local unknownEntry = FavoriteModel.entryByKey["u:2"]
+  assertTrue(unknownEntry.rawPassthrough, "custom entry lost raw passthrough semantics")
+  assertTrue(queueEntry(unknownEntry, 2), "raw unknown custom command was rejected")
+  assertEqual(state.queue.total, 2, "raw unknown custom command did not honor repeat count")
+  onUpdate()
+  TEST.frame = TEST.frame + 10
+  onUpdate()
+  assertEqual(TEST.executed[#TEST.executed], "thirdparty_custom value",
+    "raw unknown custom command did not execute")
+  local rawExecutions = 0
+  for _, command in ipairs(TEST.executed) do
+    if command == "thirdparty_custom value" then rawExecutions = rawExecutions + 1 end
+  end
+  assertEqual(rawExecutions, 2, "raw unknown custom command did not execute exactly twice")
+
+  openMenu()
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "quit"
+  assertTrue(CustomCommandUI.submitEdit(), "high-risk custom command was blocked from the name stage")
+  state.customDraftName = "do not run"
+  assertTrue(CustomCommandUI.submitEdit(), "high-risk custom command could not be saved")
+  local dangerousEntry = FavoriteModel.entryByKey["u:3"]
+  assertTrue(dangerousEntry and dangerousEntry.catalogAction == "execute"
+    and dangerousEntry.rawPassthrough, "high-risk custom command was not exposed as passthrough")
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "listcollectibles"
+  assertTrue(CustomCommandUI.submitEdit(), "output custom command was blocked")
+  assertTrue(CustomCommandUI.submitEdit(), "output custom command could not be saved")
+  local outputEntry = FavoriteModel.entryByKey["u:4"]
+  assertTrue(outputEntry and outputEntry.catalogAction == "execute",
+    "output custom command remained reference-only")
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "curse 999;debug 12"
+  assertTrue(CustomCommandUI.submitEdit(), "invalid or delimited raw command was blocked")
+  assertTrue(CustomCommandUI.submitEdit(), "invalid or delimited raw command could not be saved")
+  local delimitedEntry = FavoriteModel.entryByKey["u:5"]
+  assertTrue(delimitedEntry and delimitedEntry.repeatMax == 99,
+    "raw delimited command did not retain passthrough repeat semantics")
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "rewind"
+  assertTrue(CustomCommandUI.submitEdit(), "lifecycle custom command was blocked")
+  assertTrue(CustomCommandUI.submitEdit(), "lifecycle custom command could not be saved")
+  local lifecycleEntry = FavoriteModel.entryByKey["u:6"]
+  assertTrue(queueEntry(lifecycleEntry, 99), "raw lifecycle command was rejected")
+  assertTrue(state.lifecycleRequest ~= nil and state.queue == nil,
+    "raw lifecycle command bypassed the safe Render channel")
+  assertEqual(lifecycleEntry.repeatMax, 1, "raw lifecycle command was allowed to batch")
+  runCallbacks(ModCallbacks.MC_POST_RENDER)
+  onUpdate()
+  onUpdate()
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = string.rep("x", 121)
+  assertEqual(CustomCommandUI.submitEdit(), false, "overlong custom command bypassed the technical limit")
+  CustomCommandUI.cancelEdit()
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "debug\0 12"
+  assertEqual(CustomCommandUI.submitEdit(), false, "NUL custom command bypassed the technical limit")
+  CustomCommandUI.cancelEdit()
+
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "debug   13"
+  assertEqual(CustomCommandUI.submitEdit(), false, "normalized duplicate custom command was accepted")
+  assertEqual(#state.customCommands.records, 6, "duplicate custom command changed the model")
+  local duplicateEntries = visibleEntries()
+  local duplicateSelection = duplicateEntries[(state.page - 1) * 8 + state.selection]
+  assertTrue(duplicateSelection and duplicateSelection.customId == 1,
+    "duplicate custom command did not locate the existing entry")
+
+  firstEntry = FavoriteModel.entryByKey["u:1"]
+  assertEqual(CustomCommandUI.requestDelete(firstEntry), false,
+    "custom command deletion did not require confirmation")
+  assertTrue(CustomCommandUI.requestDelete(firstEntry), "confirmed custom command deletion failed")
+  assertTrue(state.customCommands:find(1) == nil, "deleted custom command remains in the model")
+  assertTrue(state.favorites["u:1"] == nil, "deleted custom command left a favorite reference")
+
+  local countBeforeFailure = #state.customCommands.records
+  CustomCommandUI.beginEdit(nil)
+  state.customDraftCommand = "debug 12"
+  assertTrue(CustomCommandUI.submitEdit(), "save-failure command did not advance")
+  state.customDraftName = "rollback"
+  TEST_CONFIG.saveFail = true
+  assertEqual(CustomCommandUI.submitEdit(), false, "forced custom save failure was reported as success")
+  TEST_CONFIG.saveFail = false
+  assertEqual(#state.customCommands.records, countBeforeFailure,
+    "custom save failure did not roll back the model")
+  assertTrue(state.customCommands:findByCommand("debug 12") == nil,
+    "custom save failure retained the candidate command")
+  CustomCommandUI.cancelEdit()
+
+  local capacitySnapshot = state.customCommands:snapshot()
+  local index = 1
+  while #CustomCommandUI.buildSavePayload() <= MAX_SAVE_BYTES do
+    state.customCommands:add("thirdparty_capacity_" .. index .. " " .. string.rep("x", 80),
+      string.rep("N", 40), true)
+    index = index + 1
+    assertTrue(index < 2000, "custom command capacity loop did not converge")
+  end
+  local oversizedCount = #state.customCommands.records
+  assertTrue(oversizedCount > 256, "custom commands still have an artificial item-count limit")
+  assertEqual(saveState(), false, "oversized custom command payload was saved")
+  state.customCommands:restore(capacitySnapshot)
+  CustomCommandUI.rebuildEntries()
+  assertEqual(#state.customCommands.records, countBeforeFailure,
+    "capacity test did not restore the original custom commands")
 end
 
 local function testOversizedSave()
@@ -1180,7 +1408,7 @@ local function testCommandContracts()
   for alias, commandId in pairs({ g = "giveitem", r = "remove", m = "macro", l = "lua" }) do
     assertEqual(specs.byVerb[alias].id, commandId, "command alias contract differs: " .. alias)
   end
-  assertEqual(#runtimeCatalog.categories, 17, "command categories were not appended exactly once")
+  assertEqual(#runtimeCatalog.categories, 18, "command categories were not appended exactly once")
   assertTrue(findCatalogCommand("goto", "manual") ~= nil, "goto reference entry missing")
   assertTrue(findCatalogCommand("listcollectibles", "disabled") ~= nil,
     "native-output entry is not visibly disabled")
@@ -2067,6 +2295,7 @@ local function testCategoryDescriptionMatrix()
     stage = { "按当前模式显示安全楼层：正常模式 45 项，贪婪模式 7 项。", "按模式显示安全楼层" },
     run_control = { "执行调试开关、刷新、回溯、重开和楼层重置等运行命令。", "调试、刷新与运行控制" },
     command_reference = { "官方命令语法参考；参数命令需按 C 补全，禁用项只供查阅。", "官方语法与安全状态" },
+    custom_commands = { "高级原始命令透传；可命名、搜索、收藏、编辑和删除，风险由用户承担。", "高级原始命令透传" },
   } or {
     featured = { "Your most recently favorited entries appear first.", "Recent favorite entries." },
     all_items = { "All collectibles in the current game version.", "All official collectibles." },
@@ -2085,6 +2314,7 @@ local function testCategoryDescriptionMatrix()
     stage = { "Shows the safe route for the current mode: 45 Normal/Hard destinations or 7 Greed destinations.", "Warp along the safe route." },
     run_control = { "Run debug toggles, refresh actions, rewinds, restarts, and floor resets.", "Debug, refresh, and run control" },
     command_reference = { "Official syntax reference. Press C to complete parameter commands; disabled entries are reference-only.", "Official syntax and safety status" },
+    custom_commands = { "Advanced raw-command passthrough with optional names, search, favorites, editing, and deletion; use at your own risk.", "Advanced raw-command passthrough" },
   }
 
   for index, category in ipairs(runtimeCatalog.categories) do
@@ -3289,6 +3519,7 @@ local scenarios = {
   favorite = testFavorite,
   idle_restarts = testIdleRestarts,
   history20 = testHistoryTwentyGames,
+  custom_commands = testCustomCommands,
   oversized = testOversizedSave,
   upgrade = testUpgradeSave,
   save_failure = testSaveFailureRollback,

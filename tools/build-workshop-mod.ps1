@@ -29,6 +29,7 @@ $commonFiles = @(
     'scripts/data.lua',
     'scripts/command_specs.lua',
     'scripts/command_catalog.lua',
+    'scripts/custom_commands.lua',
     'scripts/official_objects.lua'
 )
 

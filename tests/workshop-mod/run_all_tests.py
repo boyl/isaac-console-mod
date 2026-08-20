@@ -18,8 +18,8 @@ def run(arguments: list[str]) -> None:
 
 def main() -> int:
     profiles = (
-        ("workshop-mod", "Isaac Chinese Console", "2.5.16"),
-        ("workshop-mod-en", "Console UI", "2.5.4-en.11"),
+        ("workshop-mod", "Isaac Chinese Console", "2.5.17"),
+        ("workshop-mod-en", "Console UI", "2.5.4-en.12"),
     )
     for directory, mod_name, version in profiles:
         run([
@@ -35,7 +35,7 @@ def main() -> int:
             str(ROOT / directory),
             mod_name,
         ])
-    print("bilingual source gate ok: 176 Mock + 8 cold-start/lifecycle scenarios")
+    print("bilingual source gate ok: 178 Mock + 8 cold-start/lifecycle scenarios")
     return 0
 
 

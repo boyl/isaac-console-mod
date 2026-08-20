@@ -11,7 +11,8 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 [list]
 [*]No required dependencies; External Item Descriptions (EID) is optional
 [*]One subscription supports Repentance, Repentance+, and REPENTOGON without a second edition
-[*]17 categories with 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, and 106 command or reference entries
+[*]18 categories with 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 built-in command/reference entries, and Custom Commands
+[*]Create, name, search, favorite, edit, and delete custom commands with no artificial item-count limit; the complete SaveData keeps its 64 KiB safety gate
 [*]Mode-aware stage safety lists: 45 Normal/Hard destinations and 7 Greed/Greedier destinations
 [*]Unified keyboard, mouse, and controller support across Repentance, Repentance+, and REPENTOGON, including focus-aware LT/RT paging
 [*]On the first menu open of each process, an empty Featured view starts on the first Collectibles entry; D-pad navigation prefers runtime menu actions with raw fallback
@@ -42,7 +43,7 @@ Console UI and Isaac Chinese Console both use F6 and L3. Install both if you wis
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 If you report a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.11</version>
+    <version>2.5.4.12</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

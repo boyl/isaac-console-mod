@@ -10,8 +10,8 @@ from pathlib import Path
 from PIL import Image
 
 
-DISPLAY_VERSION = "2.5.16"
-METADATA_VERSION = "2.5.16"
+DISPLAY_VERSION = "2.5.17"
+METADATA_VERSION = "2.5.17"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
@@ -40,6 +40,7 @@ REQUIRED_FILES = {
     "scripts/data.lua",
     "scripts/command_specs.lua",
     "scripts/command_catalog.lua",
+    "scripts/custom_commands.lua",
     "scripts/official_objects.lua",
     "scripts/object_pinyin_aliases.lua",
     "scripts/pinyin_aliases.lua",

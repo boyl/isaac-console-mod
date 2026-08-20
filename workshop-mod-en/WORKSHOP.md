@@ -2,6 +2,10 @@
 
 Use the description embedded in `metadata.xml` as the canonical Workshop page text.
 
+## 2.5.4-en.12 update note
+
+Added Custom Commands with optional names, search, favorites, editing, confirmed deletion, and Up/Down recall of recently executed commands. Stable IDs preserve favorites through edits. This advanced raw-command passthrough accepts unknown, third-party, output, high-risk, and otherwise unvalidated commands at the user's own risk; recognized lifecycle commands still use the safe Render path. Capacity remains protected by the 120-byte command and 64 KiB transactional SaveData gates.
+
 ## 2.5.4-en.11 update note
 
 Fixed Steam Input carrying one LB/RB press into later frames as a same-side LT/RT analog signal. Bumpers now retain their repeat-count role until fully released, while real triggers continue to page the focused list.
@@ -34,8 +38,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.11`
-- Metadata version: `2.5.4.11`
+- In-game version: `2.5.4-en.12`
+- Metadata version: `2.5.4.12`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.4-en.12
+
+- Added a Custom Commands category with optional names, global search, favorites, execution, editing, and two-step deletion confirmation.
+- Custom entries use stable IDs, so renaming or changing a command preserves its favorite. The category is now an advanced raw-command passthrough that accepts unknown, third-party, output, high-risk, and otherwise unvalidated commands at the user's own risk.
+- There is no artificial item-count limit. The complete SaveData remains protected by the 64 KiB transaction limit, and failed create, edit, delete, or favorite changes roll back completely.
+- While adding or editing a custom command, Up/Down recalls recent executed commands; editing leaves history navigation, and moving past the newest entry restores the original draft.
+- Bilingual regressions cover duplicate lookup, restart persistence, raw-command repetition, high-risk and output command storage, lifecycle safe routing, capacity boundaries, and more than 256 entries.
+
 ## 2.5.4-en.11
 
 - Fixed Steam Input carrying one LB/RB press into later frames as the same-side LT/RT analog value, which changed the repeat count and then paged a category or entry list.
