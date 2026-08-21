@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 
@@ -26,9 +27,27 @@ def main() -> int:
     run(["pwsh", "-NoLogo", "-NoProfile", "-Command", parse_command])
 
     publish_source = publish_script.read_text(encoding="utf-8-sig")
-    assert publish_source.count("Click-Relative -Window $main -X 0.26 -Y 0.16") == 1
-    assert "if (-not $Publish)" in publish_source
-    assert "之后只轮询远端，不重复点击" in publish_source
+    assert "Invoke-WorkshopRelease.ps1" in publish_source
+    assert "GAME_MODDING_TOOLKIT_ROOT" in publish_source
+    assert "if($Publish)" in publish_source
+    assert "arguments.Publish=$true" in publish_source
+    assert "Click-GMTIsaacRelative" not in publish_source
+
+    release_profile = json.loads(
+        (ROOT / "tools" / "workshop-release-profile.json").read_text(encoding="utf-8-sig")
+    )
+    assert release_profile["schemaVersion"] == 1
+    assert release_profile["adapter"]["id"] == "isaac-mod-uploader"
+    assert release_profile["policies"] == {
+        "requireCleanPushedHead": True,
+        "preserveRemotePreview": True,
+    }
+    assert {item["name"] for item in release_profile["variants"]} == {"zh", "en"}
+    lock = json.loads(
+        (ROOT / "tools" / "game-modding-toolkit.lock.json").read_text(encoding="utf-8-sig")
+    )
+    assert lock["repository"] == "https://github.com/boyl/game-modding-toolkit"
+    assert len(lock["verifiedCommit"]) == 40
 
     profiles = (
         ("workshop-mod", "Isaac Chinese Console", "2.5.17"),

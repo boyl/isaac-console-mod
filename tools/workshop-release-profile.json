@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "projectName": "isaac-console-mod",
+  "projectRoot": "..",
+  "evidenceDirectory": "dist/workshop-publish",
+  "adapter": { "id": "isaac-mod-uploader", "configuration": { "mainWindowTitle": "The Binding of Isaac: Afterbirth+ Mod Uploader", "uploadTimeoutSeconds": 150 } },
+  "policies": { "requireCleanPushedHead": true, "preserveRemotePreview": true },
+  "hooks": [
+    { "phase": "verify", "executable": "pwsh", "arguments": ["./tools/verify-workshop-candidates.ps1"] },
+    { "phase": "build", "variant": "zh", "executable": "pwsh", "arguments": ["./tools/build-workshop-mod.ps1", "-Language", "zh"] },
+    { "phase": "build", "variant": "en", "executable": "pwsh", "arguments": ["./tools/build-workshop-mod.ps1", "-Language", "en"] }
+  ],
+  "variants": [
+    { "name": "zh", "publishedFileId": "3776882944", "expectedTitle": "Isaac Chinese Console", "descriptionMarker": "可选 Mod 集成（均非前置）", "candidateDirectory": "dist/workshop-candidates/isaac_chinese_console_workshop" },
+    { "name": "en", "publishedFileId": "3779128726", "expectedTitle": "Console UI", "descriptionMarker": "Optional Mod Integrations — Not Required", "candidateDirectory": "dist/workshop-candidates/console_ui_workshop" }
+  ]
+}
+
