@@ -31,7 +31,13 @@ function Find-GameModdingToolkitRoot {
 $root=Find-GameModdingToolkitRoot
 $entry=Join-Path $root 'capabilities\publishing\steam-workshop\Invoke-WorkshopRelease.ps1'
 if(-not (Test-Path -LiteralPath $entry -PathType Leaf)){throw "工具入口不存在：$entry"}
-$arguments=@{ProjectProfile=(Join-Path $PSScriptRoot 'workshop-release-profile.json');Variant=$Language}
+$profilePath=Join-Path $PSScriptRoot 'workshop-release-profile.json'
+$doctor=Join-Path $root 'Test-ModdingToolkitEnvironment.ps1'
+if(-not (Test-Path -LiteralPath $doctor -PathType Leaf)){throw "工具版本缺少环境诊断入口：$doctor"}
+$doctorArguments=@{ProjectProfile=$profilePath;ToolkitLock=(Join-Path $PSScriptRoot 'game-modding-toolkit.lock.json')}
+if($UploaderPath){$doctorArguments.UploaderPath=$UploaderPath}
+& $doctor @doctorArguments
+$arguments=@{ProjectProfile=$profilePath;Variant=$Language}
 if($Proxy){$arguments.Proxy=[uri]$Proxy}; if($SkipTests){$arguments.SkipVerify=$true}; if($UploaderPath){$arguments.UploaderPath=$UploaderPath}; $arguments.UploadTimeoutSeconds=$UploadTimeoutSeconds
 if($Publish){
     if(($Language -contains 'zh') -and [string]::IsNullOrWhiteSpace($ChineseChangeNotes)){throw '发布中文时必须提供 -ChineseChangeNotes。'}
