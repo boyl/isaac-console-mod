@@ -10,8 +10,8 @@ from pathlib import Path
 from PIL import Image
 
 
-DISPLAY_VERSION = "2.5.17"
-METADATA_VERSION = "2.5.17"
+DISPLAY_VERSION = "2.5.18"
+METADATA_VERSION = "2.5.18"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
@@ -19,6 +19,7 @@ REQUIRED_FILES = {
     "main.lua",
     "metadata.xml",
     "preview.png",
+    "content/shaders.xml",
     "FONT-LICENSE-OFL.txt",
     "THIRD-PARTY-DATA.md",
     "THIRD-PARTY-FONTS.md",
@@ -97,6 +98,11 @@ def main() -> int:
         "semantic Toast colors": "Presentation.toastColors[kind]",
         "measured layout": "local function computeLayout(screenWidth, screenHeight)",
         "native pause detection": "Game():IsPaused()",
+        "Game Over semantic state": 'state.runEndState = isGameOver and "game_over" or "ending"',
+        "Game Over callback": "ModCallbacks.MC_POST_GAME_END, onGameEnd",
+        "Game Over regular-command gate": 'state.runEndState == "game_over" and not (spec and spec.phase == "render")',
+        "Game Over late-render callback": "ModCallbacks.MC_GET_SHADER_PARAMS, Presentation.onLateOverlayShader",
+        "Game Over late-render isolation": 'state.runEndState ~= "game_over" or not state.open',
         "favorite state": "function FavoriteModel.finalizeOrder(forceAvailableCatalog)",
         "optional MCM command-close setting": "普通命令执行后关闭界面: ",
     }
@@ -106,6 +112,11 @@ def main() -> int:
     for forbidden_source in ('controllerButton("BUTTON_Y",', "IS_REPENTOGON"):
         if forbidden_source in main_lua:
             fail(f"runtime-specific controller behavior remains: {forbidden_source}")
+
+    shader_root = ET.parse(root / "content/shaders.xml").getroot()
+    shader = shader_root.find("./shader[@name='IsaacConsoleLateOverlay']")
+    if shader is None or shader.find("vertex") is None or shader.find("fragment") is None:
+        fail("late-overlay pass-through shader is missing or incomplete")
 
     animation_root = ET.parse(root / "resources/gfx/ui/isaac_console_pixel.anm2").getroot()
     animation_info = animation_root.find("Info")

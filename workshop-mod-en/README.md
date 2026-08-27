@@ -33,6 +33,8 @@ In the built-in catalog, only `giveitem` and `spawn` can repeat. Custom raw comm
 
 Regular commands close the menu by default for backward compatibility. With optional MCM, this can be turned off to keep the current category, page, selection, and manual-command text visible. Run-changing lifecycle commands still close the menu before execution.
 
+After Game Over, F6 and held L3 can still open the menu for reference or a recovery action. Only run-control and transition commands already routed through the one-shot Render lifecycle path can execute in that state; regular commands resume in the next run. Native pause and victory endings retain their existing input-yield behavior.
+
 ## Catalog and EID
 
 The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 built-in command or command-reference entries, and Custom Commands across 18 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. All 1,162 built-in right-side entries and saved custom commands can be favorited, and Featured shows the most recently favorited entry first. Favoriting a blocked or reference-only command never changes its execution permission.

@@ -7,7 +7,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.17"
+local VERSION = "2.5.18"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -343,6 +343,7 @@ local state = {
   lastMouseY = nil,
   controlMode = "keyboard",
   nativePauseSuspended = false,
+  runEndState = "active",
   keyboardEnterPressed = false,
   inputLease = nil,
   controllerShoulderLatch = {},
@@ -1121,6 +1122,7 @@ local function clearRunTransientState()
   state.customSelectAll = false
   state.customDeleteConfirmationId = nil
   state.nativePauseSuspended = false
+  state.runEndState = "active"
   state.inputLease = nil
   state.controllerIndex = nil
   state.controllerOpenHold = 0
@@ -1540,6 +1542,15 @@ local function queueCommand(command, requestedCount, explicitRepeatMax, trustedU
 
   if state.queue or state.lifecycleRequest or state.lifecycleReceipt then
     showToast("上一条批量命令仍在执行", "warning", 90)
+    return false
+  end
+
+  -- MC_POST_UPDATE is not a reliable execution boundary after Game Over. Keep
+  -- the catalog available for inspection, but only allow commands that already
+  -- use the one-shot Render lifecycle dispatcher in this state.
+  if state.runEndState == "game_over" and not (spec and spec.phase == "render") then
+    showToast("死亡结算中无法执行普通命令", "warning", 180,
+      "请使用运行控制或流程切换命令")
     return false
   end
 
@@ -3671,10 +3682,30 @@ local function drawMenu(entries)
   end
 end
 
+function Presentation.renderMenuSurface(entries)
+  pcall(function() Game():GetHUD():SetVisible(false) end)
+  if fontLoaded then
+    drawMenu(entries)
+  else
+    local screenWidth, screenHeight = Isaac.GetScreenWidth(), Isaac.GetScreenHeight()
+    drawRect(0, 0, screenWidth, screenHeight, COLORS.overlay)
+    drawRect(24, 24, math.max(320, screenWidth - 48), math.max(190, screenHeight - 48), COLORS.panel)
+    Isaac.RenderText("ISAAC CHINESE CONSOLE v" .. VERSION, 48, 52, 1, 1, 1, 1)
+    Isaac.RenderText("FONT LOAD FAILED - MENU DISABLED", 48, 80, 1, 0.35, 0.35, 1)
+    Isaac.RenderText("Runtime: " .. (IS_REPENTANCE_PLUS and "REPENTANCE+" or "REPENTANCE"), 48, 108, 1, 1, 1, 1)
+    local runtimeName = IS_REPENTANCE_PLUS and "Binding of Isaac Repentance+" or "Binding of Isaac Repentance"
+    local errorSummary = tostring(fontLoadError):gsub("[^ -~]", "?"):sub(1, 82)
+    Isaac.RenderText("Error: " .. errorSummary, 48, 136, 1, 0.75, 0.75, 1)
+    Isaac.RenderText("Log: Documents/My Games/" .. runtimeName .. "/log.txt", 48, 164, 1, 1, 1, 1)
+    Isaac.RenderText("Press " .. openKeyName(state.openKey) .. ", L3 or ESC to close.", 48, 192, 1, 1, 1, 1)
+  end
+end
+
 local function onRender()
   loadState()
   local paused = Game():IsPaused()
-  if paused then
+  local nativePauseOwnsScreen = paused and state.runEndState ~= "game_over"
+  if nativePauseOwnsScreen then
     state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
     if state.open then
       state.nativePauseSuspended = true
@@ -3720,22 +3751,22 @@ local function onRender()
     return
   end
   entries = visibleEntries()
-  pcall(function() Game():GetHUD():SetVisible(false) end)
-  if fontLoaded then
-    drawMenu(entries)
-  else
-    local screenWidth, screenHeight = Isaac.GetScreenWidth(), Isaac.GetScreenHeight()
-    drawRect(0, 0, screenWidth, screenHeight, COLORS.overlay)
-    drawRect(24, 24, math.max(320, screenWidth - 48), math.max(190, screenHeight - 48), COLORS.panel)
-    Isaac.RenderText("ISAAC CHINESE CONSOLE v" .. VERSION, 48, 52, 1, 1, 1, 1)
-    Isaac.RenderText("FONT LOAD FAILED - MENU DISABLED", 48, 80, 1, 0.35, 0.35, 1)
-    Isaac.RenderText("Runtime: " .. (IS_REPENTANCE_PLUS and "REPENTANCE+" or "REPENTANCE"), 48, 108, 1, 1, 1, 1)
-    local runtimeName = IS_REPENTANCE_PLUS and "Binding of Isaac Repentance+" or "Binding of Isaac Repentance"
-    local errorSummary = tostring(fontLoadError):gsub("[^ -~]", "?"):sub(1, 82)
-    Isaac.RenderText("Error: " .. errorSummary, 48, 136, 1, 0.75, 0.75, 1)
-    Isaac.RenderText("Log: Documents/My Games/" .. runtimeName .. "/log.txt", 48, 164, 1, 1, 1, 1)
-    Isaac.RenderText("Press " .. openKeyName(state.openKey) .. ", L3 or ESC to close.", 48, 192, 1, 1, 1, 1)
-  end
+  -- The native Game Over paper is drawn after MC_POST_RENDER. Defer only this
+  -- surface to the shader callback so the menu remains above it; input and all
+  -- non-Game-Over rendering stay on the established callback path.
+  if state.runEndState == "game_over" then return end
+  Presentation.renderMenuSurface(entries)
+end
+
+function Presentation.onLateOverlayShader(_, shaderName)
+  if shaderName ~= "IsaacConsoleLateOverlay"
+      or state.runEndState ~= "game_over" or not state.open then return nil end
+  local frame = Isaac.GetFrameCount()
+  if Presentation.lastLateOverlayFrame == frame then return nil end
+  Presentation.lastLateOverlayFrame = frame
+  loadCompleteCatalog()
+  Presentation.renderMenuSurface(visibleEntries())
+  return nil
 end
 
 lifecycleDispatcher.dispatch = function()
@@ -3772,7 +3803,7 @@ local function onInput(_, _, inputHook, action)
   -- MC_POST_GAME_STARTED. During that callback gap the previous run's overlay
   -- state must not intercept any native controller assignment or pause input.
   if runBoundaryPending() then return nil end
-  if Game():IsPaused() then return nil end
+  if Game():IsPaused() and state.runEndState ~= "game_over" then return nil end
   if state.inputLease ~= nil then
     if inputHook == InputHook.GET_ACTION_VALUE then return 0.0 end
     return false
@@ -3808,6 +3839,17 @@ local function onGameStarted()
   end
 end
 
+local function onGameEnd(_, isGameOver)
+  local previousControllerIndex = state.controllerIndex
+  clearRunTransientState()
+  state.lifecycleReceipt = nil
+  state.runEndState = isGameOver and "game_over" or "ending"
+  -- Preserve the last known owner for L3 while still allowing the normal
+  -- player-based controller discovery path to reacquire another valid index.
+  state.controllerIndex = previousControllerIndex
+  pcall(function() Game():GetHUD():SetVisible(true) end)
+end
+
 local function onGameExit()
   setMenuOpen(false)
   clearRunTransientState()
@@ -3826,9 +3868,11 @@ local function onGameExit()
 end
 
 ChineseConsole:AddCallback(ModCallbacks.MC_POST_RENDER, onRender)
+ChineseConsole:AddCallback(ModCallbacks.MC_GET_SHADER_PARAMS, Presentation.onLateOverlayShader)
 ChineseConsole:AddCallback(ModCallbacks.MC_POST_UPDATE, onUpdate)
 ChineseConsole:AddCallback(ModCallbacks.MC_INPUT_ACTION, onInput)
 ChineseConsole:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, onGameStarted)
+ChineseConsole:AddCallback(ModCallbacks.MC_POST_GAME_END, onGameEnd)
 ChineseConsole:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, onGameExit)
 
 registerMcmSettings()

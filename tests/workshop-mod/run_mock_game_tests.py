@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.12"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.13"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -264,6 +264,38 @@ def scenarios() -> list[dict[str, object]]:
                 "label": "native pause suspends overlay and blocks resume penetration",
                 "repPlus": True,
                 "eid": True,
+            },
+            {
+                "scenario": "game_over_overlay",
+                "label": "Repentance Game Over F6 and L3 with EID off",
+                "repPlus": False,
+                "eid": False,
+                "controllerIndex": 0,
+                "playerControllerIndexes": [0],
+            },
+            {
+                "scenario": "game_over_overlay",
+                "label": "Repentance Game Over F6 and L3 with EID on",
+                "repPlus": False,
+                "eid": True,
+                "controllerIndex": 1,
+                "playerControllerIndexes": [1],
+            },
+            {
+                "scenario": "game_over_overlay",
+                "label": "Repentance+ Game Over F6 and L3 with EID off",
+                "repPlus": True,
+                "eid": False,
+                "controllerIndex": 2,
+                "playerControllerIndexes": [2],
+            },
+            {
+                "scenario": "game_over_overlay",
+                "label": "REPENTOGON-style Game Over F6 and L3 with EID on",
+                "repPlus": True,
+                "eid": True,
+                "controllerIndex": 3,
+                "playerControllerIndexes": [3],
             },
             {
                 "scenario": "assigned_controller_isolation",

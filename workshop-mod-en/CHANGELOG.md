@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.4-en.13
+
+- F6 and held L3 can open the menu after Game Over. Any menu instance already open at death releases its transient input state first, then waits for an explicit reopen action.
+- During Game Over, the menu now uses an isolated final shader callback so it renders above the native will and Exit/Restart papers; ordinary gameplay keeps the established render path.
+- Native pause and victory endings still hide the overlay and yield input, preserving existing pause, resume, R, Rewind, Rerun, controller ownership, and EID behavior.
+- During Game Over, only run-control and transition commands already using the safe Render lifecycle path may run. Regular update-queue commands are rejected with an explanation and return automatically in the next run.
+- Bilingual regressions cover Repentance, Repentance+, a REPENTOGON-style environment, EID on/off, F6, non-zero-controller L3, victory endings, and new-run recovery.
+
 ## 2.5.4-en.12
 
 - Added a Custom Commands category with optional names, global search, favorites, execution, editing, and two-step deletion confirmation.

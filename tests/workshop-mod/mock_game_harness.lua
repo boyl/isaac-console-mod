@@ -212,10 +212,12 @@ end
 InputHook = { GET_ACTION_VALUE = 1 }
 ModCallbacks = {
   MC_POST_RENDER = 1,
+  MC_GET_SHADER_PARAMS = 21,
   MC_POST_UPDATE = 2,
   MC_INPUT_ACTION = 3,
   MC_POST_GAME_STARTED = 4,
   MC_PRE_GAME_EXIT = 5,
+  MC_POST_GAME_END = 16,
 }
 
 Input = {}
@@ -319,6 +321,7 @@ function Isaac.GetItemConfig()
 end
 function Isaac.GetScreenWidth() return TEST_CONFIG.screenWidth or 1280 end
 function Isaac.GetScreenHeight() return TEST_CONFIG.screenHeight or 720 end
+function Isaac.GetFrameCount() return TEST.frame end
 function Isaac.WorldToScreen(value)
   TEST.worldToScreenCalls = TEST.worldToScreenCalls + 1
   return Vector(value.X, value.Y)
@@ -414,12 +417,21 @@ local onUpdate = TEST.callbacks[ModCallbacks.MC_POST_UPDATE]
 local onInput = TEST.callbacks[ModCallbacks.MC_INPUT_ACTION]
 local onStarted = TEST.callbacks[ModCallbacks.MC_POST_GAME_STARTED]
 local onExit = TEST.callbacks[ModCallbacks.MC_PRE_GAME_EXIT]
+local onGameEnd = TEST.callbacks[ModCallbacks.MC_POST_GAME_END]
+local onLateOverlayShader = TEST.callbacks[ModCallbacks.MC_GET_SHADER_PARAMS]
 
 local function runCallbacks(callbackId)
   local callbacks = TEST.callbackLists[callbackId] or {}
   local snapshot = {}
   for index, callback in ipairs(callbacks) do snapshot[index] = callback end
   for _, callback in ipairs(snapshot) do callback() end
+end
+
+local function runShaderCallbacks(shaderName)
+  local callbacks = TEST.callbackLists[ModCallbacks.MC_GET_SHADER_PARAMS] or {}
+  local snapshot = {}
+  for index, callback in ipairs(callbacks) do snapshot[index] = callback end
+  for _, callback in ipairs(snapshot) do callback(registeredMod, shaderName) end
 end
 
 local function findUpvalue(rootFunction, targetName, seen)
@@ -443,13 +455,18 @@ end
 
 local state = findUpvalue(onRender, "state")
 local visibleEntries = findUpvalue(onRender, "visibleEntries")
+local PresentationModel = findUpvalue(onRender, "Presentation")
+local renderMenuSurface = PresentationModel and PresentationModel.renderMenuSurface
 local computeLayout = findUpvalue(onRender, "computeLayout")
+  or findUpvalue(renderMenuSurface, "computeLayout")
 local drawFavoriteStar = findUpvalue(onRender, "drawFavoriteStar")
+  or findUpvalue(renderMenuSurface, "drawFavoriteStar")
 local queueCommand = findUpvalue(onRender, "queueCommand")
 local queueEntry = findUpvalue(onRender, "queueEntry")
 local beginCommandInput = findUpvalue(onRender, "beginCommandInput")
 local showToast = findUpvalue(onStarted, "showToast")
 local drawToast = findUpvalue(onRender, "drawToast")
+  or findUpvalue(renderMenuSurface, "drawToast")
 local removalCommand = findUpvalue(onRender, "removalCommand")
 local toggleFavorite = findUpvalue(onRender, "toggleFavorite")
 local saveState = findUpvalue(onRender, "saveState")
@@ -2513,6 +2530,89 @@ local function testPauseSuspension()
 
 end
 
+local function testGameOverOverlayAccess()
+  onStarted()
+  openMenu()
+  state.search = "giveitem"
+  state.inputMode = "search"
+  onGameEnd(registeredMod, true)
+  assertEqual(state.runEndState, "game_over", "Game Over state was not recorded")
+  assertEqual(state.open, false, "Game Over did not close the previous overlay instance")
+  assertEqual(state.inputMode, nil, "Game Over retained the previous input focus")
+  assertEqual(state.queue, nil, "Game Over retained a regular command queue")
+  assertEqual(state.lifecycleRequest, nil, "Game Over retained a lifecycle request")
+  assertEqual(TEST.hudVisible, true, "Game Over did not restore the HUD before reopening")
+
+  TEST.paused = true
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, true, "F6 did not open the overlay after Game Over")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), 0.0,
+    "Game Over overlay did not own input while open")
+  assertEqual(queueCommand("giveitem c1", 1), false,
+    "regular command entered the stopped update queue after Game Over")
+  assertEqual(state.queue, nil, "Game Over queued a regular command")
+  assertTrue(state.toast and contains(state.toast.message,
+      IS_ZH and "死亡结算" or "Game Over"),
+    "Game Over regular-command rejection was not explained")
+
+  TEST.rendered = {}
+  runCallbacks(ModCallbacks.MC_POST_RENDER)
+  assertEqual(#TEST.rendered, 0,
+    "Game Over menu rendered in MC_POST_RENDER below the native paper")
+  TEST.rendered[#TEST.rendered + 1] = "__NATIVE_GAME_OVER__"
+  runShaderCallbacks("UnrelatedShader")
+  assertEqual(#TEST.rendered, 1, "unrelated shader rendered the Game Over menu")
+  runShaderCallbacks("IsaacConsoleLateOverlay")
+  assertTrue(#TEST.rendered > 1, "late shader did not render the Game Over menu")
+  assertEqual(TEST.rendered[1], "__NATIVE_GAME_OVER__",
+    "Game Over menu was not rendered after the native paper")
+  local renderedAfterLatePass = #TEST.rendered
+  runShaderCallbacks("IsaacConsoleLateOverlay")
+  assertEqual(#TEST.rendered, renderedAfterLatePass,
+    "late shader rendered the menu more than once in one frame")
+
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, false, "F6 did not close the Game Over overlay")
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), 0.0,
+    "Game Over close did not retain the existing release-frame input lease")
+  renderFrame()
+  assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), nil,
+    "closed Game Over overlay retained input authority")
+  holdButton(Controller.STICK_LEFT, 30, TEST_CONFIG.controllerIndex or 0)
+  assertEqual(state.open, true, "L3 did not open the overlay after Game Over")
+  releaseButton(Controller.STICK_LEFT, TEST_CONFIG.controllerIndex or 0)
+
+  assertTrue(queueCommand("rewind", 1), "Render lifecycle command was blocked after Game Over")
+  assertEqual(state.open, false, "Game Over lifecycle command did not close the overlay")
+  assertTrue(state.lifecycleRequest ~= nil and state.queue == nil,
+    "Game Over lifecycle command did not use the Render dispatcher")
+  runCallbacks(ModCallbacks.MC_POST_RENDER)
+  assertEqual(TEST.executed[#TEST.executed], "rewind",
+    "Game Over lifecycle dispatcher did not execute rewind")
+
+  TEST.paused = false
+  onStarted()
+  assertEqual(state.runEndState, "active", "new run retained the Game Over state")
+  onUpdate()
+  onUpdate()
+  assertEqual(state.lifecycleReceipt, nil,
+    "new run did not settle the existing lifecycle receipt")
+  assertTrue(queueCommand("giveitem c1", 1), "new run still blocked regular commands")
+  onUpdate()
+  assertEqual(TEST.executed[#TEST.executed], "giveitem c1",
+    "new run did not restore the regular update queue")
+
+  onGameEnd(registeredMod, false)
+  assertEqual(state.runEndState, "ending", "victory ending state was not recorded")
+  TEST.paused = true
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, false, "F6 opened the overlay over a victory ending")
+  holdButton(Controller.STICK_LEFT, 30, TEST_CONFIG.controllerIndex or 0)
+  assertEqual(state.open, false, "L3 opened the overlay over a victory ending")
+  TEST.paused = false
+  releaseButton(Controller.STICK_LEFT, TEST_CONFIG.controllerIndex or 0)
+end
+
 local function testAssignedControllerIsolation()
   onStarted()
   openMenu()
@@ -3549,6 +3649,7 @@ local scenarios = {
   command_editor = testCommandEditorAndHistory,
   editable_text_confirm_collision = testEditableTextConfirmCollision,
   pause_suspension = testPauseSuspension,
+  game_over_overlay = testGameOverOverlayAccess,
   assigned_controller_isolation = testAssignedControllerIsolation,
   closing_input_lease = testClosingInputLease,
   controller_repeat = testControllerRepeat,

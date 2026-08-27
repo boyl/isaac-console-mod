@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.12"
-METADATA_VERSION = "2.5.4.12"
+DISPLAY_VERSION = "2.5.4-en.13"
+METADATA_VERSION = "2.5.4.13"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -96,6 +96,7 @@ def main() -> int:
         "THIRD-PARTY-FONTS.md",
         "THIRD-PARTY-DATA.md",
         "preview.png",
+        "content/shaders.xml",
     ]
     missing = [value for value in required if not (root / value).is_file()]
     if missing:
@@ -208,6 +209,11 @@ def main() -> int:
         "shared mouse geometry": "L.searchX + L.searchW - clearW",
         "focus ownership": "state.pointerActive and hit(mouse",
         "native pause detection": "Game():IsPaused()",
+        "Game Over semantic state": 'state.runEndState = isGameOver and "game_over" or "ending"',
+        "Game Over callback": "ModCallbacks.MC_POST_GAME_END, onGameEnd",
+        "Game Over regular-command gate": 'state.runEndState == "game_over" and not (spec and spec.phase == "render")',
+        "Game Over late-render callback": "ModCallbacks.MC_GET_SHADER_PARAMS, Presentation.onLateOverlayShader",
+        "Game Over late-render isolation": 'state.runEndState ~= "game_over" or not state.open',
         "pause suspension state": "state.nativePauseSuspended = true",
         "closing input lease": "local function armInputLease(kind, value, index)",
         "manual command entry": "local function beginCommandInput(entry)",
@@ -237,6 +243,11 @@ def main() -> int:
     for label, needle in checks.items():
         if needle not in main_lua:
             fail(f"missing implementation: {label}")
+
+    shader_root = ET.parse(root / "content/shaders.xml").getroot()
+    shader = shader_root.find("./shader[@name='IsaacConsoleLateOverlay']")
+    if shader is None or shader.find("vertex") is None or shader.find("fragment") is None:
+        fail("late-overlay pass-through shader is missing or incomplete")
 
     semantic_shoulder_actions = [
         'controllerAction("ACTION_MENULB")',

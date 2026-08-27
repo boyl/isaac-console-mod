@@ -18,7 +18,7 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 [*]Collectibles and safe supplies can repeat 1–99 times; entries unsuitable for repetition remain single-run
 [*]Keyboard, mouse, and controller support includes focus navigation, favorites, removal, repeat counts, list paging, and multi-page descriptions
 [*]Measured layout adapts to the screen and bundled font metrics, including low resolutions
-[*]The game HUD hides while the menu is open; the overlay yields to the native pause menu and restores after resuming
+[*]The game HUD hides while the menu is open; the overlay yields to native pause, restores after resuming, and remains available through F6 or L3 after Game Over
 [*]No key injection, native console popup, or stray backtick
 [/list]
 
@@ -49,7 +49,7 @@ Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may s
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 This Mod does not access the network or launch external programs. When reporting a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.12</version>
+    <version>2.5.4.13</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

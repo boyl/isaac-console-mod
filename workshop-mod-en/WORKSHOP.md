@@ -20,7 +20,7 @@ Subscribe, enable the Mod, start a run, and press **F6** or hold the left stick 
 - collectibles and safe supplies can repeat 1–99 times; entries unsuitable for repetition remain single-run;
 - keyboard, mouse, and controller support includes focus navigation, favorites, removal, repeat counts, list paging, and multi-page descriptions;
 - measured layout adapts to the screen and bundled font metrics, including low resolutions;
-- the game HUD hides while the menu is open; the overlay yields to the native pause menu and restores after resuming;
+- the game HUD hides while the menu is open; the overlay yields to native pause, restores after resuming, and remains available through F6 or L3 after Game Over;
 - no key injection, native console popup, or stray backtick.
 
 ## Controls
@@ -52,6 +52,10 @@ Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may s
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 This Mod does not access the network or launch external programs. When reporting a problem, include the game version, DLC/runtime, enabled Mod list, and relevant `log.txt` lines.
+
+## 2.5.4-en.13 update note
+
+F6 and held L3 can now open the menu after Game Over. Native pause and victory endings keep their existing input-yield behavior. During Game Over, only run-control and transition commands that already use the safe Render lifecycle path may run; regular update-queue commands return automatically in the next run.
 
 ## 2.5.4-en.12 update note
 
@@ -89,8 +93,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.12`
-- Metadata version: `2.5.4.12`
+- In-game version: `2.5.4-en.13`
+- Metadata version: `2.5.4.13`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional
