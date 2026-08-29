@@ -12,7 +12,7 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 
 ## Controls
 
-- `F6` or hold `L3`: open the menu; Mod Config Menu can change the keyboard key, toggle the first-run key hint, and choose whether regular commands close the menu.
+- `F6` or hold `L3`: open the menu. Built-in Settings can change the keyboard key, controller favorite and compatibility bindings, startup hint, and regular-command close behavior; optional MCM mirrors the same values.
 - Arrow keys / D-pad: move through categories and cards, crossing pages automatically.
 - Controller `LT` / `RT`: page the focused category list or entry grid.
 - Controller `Y`: page a multi-page effect description while an entry owns focus.
@@ -29,15 +29,17 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 
 Custom Commands is an advanced raw-command passthrough. Enter the command text, then an optional name; Up/Down recalls recent executed commands while editing the command field. Saved entries can be searched, favorited, edited with `C`, or deleted with `Delete`/right-click confirmation. Unknown, third-party, output, high-risk, and otherwise unvalidated commands can be saved and run at the user's own risk. Recognized lifecycle commands still use the one-shot safe Render path. The 120-byte command limit and 64 KiB total SaveData gate are technical capacity limits.
 
+Open Settings with `F6` to set or restore the keyboard open key, controller favorite button, and compatibility open button, or toggle startup hints and close-after-command behavior. Optional MCM is a mirror of the same model, not a requirement. A compatibility open button supplements rather than replaces default L3. If neither the game nor Steam Input exposes the physical button to Lua, map it to keyboard `F6` in Steam Input.
+
 In the built-in catalog, only `giveitem` and `spawn` can repeat. Custom raw commands may use the selected repeat count; recognized lifecycle commands remain single-use.
 
-Regular commands close the menu by default for backward compatibility. With optional MCM, this can be turned off to keep the current category, page, selection, and manual-command text visible. Run-changing lifecycle commands still close the menu before execution.
+Regular commands close the menu by default for backward compatibility. Built-in Settings or optional MCM can turn this off while retaining the current category, page, selection, and manual-command text. Run-changing lifecycle commands still close the menu before execution.
 
 After Game Over, F6 and held L3 can still open the menu for reference or a recovery action. Only run-control and transition commands already routed through the one-shot Render lifecycle path can execute in that state; regular commands resume in the next run. Native pause and victory endings retain their existing input-yield behavior.
 
 ## Catalog and EID
 
-The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 built-in command or command-reference entries, and Custom Commands across 18 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. All 1,162 built-in right-side entries and saved custom commands can be favorited, and Featured shows the most recently favorited entry first. Favoriting a blocked or reference-only command never changes its execution permission.
+The menu includes 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 built-in command or command-reference entries, Custom Commands, and Settings across 19 categories. Official object catalogs are loaded lazily from the current game's `ItemConfig` when the menu first opens. All 1,162 built-in right-side entries and saved custom commands can be favorited, and Featured shows the most recently favorited entry first. Favoriting a blocked or reference-only command never changes its execution permission.
 
 Built-in catalog and ordinary manual commands are classified by runtime safety. Lifecycle-changing commands use a one-shot final Render dispatcher, commands whose output requires the native console remain reference-only, and dangerous commands are blocked with an explicit reason. Custom Commands is the explicitly advanced raw-passthrough exception. `rewind` is single-use and waits for a stable lifecycle receipt before the interface can submit another command.
 

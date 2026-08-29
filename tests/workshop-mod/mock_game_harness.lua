@@ -185,7 +185,7 @@ end
 Controller = {
   DPAD_LEFT = 0, DPAD_RIGHT = 1, DPAD_UP = 2, DPAD_DOWN = 3,
   BUTTON_A = 4, BUTTON_B = 5, BUTTON_X = 6, BUTTON_Y = 7,
-  BUMPER_LEFT = 8, TRIGGER_LEFT = 9, STICK_LEFT = 10,
+  BUMPER_LEFT = 8, TRIGGER_LEFT = 9, STICK_LEFT = TEST_CONFIG.namedL3Button or 10,
   BUMPER_RIGHT = 11, TRIGGER_RIGHT = 12, STICK_RIGHT = 13,
   BUTTON_BACK = 14, BUTTON_START = 15,
 }
@@ -196,6 +196,7 @@ if TEST_CONFIG.mcm then
     OptionType = { BOOLEAN = 1, KEYBIND_KEYBOARD = 6, KEYBIND_CONTROLLER = 7 },
     PopupGfx = { WIDE_SMALL = "wide-small" },
   }
+  if TEST_CONFIG.mcmNoControllerKeybind then ModConfigMenu.OptionType.KEYBIND_CONTROLLER = nil end
   function ModConfigMenu.AddSetting(category, subcategory, setting)
     TEST.mcmAddCalls = TEST.mcmAddCalls + 1
     TEST.mcmCategory = category
@@ -257,6 +258,7 @@ local game = {}
 function game:GetHUD() return hud end
 function game:GetFrameCount() return TEST.frame end
 function game:GetNumPlayers()
+  if TEST_CONFIG.playerEnumerationFail then error("forced controller enumeration failure") end
   return type(TEST_CONFIG.playerControllerIndexes) == "table"
     and #TEST_CONFIG.playerControllerIndexes or 1
 end
@@ -474,6 +476,8 @@ local allEntries = findUpvalue(onRender, "allEntries")
 local categoryById = findUpvalue(onRender, "categoryById")
 local setCategory = findUpvalue(onRender, "setCategory")
 local CustomCommandUI = findUpvalue(onRender, "CustomCommandUI")
+local InputSettingsUI = findUpvalue(queueEntry, "InputSettingsUI")
+  or findUpvalue(onRender, "InputSettingsUI")
 local FavoriteModel = findUpvalue(onRender, "FavoriteModel")
 local MAX_SAVE_BYTES = findUpvalue(onRender, "MAX_SAVE_BYTES")
 local runtimeCatalog = findUpvalue(visibleEntries, "Catalog")
@@ -491,6 +495,7 @@ assertTrue(type(saveState) == "function", "saveState upvalue unavailable")
 assertTrue(type(categoryById) == "table", "categoryById upvalue unavailable")
 assertTrue(type(setCategory) == "function", "setCategory upvalue unavailable")
 assertTrue(type(CustomCommandUI) == "table", "CustomCommandUI upvalue unavailable")
+assertTrue(type(InputSettingsUI) == "table", "InputSettingsUI upvalue unavailable")
 assertTrue(type(FavoriteModel) == "table", "FavoriteModel upvalue unavailable")
 assertEqual(MAX_SAVE_BYTES, 64 * 1024, "SaveData safety limit changed")
 
@@ -749,7 +754,7 @@ end
 local function testCustomCommands()
   onStarted()
   openMenu()
-  assertEqual(#runtimeCatalog.categories, 18, "custom command category is missing")
+  assertEqual(#runtimeCatalog.categories, 19, "custom command or input settings category is missing")
   local customCategory = categoryById.custom_commands
   assertTrue(customCategory ~= nil, "custom command category was not indexed")
   setCategory(customCategory.index)
@@ -1425,7 +1430,7 @@ local function testCommandContracts()
   for alias, commandId in pairs({ g = "giveitem", r = "remove", m = "macro", l = "lua" }) do
     assertEqual(specs.byVerb[alias].id, commandId, "command alias contract differs: " .. alias)
   end
-  assertEqual(#runtimeCatalog.categories, 18, "command categories were not appended exactly once")
+  assertEqual(#runtimeCatalog.categories, 19, "command and input settings categories were not appended exactly once")
   assertTrue(findCatalogCommand("goto", "manual") ~= nil, "goto reference entry missing")
   assertTrue(findCatalogCommand("listcollectibles", "disabled") ~= nil,
     "native-output entry is not visibly disabled")
@@ -1688,7 +1693,7 @@ local function testMeasuredFooterAndStars()
   local exactVersion, exactGroup, exactSummary, exactCategoryDesc = false, false, false, false
   for _, value in ipairs(TEST.rendered) do
     if value == (IS_ZH and "纯 Lua v" or "v") .. TEST_CONFIG.expectedVersion then exactVersion = true end
-    if value == (IS_ZH and "分类 1/3" or "1/3") then exactGroup = true end
+    if value == (IS_ZH and "分类 1/4" or "1/4") then exactGroup = true end
     if IS_ZH then
       if value == "全部收藏品" then exactSummary = true end
       if value == "当前版本的全部收藏品" then exactCategoryDesc = true end
@@ -1915,7 +1920,7 @@ end
 local function testMcmKeybind()
   assertTrue(TEST_CONFIG.mcm, "MCM keybind scenario requires optional MCM")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 4, "MCM settings were not registered exactly once each")
+  assertEqual(TEST.mcmAddCalls, 5, "MCM settings were not registered exactly once each")
   assertEqual(TEST.mcmCategory, IS_ZH and "Isaac Chinese Console" or "Console UI", "MCM category changed")
   assertEqual(TEST.mcmSubcategory, IS_ZH and "设置" or "Settings", "MCM subcategory changed")
   assertTrue(type(TEST.mcmSetting) == "table", "MCM keybind setting missing")
@@ -1944,7 +1949,7 @@ local function testMcmKeybind()
   state.loaded = false
   onStarted()
   assertEqual(state.openKey, Keyboard.KEY_F7, "persisted custom key did not reload")
-  assertEqual(TEST.mcmAddCalls, 4, "rewind duplicated the MCM settings")
+  assertEqual(TEST.mcmAddCalls, 5, "rewind duplicated the MCM settings")
 end
 
 local function testEidOverlayIsolation()
@@ -2313,6 +2318,7 @@ local function testCategoryDescriptionMatrix()
     run_control = { "执行调试开关、刷新、回溯、重开和楼层重置等运行命令。", "调试、刷新与运行控制" },
     command_reference = { "官方命令语法参考；参数命令需按 C 补全，禁用项只供查阅。", "官方语法与安全状态" },
     custom_commands = { "高级原始命令透传；可命名、搜索、收藏、编辑和删除，风险由用户承担。", "高级原始命令透传" },
+    input_settings = { "管理键盘呼出键、手柄收藏与兼容呼出、开局提示及命令后关闭行为。", "完整的内置 Mod 设置" },
   } or {
     featured = { "Your most recently favorited entries appear first.", "Recent favorite entries." },
     all_items = { "All collectibles in the current game version.", "All official collectibles." },
@@ -2332,6 +2338,7 @@ local function testCategoryDescriptionMatrix()
     run_control = { "Run debug toggles, refresh actions, rewinds, restarts, and floor resets.", "Debug, refresh, and run control" },
     command_reference = { "Official syntax reference. Press C to complete parameter commands; disabled entries are reference-only.", "Official syntax and safety status" },
     custom_commands = { "Advanced raw-command passthrough with optional names, search, favorites, editing, and deletion; use at your own risk.", "Advanced raw-command passthrough" },
+    input_settings = { "Manage keyboard opening, controller favorite and compatibility bindings, startup hints, and command-close behavior.", "Complete built-in Mod settings" },
   }
 
   for index, category in ipairs(runtimeCatalog.categories) do
@@ -3014,10 +3021,18 @@ end
 local function testMcmSettings254()
   assertTrue(TEST_CONFIG.mcm, "MCM 2.5.4 scenario requires optional MCM")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 4, "MCM did not register all four settings")
-  local favoriteSetting, startupSetting, closeSetting
+  assertEqual(TEST.mcmAddCalls, 5, "MCM did not register all five settings")
+  local keyboardSetting, favoriteSetting, openFallbackSetting, startupSetting, closeSetting
   for _, setting in ipairs(TEST.mcmSettings) do
-    if setting.Type == ModConfigMenu.OptionType.KEYBIND_CONTROLLER then favoriteSetting = setting end
+    if setting.Type == ModConfigMenu.OptionType.KEYBIND_KEYBOARD then keyboardSetting = setting end
+    if setting.Type == ModConfigMenu.OptionType.KEYBIND_CONTROLLER then
+      local display = type(setting.Display) == "function" and tostring(setting.Display()) or ""
+      if contains(display, IS_ZH and "手柄收藏键" or "Controller favorite key") then
+        favoriteSetting = setting
+      elseif contains(display, IS_ZH and "兼容呼出键" or "Compatibility open key") then
+        openFallbackSetting = setting
+      end
+    end
     if setting.Type == ModConfigMenu.OptionType.BOOLEAN then
       local display = type(setting.Display) == "function" and tostring(setting.Display()) or ""
       if contains(display, IS_ZH and "进入游戏时显示键位提示" or "Show startup key hint") then
@@ -3027,7 +3042,9 @@ local function testMcmSettings254()
       end
     end
   end
+  assertTrue(type(keyboardSetting) == "table", "keyboard setting missing")
   assertTrue(type(favoriteSetting) == "table", "controller favorite setting missing")
+  assertTrue(type(openFallbackSetting) == "table", "controller open fallback setting missing")
   assertTrue(type(startupSetting) == "table", "startup hint setting missing")
   assertTrue(type(closeSetting) == "table", "regular-command close setting missing")
   if IS_ZH then
@@ -3038,6 +3055,7 @@ local function testMcmSettings254()
     local expectedDisplays = {
       "键盘呼出键: F6",
       "手柄收藏键: 自动",
+      "兼容呼出键: 自动",
       "进入游戏时显示键位提示: 开启",
       "普通命令执行后关闭界面: 开启",
     }
@@ -3050,8 +3068,26 @@ local function testMcmSettings254()
     end
   end
   assertEqual(favoriteSetting.CurrentSetting(), -1, "controller favorite default is not Automatic")
+  assertEqual(openFallbackSetting.CurrentSetting(), -1,
+    "controller open fallback default is not Automatic")
   assertEqual(startupSetting.CurrentSetting(), true, "startup hint default is not enabled")
   assertEqual(closeSetting.CurrentSetting(), true, "regular-command close default is not enabled")
+
+  openMenu()
+  setCategory(categoryById.input_settings.index)
+  local builtInSettings = visibleEntries()
+  assertTrue(queueEntry(builtInSettings[7], 1), "built-in startup toggle failed with MCM installed")
+  assertEqual(startupSetting.CurrentSetting(), false, "MCM did not immediately read built-in startup change")
+  startupSetting.OnChange(true)
+  builtInSettings = visibleEntries()
+  assertTrue(contains(builtInSettings[7].desc, IS_ZH and "开启" or "On"),
+    "built-in card did not immediately read MCM startup change")
+  keyboardSetting.OnChange(Keyboard.KEY_F7)
+  builtInSettings = visibleEntries()
+  assertTrue(contains(builtInSettings[1].desc, "F7"), "built-in card did not immediately read MCM keybind")
+  assertTrue(queueEntry(builtInSettings[2], 1), "built-in keyboard restore failed with MCM installed")
+  assertEqual(keyboardSetting.CurrentSetting(), Keyboard.KEY_F6,
+    "MCM did not immediately read built-in keyboard restore")
 
   startupSetting.OnChange(false)
   assertEqual(state.startupHintEnabled, false, "startup hint setting did not turn off")
@@ -3061,6 +3097,14 @@ local function testMcmSettings254()
   assertTrue(contains(TEST.saveData, "controllerFavoriteButton=9\n"), "custom favorite button was not persisted")
   favoriteSetting.OnChange(32)
   assertEqual(state.controllerFavoriteButton, 9, "invalid favorite button replaced the binding")
+  openFallbackSetting.OnChange(21)
+  assertEqual(state.controllerOpenFallbackButton, 21,
+    "MCM compatibility open button was not applied")
+  assertTrue(contains(TEST.saveData, "controllerOpenFallbackButton=21\n"),
+    "MCM compatibility open button was not persisted")
+  openFallbackSetting.OnChange(Controller.BUTTON_A)
+  assertEqual(state.controllerOpenFallbackButton, 21,
+    "MCM accepted a controller open conflict")
 
   closeSetting.OnChange(false)
   assertEqual(state.closeAfterRegularCommand, false, "regular-command close setting did not turn off")
@@ -3109,6 +3153,9 @@ local function testMcmSettings254()
   assertEqual(state.startupHintEnabled, false, "failed startup setting save did not roll back")
   favoriteSetting.OnChange(10)
   assertEqual(state.controllerFavoriteButton, 9, "failed favorite setting save did not roll back")
+  openFallbackSetting.OnChange(20)
+  assertEqual(state.controllerOpenFallbackButton, 21,
+    "failed controller open setting save did not roll back")
   closeSetting.OnChange(true)
   assertEqual(state.closeAfterRegularCommand, false,
     "failed regular-command close setting save did not roll back")
@@ -3118,7 +3165,22 @@ local function testMcmSettings254()
   onStarted()
   assertEqual(state.startupHintEnabled, false, "startup hint setting did not reload")
   assertEqual(state.controllerFavoriteButton, 9, "favorite button setting did not reload")
+  assertEqual(state.controllerOpenFallbackButton, 21,
+    "controller open fallback setting did not reload")
   assertEqual(state.closeAfterRegularCommand, false, "regular-command close setting did not reload")
+end
+
+local function testPartialMcmSettings()
+  assertTrue(TEST_CONFIG.mcm and TEST_CONFIG.mcmNoControllerKeybind,
+    "partial MCM scenario requires a missing controller keybind type")
+  onStarted()
+  assertEqual(TEST.mcmAddCalls, 3, "partial MCM did not retain keyboard and boolean mirrors")
+  openMenu()
+  setCategory(categoryById.input_settings.index)
+  local settings = visibleEntries()
+  assertEqual(#settings, 8, "partial MCM removed built-in settings")
+  assertEqual(settings[3].id, "controller_favorite_bind", "built-in favorite calibration depends on MCM")
+  assertEqual(settings[5].id, "controller_open_calibrate", "built-in open calibration depends on MCM")
 end
 local function findObject(key)
   for _, entry in ipairs(allEntries) do
@@ -3566,6 +3628,44 @@ local function testToastLayoutContract()
   onStarted()
   state.open = false
   state.queue = nil
+  local function assertStartupToast(expectedKey)
+    assertTrue(state.toast ~= nil and state.toast.inlineAction == true,
+      "startup key hint did not request a one-line layout")
+    TEST.rendered = {}
+    TEST.renderRecords = {}
+    TEST.spriteRecords = {}
+    TEST.captureGeometry = true
+    drawToast(TEST_CONFIG.screenWidth or 1280, TEST_CONFIG.screenHeight or 720)
+    assertEqual(#TEST.renderRecords, 1, "startup key hint rendered on more than one line")
+    assertTrue(contains(TEST.renderRecords[1].text, expectedKey),
+      "startup key hint did not show the active keyboard open key: expected="
+        .. expectedKey .. "; rendered=" .. TEST.renderRecords[1].text)
+    assertTrue(contains(TEST.renderRecords[1].text, "L3"),
+      "startup key hint did not retain the controller open key")
+    local startupBackground = TEST.spriteRecords[1]
+    assertTrue(startupBackground ~= nil and startupBackground.height <= 26,
+      "startup key hint did not use a one-line Toast background")
+    assertCapturedTextInside(startupBackground, TEST.renderRecords[1])
+  end
+
+  assertEqual(state.openKey, Keyboard.KEY_F6, "startup key hint did not begin with the default F6 binding")
+  assertStartupToast("F6")
+  assertTrue(InputSettingsUI.applySetting("keyboard_open", Keyboard.KEY_F7),
+    "startup key hint test could not persist the custom keyboard binding")
+  state.startupHintShown = false
+  state.toast = nil
+  onStarted()
+  assertStartupToast("F7")
+  assertTrue(InputSettingsUI.applySetting("startup_hint", false),
+    "startup key hint test could not persist the disabled setting")
+  state.startupHintShown = false
+  state.toast = nil
+  onStarted()
+  assertEqual(state.toast, nil, "disabled startup key hint still created a Toast")
+  assertTrue(InputSettingsUI.applySetting("startup_hint", true),
+    "startup key hint test could not restore the enabled setting")
+  state.startupHintShown = true
+
   local primary = IS_ZH and ("发生什么：" .. string.rep("保存失败", 30))
     or ("What happened: " .. string.rep("save failed ", 30))
   local action = IS_ZH and ("下一步：" .. string.rep("已恢复原设置", 30))
@@ -3614,6 +3714,324 @@ local function testToastLayoutContract()
   TEST.captureGeometry = false
 end
 
+local function advanceCalibrationRelease()
+  for _ = 1, 6 do renderFrame() end
+  assertEqual(state.controllerCalibration.stage, "detect",
+    "calibration did not finish the all-buttons-released gate")
+end
+
+local function holdCalibrationCandidate(button, frames, controllerIndex)
+  controllerIndex = controllerIndex or TEST_CONFIG.controllerIndex or 0
+  TEST.buttonPressed[button] = { [controllerIndex] = true }
+  for _ = 1, frames do renderFrame() end
+end
+
+local function clearRawButton(button, controllerIndex)
+  controllerIndex = controllerIndex or TEST_CONFIG.controllerIndex or 0
+  TEST.buttonPressed[button] = { [controllerIndex] = false }
+end
+
+local function testBuiltInSettings()
+  local index = TEST_CONFIG.controllerIndex or 0
+  onStarted()
+  openMenu()
+  setCategory(categoryById.input_settings.index)
+  local settings = visibleEntries()
+  assertEqual(#settings, 8, "built-in Settings did not fit one complete page")
+  local expectedNames = IS_ZH and {
+    "键盘呼出",
+    "键盘默认：F6",
+    "手柄收藏",
+    "手柄收藏：自动",
+    "手柄备用呼出",
+    "手柄呼出：自动",
+    "开局键位提示",
+    "普通命令后关闭",
+  } or {
+    "Keyboard Open",
+    "Keyboard Default: F6",
+    "Controller Favorite",
+    "Controller Favorite: Auto",
+    "Controller Backup Open",
+    "Controller Open: Auto",
+    "Startup Key Hint",
+    "Close After Regular Command",
+  }
+  for i, expectedName in ipairs(expectedNames) do
+    assertEqual(settings[i].name, expectedName, "built-in Settings title order or wording changed at card " .. i)
+  end
+  assertTrue(contains(settings[1].desc, "F6"), "keyboard card did not show its current value")
+  assertTrue(contains(settings[1].desc, IS_ZH and "键盘" or "keyboard"),
+    "keyboard card description did not identify the device")
+  assertTrue(contains(settings[3].desc, IS_ZH and "手柄" or "controller"),
+    "controller favorite description did not identify the device")
+  assertTrue(contains(settings[5].desc, IS_ZH and "手柄" or "controller"),
+    "controller backup-open description did not identify the device")
+  assertTrue(contains(settings[7].desc, IS_ZH and "开启" or "On"),
+    "startup card did not show its current value")
+
+  state.sidebarFocus = false
+  state.page = 1
+  state.selection = 1
+  TEST.rendered = {}
+  renderFrame()
+  local renderedSettingsFooter = table.concat(TEST.rendered, " | ")
+  local exactActionLabel = false
+  for _, rendered in ipairs(TEST.rendered) do
+    if rendered == (IS_ZH and "操作：" or "Action: ") then exactActionLabel = true end
+  end
+  assertTrue(exactActionLabel, "Settings footer did not use the concise action label")
+  assertTrue(not contains(renderedSettingsFooter, IS_ZH and "手动命令(C)" or "Manual command (C)"),
+    "Settings footer still presented the card as an editable command")
+
+  state.controlMode = "keyboard"
+  assertTrue(contains(PresentationModel.entryHintCandidates(settings[1], false, 1)[1],
+    IS_ZH and "Enter设置" or "Enter: set"), "keyboard capture hint was not concise")
+  state.controlMode = "mouse"
+  assertTrue(contains(PresentationModel.entryHintCandidates(settings[1], false, 1)[1],
+    IS_ZH and "点击设置" or "Click: set"), "mouse capture hint was not concise")
+  state.controlMode = "controller"
+  assertTrue(contains(PresentationModel.entryHintCandidates(settings[1], false, 1)[1],
+    IS_ZH and "A设置" or "A: set"), "controller capture hint was not concise")
+  assertTrue(contains(PresentationModel.entryHintCandidates(settings[2], false, 1)[1],
+    IS_ZH and "恢复默认" or "restore default"), "reset hint lost its explicit action")
+  assertTrue(contains(PresentationModel.entryHintCandidates(settings[7], false, 1)[1],
+    IS_ZH and "切换" or "toggle"), "toggle hint lost its explicit action")
+  state.controlMode = "keyboard"
+
+  assertTrue(queueEntry(settings[7], 1), "startup hint toggle failed")
+  assertEqual(state.startupHintEnabled, false, "startup hint did not toggle off")
+  assertTrue(queueEntry(settings[8], 1), "close-after-command toggle failed")
+  assertEqual(state.closeAfterRegularCommand, false, "close-after-command did not toggle off")
+  assertTrue(contains(TEST.saveData, "startupHintEnabled=0\n"), "startup toggle was not persisted")
+  assertTrue(contains(TEST.saveData, "closeAfterRegularCommand=0\n"), "close toggle was not persisted")
+  TEST_CONFIG.saveFail = true
+  assertEqual(queueEntry(settings[7], 1), false, "failed built-in save reported success")
+  assertEqual(state.startupHintEnabled, false, "failed built-in toggle did not roll back")
+  TEST_CONFIG.saveFail = false
+
+  assertTrue(queueEntry(settings[1], 1), "keyboard capture did not start")
+  assertEqual(state.controllerCalibration.device, "keyboard", "keyboard capture used the wrong adapter")
+  advanceCalibrationRelease()
+  TEST.buttonPressed[Keyboard.KEY_F6] = { [0] = true }
+  TEST.buttonPressed[Keyboard.KEY_F7] = { [0] = true }
+  renderFrame()
+  assertEqual(state.controllerCalibration.stableFrames, 0, "multiple keyboard keys produced a candidate")
+  TEST.buttonPressed[Keyboard.KEY_F6] = { [0] = false }
+  TEST.buttonPressed[Keyboard.KEY_F7] = { [0] = false }
+  renderFrame()
+  TEST.buttonPressed[Keyboard.KEY_F7] = { [0] = true }
+  for _ = 1, 8 do renderFrame() end
+  assertEqual(state.open, true, "captured keyboard open key closed the menu")
+  assertEqual(state.controllerCalibration.stage, "candidate_release", "keyboard candidate skipped release isolation")
+  TEST.buttonPressed[Keyboard.KEY_F7] = { [0] = false }
+  renderFrame()
+  assertEqual(state.controllerCalibration.stage, "confirm", "keyboard candidate did not reach confirmation")
+  pressKey(Keyboard.KEY_ENTER)
+  assertEqual(state.openKey, Keyboard.KEY_F7, "keyboard candidate was not saved")
+  assertTrue(contains(TEST.saveData, "openKey=" .. Keyboard.KEY_F7 .. "\n"), "keyboard bind was not persisted")
+  assertTrue(queueEntry(settings[2], 1), "keyboard default restore failed")
+  assertEqual(state.openKey, Keyboard.KEY_F6, "keyboard default restore did not return to F6")
+  local savesBeforeNoop = TEST.saveAttempts
+  assertTrue(queueEntry(settings[2], 1), "keyboard default no-op failed")
+  assertEqual(TEST.saveAttempts, savesBeforeNoop, "default no-op performed a redundant save")
+
+  assertTrue(queueEntry(settings[1], 1), "reserved-key capture did not start")
+  advanceCalibrationRelease()
+  TEST.buttonPressed[Keyboard.KEY_C] = { [0] = true }
+  renderFrame()
+  assertEqual(state.controllerCalibration.stableFrames, 0, "reserved keyboard key accumulated stability")
+  TEST.buttonPressed[Keyboard.KEY_C] = { [0] = false }
+  renderFrame()
+  pressKey(Keyboard.KEY_ESCAPE)
+  assertEqual(state.inputMode, nil, "keyboard capture cancel retained input focus")
+  assertEqual(state.openKey, Keyboard.KEY_F6, "keyboard capture cancel changed the setting")
+
+  assertTrue(queueEntry(settings[1], 1), "F6 capture did not start")
+  advanceCalibrationRelease()
+  TEST.buttonPressed[Keyboard.KEY_F6] = { [0] = true }
+  for _ = 1, 8 do renderFrame() end
+  assertEqual(state.open, true, "F6 candidate closed the menu during capture")
+  TEST.buttonPressed[Keyboard.KEY_F6] = { [0] = false }
+  renderFrame()
+  pressKey(Keyboard.KEY_ENTER)
+  assertEqual(state.openKey, Keyboard.KEY_F6, "valid F6 candidate changed unexpectedly")
+
+  assertTrue(queueEntry(settings[1], 1), "keyboard timeout capture did not start")
+  state.controllerCalibration.remainingFrames = 1
+  renderFrame()
+  assertEqual(state.inputMode, nil, "keyboard timeout retained capture focus")
+  assertEqual(state.openKey, Keyboard.KEY_F6, "keyboard timeout changed the setting")
+
+  assertTrue(queueEntry(settings[3], 1), "favorite calibration did not start")
+  advanceCalibrationRelease()
+  holdCalibrationCandidate(0, 8, index)
+  assertEqual(state.controllerCalibration.stage, "candidate_release", "favorite raw 0 was not accepted")
+  clearRawButton(0, index)
+  renderFrame()
+  pressKey(Keyboard.KEY_ENTER)
+  assertEqual(state.controllerFavoriteButton, 0, "favorite raw 0 was not saved")
+  assertTrue(queueEntry(settings[4], 1), "favorite automatic restore failed")
+  assertEqual(state.controllerFavoriteButton, nil, "favorite automatic restore retained raw binding")
+
+  assertTrue(queueEntry(settings[3], 1), "favorite upper-bound calibration did not start")
+  advanceCalibrationRelease()
+  holdCalibrationCandidate(31, 8, index)
+  clearRawButton(31, index)
+  renderFrame()
+  pressKey(Keyboard.KEY_ENTER)
+  assertEqual(state.controllerFavoriteButton, 31, "favorite raw 31 upper boundary was not saved")
+  onStarted()
+  assertEqual(state.controllerFavoriteButton, 31, "built-in setting did not survive restart")
+  assertEqual(state.controllerCalibration, nil, "restart retained temporary setting capture")
+end
+
+local function testControllerOpenCompatibility()
+  local index = TEST_CONFIG.controllerIndex or 0
+  onStarted()
+  openMenu()
+  local inputCategory = categoryById.input_settings
+  assertTrue(inputCategory ~= nil, "Input Settings category is unavailable without MCM")
+  setCategory(inputCategory.index)
+  local settings = visibleEntries()
+  assertEqual(#settings, 8, "built-in Settings must expose all eight actions")
+  local expectedSettingIds = {
+    "keyboard_open_bind", "keyboard_open_reset", "controller_favorite_bind",
+    "controller_favorite_reset", "controller_open_calibrate", "controller_open_reset",
+    "startup_hint_toggle", "close_after_command_toggle",
+  }
+  for settingIndex, expectedId in ipairs(expectedSettingIds) do
+    assertEqual(settings[settingIndex].id, expectedId, "built-in setting order differs")
+  end
+
+  local callsBeforeCalibration = TEST.buttonPressedCalls
+  renderFrame()
+  assertTrue(TEST.buttonPressedCalls - callsBeforeCalibration < 12,
+    "normal menu operation scanned unknown raw controller buttons")
+
+  assertTrue(queueEntry(settings[5], 1), "calibration action did not start")
+  assertEqual(state.inputMode, "setting_capture", "calibration did not own input focus")
+  advanceCalibrationRelease()
+
+  holdCalibrationCandidate(Controller.BUTTON_A, 2, index)
+  assertEqual(state.controllerCalibration.stage, "detect", "reserved confirm button was accepted")
+  assertEqual(state.controllerCalibration.stableFrames, 0, "reserved button accumulated stability")
+  clearRawButton(Controller.BUTTON_A, index)
+  renderFrame()
+
+  TEST.buttonPressed[20] = { [index] = true }
+  TEST.buttonPressed[21] = { [index] = true }
+  renderFrame()
+  assertEqual(state.controllerCalibration.stableFrames, 0, "multiple buttons produced a candidate")
+  clearRawButton(20, index)
+  clearRawButton(21, index)
+  renderFrame()
+
+  holdCalibrationCandidate(21, 8, index)
+  assertEqual(state.controllerCalibration.stage, "candidate_release", "stable raw input skipped release isolation")
+  assertEqual(state.controllerCalibration.candidateButton, 21, "detected raw button differs")
+  clearRawButton(21, index)
+  renderFrame()
+  assertEqual(state.controllerCalibration.stage, "confirm", "released raw candidate did not reach confirmation")
+  pressKey(Keyboard.KEY_ENTER)
+  assertEqual(state.inputMode, nil, "successful calibration retained input focus")
+  assertEqual(state.controllerOpenFallbackButton, 21, "calibrated button was not applied")
+  assertTrue(contains(TEST.saveData, "controllerOpenFallbackButton=21\n"),
+    "calibrated button was not persisted")
+  renderFrame()
+
+  pressKey(state.openKey)
+  assertEqual(state.open, false, "keyboard key did not close after calibration")
+  holdButton(21, 29, index)
+  assertEqual(state.open, false, "calibrated button opened before the hold threshold")
+  holdButton(21, 1, index)
+  assertEqual(state.open, true, "calibrated button did not open at the hold threshold")
+  assertEqual(state.controllerOpenSource, "calibrated", "calibrated source was not locked")
+  assertEqual(state.controllerOpenValue, 21, "calibrated raw value was not locked")
+  clearRawButton(21, index)
+  renderFrame()
+  pressKey(state.openKey)
+  renderFrame()
+
+  holdButton(TEST_CONFIG.namedL3Button, 30, index)
+  assertEqual(state.open, true, "runtime named L3 did not open when it differs from raw 10")
+  assertEqual(state.controllerOpenSource, "named_l3", "runtime named L3 source was not identified")
+  clearRawButton(TEST_CONFIG.namedL3Button, index)
+  renderFrame()
+  pressKey(state.openKey)
+  renderFrame()
+  holdButton(10, 30, index)
+  assertEqual(state.open, true, "legacy Repentance raw L3 fallback was lost")
+  assertEqual(state.controllerOpenSource, "legacy_l3", "legacy raw L3 source was not identified")
+  clearRawButton(10, index)
+  renderFrame()
+
+  assertTrue(queueEntry(settings[5], 1), "save-failure calibration did not start")
+  advanceCalibrationRelease()
+  holdCalibrationCandidate(20, 8, index)
+  clearRawButton(20, index)
+  renderFrame()
+  TEST_CONFIG.saveFail = true
+  pressKey(Keyboard.KEY_ENTER)
+  TEST_CONFIG.saveFail = false
+  assertEqual(state.controllerOpenFallbackButton, 21,
+    "failed calibration save did not restore the previous binding")
+  assertEqual(state.inputMode, nil, "failed calibration save retained input focus")
+  renderFrame()
+
+  assertTrue(queueEntry(settings[5], 1), "timeout calibration did not start")
+  state.controllerCalibration.remainingFrames = 1
+  renderFrame()
+  assertEqual(state.inputMode, nil, "calibration timeout retained input focus")
+  assertEqual(state.controllerOpenFallbackButton, 21, "calibration timeout changed the binding")
+
+  assertTrue(queueEntry(settings[5], 1), "disconnect calibration did not start")
+  TEST_CONFIG.playerControllerIndexes = {}
+  renderFrame()
+  assertEqual(state.inputMode, nil, "controller disconnect retained calibration")
+  assertEqual(state.controllerOpenFallbackButton, 21, "controller disconnect changed the binding")
+  TEST_CONFIG.playerControllerIndexes = { index }
+
+  assertTrue(queueEntry(settings[5], 1), "lifecycle calibration did not start")
+  onStarted()
+  assertEqual(state.inputMode, nil, "new run retained calibration input focus")
+  assertEqual(state.controllerCalibration, nil, "new run retained calibration state")
+  assertEqual(state.controllerOpenFallbackButton, 21, "new run did not reload the calibrated binding")
+
+  openMenu()
+  assertTrue(queueEntry(InputSettingsUI.resetEntry, 1), "restore automatic action failed")
+  assertEqual(state.controllerOpenFallbackButton, nil, "restore automatic retained custom binding")
+  assertTrue(contains(TEST.saveData, "controllerOpenFallbackButton=auto\n"),
+    "restore automatic was not persisted")
+
+  state.controllerOpenFallbackButton = 10
+  local saved = saveState()
+  assertTrue(saved, "deduplication setup save failed")
+  pressKey(state.openKey)
+  renderFrame()
+  holdButton(10, 30, index)
+  assertEqual(state.open, true, "legacy/custom same-frame dedup lost the open event")
+  assertEqual(state.controllerOpenSource, "legacy_l3",
+    "duplicate custom raw value replaced the earlier compatible source")
+end
+
+local function testControllerEnumerationFailure()
+  onStarted()
+  local callsBefore = TEST.buttonPressedCalls
+  renderFrame()
+  assertEqual(TEST.buttonPressedCalls, callsBefore + 1,
+    "failed controller enumeration sampled anything beyond the Enter keyboard state")
+  pressKey(state.openKey)
+  assertEqual(state.open, true, "F6 stopped working when controller enumeration failed")
+  assertEqual(TEST.getItemConfigCalls, 1, "F6 did not render the menu after enumeration failure")
+  assertTrue(queueEntry(InputSettingsUI.calibrateEntry, 1),
+    "calibration entry could not start after enumeration failure")
+  renderFrame()
+  assertEqual(state.inputMode, nil, "unreadable controller enumeration retained calibration")
+  assertEqual(state.controllerOpenFallbackButton, nil,
+    "unreadable controller enumeration modified the binding")
+end
+
 local scenarios = {
   search = testSearch,
   favorite = testFavorite,
@@ -3644,6 +4062,8 @@ local scenarios = {
   run_boundary_controller = testRunBoundaryControllerLifecycle,
   ctrl_a_isolation = testCtrlAIsolation,
   mcm_settings_254 = testMcmSettings254,
+  partial_mcm_settings = testPartialMcmSettings,
+  built_in_settings = testBuiltInSettings,
   official_objects = testOfficialObjects,
   all_entry_favorites = testAllEntryFavorites,
   command_editor = testCommandEditorAndHistory,
@@ -3657,6 +4077,8 @@ local scenarios = {
   device_help_contract = testDeviceHelpContract,
   controller_details = testControllerDetailsPaging,
   toast_layout = testToastLayoutContract,
+  controller_open_compat = testControllerOpenCompatibility,
+  controller_enumeration_failure = testControllerEnumerationFailure,
 }
 
 local scenario = scenarios[TEST_CONFIG.scenario]

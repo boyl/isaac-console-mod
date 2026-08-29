@@ -7,7 +7,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.18"
+local VERSION = "2.5.20"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -19,6 +19,9 @@ local LIMITS = {
   maxControllerButton = 31,
   controllerOpenHoldFrames = 30,
   controllerRemoveHoldFrames = 30,
+  controllerCalibrationReleaseFrames = 6,
+  controllerCalibrationStableFrames = 8,
+  controllerCalibrationTimeoutFrames = 600,
 }
 local DEFAULT_OPEN_KEY = Keyboard.KEY_F6
 
@@ -80,7 +83,7 @@ local CONTROLLER_DPAD_DOWN = controllerButton("DPAD_DOWN", 3)
 local CONTROLLER_CONFIRM = controllerButton("BUTTON_A", 4)
 local CONTROLLER_BACK = controllerButton("BUTTON_B", 5)
 local CONTROLLER_FAVORITE = controllerButton("BUTTON_X", 6)
-local CONTROLLER_OPEN_BUTTON = controllerButton("STICK_LEFT", 10)
+local CONTROLLER_OPEN_BUTTONS = { named = controllerButton("STICK_LEFT"), legacy = 10 }
 local CONTROLLER_REPEAT_DECREASE = controllerButton("BUMPER_LEFT")
 local CONTROLLER_REPEAT_INCREASE = controllerButton("BUMPER_RIGHT")
 local CONTROLLER_PAGE_PREVIOUS = controllerButton("TRIGGER_LEFT")
@@ -319,6 +322,7 @@ local state = {
   closeAfterRegularCommand = true,
   openKey = DEFAULT_OPEN_KEY,
   controllerFavoriteButton = nil,
+  controllerOpenFallbackButton = nil,
   loaded = false,
   layoutSignature = nil,
   detailEntryId = nil,
@@ -326,6 +330,11 @@ local state = {
   controllerOpenHold = 0,
   controllerOpenLatched = false,
   controllerOpenIndex = nil,
+  controllerOpenSource = nil,
+  controllerOpenValue = nil,
+  controllerCalibration = nil, -- Generic keyboard/controller setting capture state.
+  controllerCandidateSnapshot = nil,
+  controllerEnumerationFailureLogged = false,
   controllerIndex = nil,
   controllerConfirmHold = 0,
   controllerConfirmCommand = nil,
@@ -367,6 +376,22 @@ local Presentation = {
     error = TEXT.accent,
   },
 }
+local InputSettingsUI = {}
+
+function InputSettingsUI.isReservedButton(value)
+  value = normalizeControllerButton(value)
+  if value == nil then return true end
+  local reserved = {
+    CONTROLLER_DPAD_LEFT, CONTROLLER_DPAD_RIGHT, CONTROLLER_DPAD_UP, CONTROLLER_DPAD_DOWN,
+    CONTROLLER_CONFIRM, CONTROLLER_BACK, CONTROLLER_FAVORITE,
+    controllerButton("BUTTON_Y"), CONTROLLER_REPEAT_DECREASE, CONTROLLER_REPEAT_INCREASE,
+    CONTROLLER_PAGE_PREVIOUS, CONTROLLER_PAGE_NEXT,
+  }
+  for _, button in ipairs(reserved) do
+    if button ~= nil and value == button then return true end
+  end
+  return state.controllerFavoriteButton ~= nil and value == state.controllerFavoriteButton
+end
 local lifecycleDispatcher = { registered = false }
 
 function lifecycleDispatcher.disarm()
@@ -407,6 +432,7 @@ local function setMenuOpen(open)
     state.customEditStage = nil
     state.customSelectAll = false
     state.customDeleteConfirmationId = nil
+    state.controllerCalibration = nil
     state.nativePauseSuspended = false
     state.controllerConfirmHold = 0
     state.controllerConfirmCommand = nil
@@ -549,6 +575,40 @@ for _, command in ipairs(Catalog.commands) do
   allEntries[#allEntries + 1] = command
 end
 
+InputSettingsUI.specs = {
+  keyboard_open = { field = "openKey", default = DEFAULT_OPEN_KEY, device = "keyboard" },
+  controller_favorite = { field = "controllerFavoriteButton", default = nil, device = "controller" },
+  controller_open = { field = "controllerOpenFallbackButton", default = nil, device = "controller" },
+  startup_hint = { field = "startupHintEnabled", default = true, device = "boolean" },
+  close_after_command = { field = "closeAfterRegularCommand", default = true, device = "boolean" },
+}
+InputSettingsUI.entries = {
+  { id = "keyboard_open_bind", name = "键盘呼出", en = "Keyboard Open", icon = "键",
+    kind = "setting_capture", settingId = "keyboard_open" },
+  { id = "keyboard_open_reset", name = "键盘默认：F6", en = "Keyboard Default: F6", icon = "复",
+    kind = "setting_reset", settingId = "keyboard_open" },
+  { id = "controller_favorite_bind", name = "手柄收藏", en = "Controller Favorite", icon = "藏",
+    kind = "setting_capture", settingId = "controller_favorite" },
+  { id = "controller_favorite_reset", name = "手柄收藏：自动", en = "Controller Favorite: Auto", icon = "复",
+    kind = "setting_reset", settingId = "controller_favorite" },
+  { id = "controller_open_calibrate", name = "手柄备用呼出", en = "Controller Backup Open", icon = "柄",
+    kind = "setting_capture", settingId = "controller_open" },
+  { id = "controller_open_reset", name = "手柄呼出：自动", en = "Controller Open: Auto", icon = "复",
+    kind = "setting_reset", settingId = "controller_open" },
+  { id = "startup_hint_toggle", name = "开局键位提示", en = "Startup Key Hint", icon = "示",
+    kind = "setting_toggle", settingId = "startup_hint" },
+  { id = "close_after_command_toggle", name = "普通命令后关闭", en = "Close After Regular Command", icon = "关",
+    kind = "setting_toggle", settingId = "close_after_command" },
+}
+for _, entry in ipairs(InputSettingsUI.entries) do
+  entry.cat = "input_settings"
+  entry.tier = "A"
+  entry.catalogAction = "input_setting"
+  entry.canFavorite = false
+  entry.canRemove = false
+end
+InputSettingsUI.calibrateEntry = InputSettingsUI.entries[5]
+InputSettingsUI.resetEntry = InputSettingsUI.entries[6]
 local CustomCommandUI = {
   addEntry = {
     id = "custom_add",
@@ -940,6 +1000,7 @@ function CustomCommandUI.buildSavePayload()
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
+      .. "controllerOpenFallbackButton=" .. tostring(state.controllerOpenFallbackButton or "auto") .. "\n"
       .. (state.favoriteOrderNeedsCatalogMigration and "" or "favoriteOrder=recent\n")
       .. "favorites=" .. table.concat(favoriteKeys, ",") .. "\n"
       .. "history=" .. table.concat(history, "|") .. "\n"
@@ -962,6 +1023,68 @@ local function saveState()
   return true
 end
 
+function InputSettingsUI.formatValue(settingId, value)
+  if settingId == "keyboard_open" then return openKeyName(value or DEFAULT_OPEN_KEY) end
+  if settingId == "controller_favorite" or settingId == "controller_open" then
+    return value ~= nil and ("自定义按钮 " .. value) or "自动"
+  end
+  return value ~= false and "开启" or "关闭"
+end
+
+function InputSettingsUI.captureLabel(settingId)
+  if settingId == "keyboard_open" then return "键盘呼出键" end
+  if settingId == "controller_favorite" then return "手柄收藏键" end
+  return "手柄备用呼出键"
+end
+
+function InputSettingsUI.applySetting(settingId, value)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec then return false, false, "未知设置" end
+  local nextValue = value
+  if spec.device == "keyboard" then
+    nextValue = tonumber(value)
+    if not isValidOpenKey(nextValue) then return false, false, "该按键与菜单操作冲突" end
+  elseif spec.device == "controller" then
+    if value == nil or tonumber(value) == -1 then
+      nextValue = nil
+    else
+      nextValue = normalizeControllerButton(value)
+      if nextValue == nil then return false, false, "手柄按钮无效" end
+      if settingId == "controller_open" and InputSettingsUI.isReservedButton(nextValue) then
+        return false, false, "该按钮与菜单操作冲突"
+      end
+    end
+  elseif type(value) ~= "boolean" then
+    return false, false, "设置值无效"
+  end
+  local previous = state[spec.field]
+  if previous == nextValue then return true, false end
+  state[spec.field] = nextValue
+  local saved, err = saveState()
+  if not saved then
+    state[spec.field] = previous
+    debugLog("setting save failed; rollback " .. settingId .. ": " .. tostring(err))
+    return false, false, tostring(err)
+  end
+  return true, true
+end
+
+function InputSettingsUI.refreshEntries()
+  local keyboard = InputSettingsUI.formatValue("keyboard_open", state.openKey)
+  local favorite = InputSettingsUI.formatValue("controller_favorite", state.controllerFavoriteButton)
+  local controllerOpen = InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton)
+  local startup = InputSettingsUI.formatValue("startup_hint", state.startupHintEnabled)
+  local closeAfter = InputSettingsUI.formatValue("close_after_command", state.closeAfterRegularCommand)
+  InputSettingsUI.entries[1].desc = "当前键盘呼出键：" .. keyboard .. "。进入捕获后松开全部按键，再按一个有效键并确认。"
+  InputSettingsUI.entries[2].desc = "当前键盘呼出键：" .. keyboard .. "。恢复后仅键盘改回 F6。"
+  InputSettingsUI.entries[3].desc = "当前手柄收藏键：" .. favorite .. "。只在校准期间扫描已分配手柄；确认与返回动作仍优先。"
+  InputSettingsUI.entries[4].desc = "当前手柄收藏键：" .. favorite .. "。清除自定义 raw 按钮并恢复自动识别。"
+  InputSettingsUI.entries[5].desc = "当前手柄备用呼出键：" .. controllerOpen .. "。只补充默认长按 L3，不影响键盘呼出键。"
+  InputSettingsUI.entries[6].desc = "当前手柄备用呼出键：" .. controllerOpen .. "。清除后继续使用默认长按 L3。"
+  InputSettingsUI.entries[7].desc = "当前：" .. startup .. "。控制每次启动游戏进程后第一局的呼出键提示。"
+  InputSettingsUI.entries[8].desc = "当前：" .. closeAfter .. "。运行流程命令仍始终关闭界面。"
+end
+
 local function loadState()
   if state.loaded then return end
   state.loaded = true
@@ -973,6 +1096,7 @@ local function loadState()
   state.startupHintEnabled = true
   state.closeAfterRegularCommand = true
   state.controllerFavoriteButton = nil
+  state.controllerOpenFallbackButton = nil
   state.customCommands:load("", nil)
   CustomCommandUI.rebuildEntries()
 
@@ -1022,6 +1146,15 @@ local function loadState()
     local normalized = normalizeControllerButton(savedFavoriteButton)
     if normalized ~= nil then
       state.controllerFavoriteButton = normalized
+    else
+      migrated = true
+    end
+  end
+  local savedOpenFallbackButton = parseRaw:match("controllerOpenFallbackButton=([^\n]*)")
+  if savedOpenFallbackButton ~= nil and savedOpenFallbackButton ~= "auto" then
+    local normalized = normalizeControllerButton(savedOpenFallbackButton)
+    if normalized ~= nil and not InputSettingsUI.isReservedButton(normalized) then
+      state.controllerOpenFallbackButton = normalized
     else
       migrated = true
     end
@@ -1128,6 +1261,10 @@ local function clearRunTransientState()
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
+  state.controllerOpenSource = nil
+  state.controllerOpenValue = nil
+  state.controllerCalibration = nil
+  state.controllerCandidateSnapshot = nil
   state.controllerConfirmHold = 0
   state.controllerConfirmCommand = nil
   state.controllerConfirmRemoveCommand = nil
@@ -1232,21 +1369,9 @@ local function registerMcmSettings()
       return "键盘呼出键: " .. openKeyName(state.openKey)
     end,
     OnChange = function(value)
-      local nextKey = tonumber(value)
-      if not isValidOpenKey(nextKey) then
-        showToast("该按键与菜单操作冲突，设置未更改", "warning", 150)
-        return
-      end
-      local previousKey = state.openKey or DEFAULT_OPEN_KEY
-      state.openKey = nextKey
-      local saved, err = saveState()
-      if not saved then
-        state.openKey = previousKey
-        debugLog("open key save failed; rollback: " .. tostring(err))
-        showToast("改键保存失败", "error", 150, "已恢复 " .. openKeyName(previousKey))
-        return
-      end
-      showToast("呼出键已改为 " .. openKeyName(nextKey), "success", 120)
+      local ok, changed, err = InputSettingsUI.applySetting("keyboard_open", value)
+      if not ok then showToast("键盘呼出键设置失败", "warning", 150, err); return end
+      if changed then showToast("呼出键已改为 " .. openKeyName(state.openKey), "success", 120) end
     end,
     Popup = function()
       return "按下新的键盘按键。$newlineEsc 取消；不建议使用游戏操作键或其他 Mod 的快捷键。"
@@ -1270,30 +1395,10 @@ local function registerMcmSettings()
       return "手柄收藏键: " .. (button ~= nil and ("自定义按钮 " .. button) or "自动")
     end,
     OnChange = function(value)
-      local numeric = tonumber(value)
-      local nextButton = nil
-      if value ~= nil and numeric ~= -1 then
-        nextButton = normalizeControllerButton(numeric)
-        if nextButton == nil then
-          showToast("手柄收藏键无效，设置未更改", "warning", 150)
-          return
-        end
-      end
-      local previousButton = state.controllerFavoriteButton
-      if nextButton == previousButton then return end
-      state.controllerFavoriteButton = nextButton
-      local saved, err = saveState()
-      if not saved then
-        state.controllerFavoriteButton = previousButton
-        debugLog("controller favorite button save failed; rollback: " .. tostring(err))
-        showToast("手柄收藏键保存失败", "error", 150, "已恢复原设置")
-        return
-      end
-      if nextButton ~= nil then
-        showToast("手柄收藏键已设为自定义按钮 " .. nextButton, "success", 120)
-      else
-        showToast("手柄收藏键已恢复自动识别", "success", 120)
-      end
+      local ok, changed, err = InputSettingsUI.applySetting("controller_favorite", value)
+      if not ok then showToast("手柄收藏键设置失败", "warning", 150, err); return end
+      if changed then showToast("手柄收藏键已设为 "
+        .. InputSettingsUI.formatValue("controller_favorite", state.controllerFavoriteButton), "success", 120) end
     end,
     Popup = function()
       return "按下希望用于收藏的手柄按键。$newline返回或向左可清除绑定并恢复自动识别。"
@@ -1316,23 +1421,37 @@ local function registerMcmSettings()
       return "进入游戏时显示键位提示: " .. (state.startupHintEnabled ~= false and "开启" or "关闭")
     end,
     OnChange = function(value)
-      local nextEnabled = value == true
-      local previousEnabled = state.startupHintEnabled ~= false
-      if nextEnabled == previousEnabled then return end
-      state.startupHintEnabled = nextEnabled
-      local saved, err = saveState()
-      if not saved then
-        state.startupHintEnabled = previousEnabled
-        debugLog("startup hint setting save failed; rollback: " .. tostring(err))
-        showToast("键位提示设置保存失败", "error", 150, "已恢复原设置")
-        return
-      end
-      showToast("进入游戏时键位提示已" .. (nextEnabled and "开启" or "关闭"), "success")
+      local ok, changed, err = InputSettingsUI.applySetting("startup_hint", value == true)
+      if not ok then showToast("键位提示设置失败", "error", 150, err); return end
+      if changed then showToast("进入游戏时键位提示已" .. (state.startupHintEnabled and "开启" or "关闭"), "success") end
     end,
     Info = {
       "控制每次启动游戏进程后，第一局是否显示 F6 / L3 呼出提示。",
       "关闭后不影响 F6、L3、菜单内帮助或其他功能。",
       "手柄 A 使用运行时逻辑菜单确认动作切换。",
+    },
+  } or nil
+  local controllerOpenFallbackSetting = ModConfigMenu.OptionType.KEYBIND_CONTROLLER ~= nil and {
+    Type = ModConfigMenu.OptionType.KEYBIND_CONTROLLER,
+    CurrentSetting = function() return state.controllerOpenFallbackButton or -1 end,
+    Default = -1,
+    Display = function()
+      local button = state.controllerOpenFallbackButton
+      return "兼容呼出键: " .. (button ~= nil and ("自定义按钮 " .. button) or "自动")
+    end,
+    OnChange = function(value)
+      local ok, changed, err = InputSettingsUI.applySetting("controller_open", value)
+      if not ok then showToast("兼容呼出键设置失败", "warning", 150, err); return end
+      if changed then showToast("兼容呼出键已设为 "
+        .. InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton), "success", 120) end
+    end,
+    Popup = function()
+      return "按下希望补充用于呼出界面的手柄按钮。$newline返回或向左可清除绑定；默认长按 L3 始终保留。"
+    end,
+    Info = {
+      "只在运行时能够报告该 raw 按钮时生效。",
+      "确认、返回、收藏、方向和翻页按钮不可绑定。",
+      "异常设备也可用 F6 打开内置输入设置进行校准。",
     },
   } or nil
   local closeAfterRegularCommandSetting = ModConfigMenu.OptionType.BOOLEAN ~= nil and {
@@ -1343,18 +1462,10 @@ local function registerMcmSettings()
       return "普通命令执行后关闭界面: " .. (state.closeAfterRegularCommand ~= false and "开启" or "关闭")
     end,
     OnChange = function(value)
-      local nextEnabled = value == true
-      local previousEnabled = state.closeAfterRegularCommand ~= false
-      if nextEnabled == previousEnabled then return end
-      state.closeAfterRegularCommand = nextEnabled
-      local saved, err = saveState()
-      if not saved then
-        state.closeAfterRegularCommand = previousEnabled
-        debugLog("close-after-command setting save failed; rollback: " .. tostring(err))
-        showToast("执行后关闭设置保存失败", "error", 150, "已恢复原设置")
-        return
-      end
-      showToast("普通命令执行后关闭界面已" .. (nextEnabled and "开启" or "关闭"), "success")
+      local ok, changed, err = InputSettingsUI.applySetting("close_after_command", value == true)
+      if not ok then showToast("执行后关闭设置失败", "error", 150, err); return end
+      if changed then showToast("普通命令执行后关闭界面已"
+        .. (state.closeAfterRegularCommand and "开启" or "关闭"), "success") end
     end,
     Info = {
       "适用于给予、移除、生成、调试、批量及手动输入的普通命令。",
@@ -1366,6 +1477,9 @@ local function registerMcmSettings()
     ModConfigMenu.AddSetting("Isaac Chinese Console", "设置", keybindSetting)
     if controllerFavoriteSetting then
       ModConfigMenu.AddSetting("Isaac Chinese Console", "设置", controllerFavoriteSetting)
+    end
+    if controllerOpenFallbackSetting then
+      ModConfigMenu.AddSetting("Isaac Chinese Console", "设置", controllerOpenFallbackSetting)
     end
     if startupHintSetting then
       ModConfigMenu.AddSetting("Isaac Chinese Console", "设置", startupHintSetting)
@@ -1584,8 +1698,62 @@ local function queueCommand(command, requestedCount, explicitRepeatMax, trustedU
   return true
 end
 
+function InputSettingsUI.beginCapture(settingId)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec or (spec.device ~= "keyboard" and spec.device ~= "controller") then return false end
+  state.inputMode = "setting_capture"
+  state.controllerCalibration = {
+    settingId = settingId,
+    device = spec.device,
+    stage = "release",
+    releaseFrames = 0,
+    stableFrames = 0,
+    remainingFrames = LIMITS.controllerCalibrationTimeoutFrames,
+    candidateButton = nil,
+    candidateIndex = nil,
+    status = spec.device == "keyboard" and "请先松开所有键盘按键" or "请先松开所有手柄按钮",
+  }
+  state.pointerActive = false
+  state.controlMode = "keyboard"
+  showToast(InputSettingsUI.captureLabel(settingId) .. "设置已开始",
+    "info", 120, "先松开全部按键，再按住目标按键")
+  return true
+end
+
+function InputSettingsUI.resetSetting(settingId)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec then return false end
+  if state[spec.field] == spec.default then
+    showToast("当前已经是默认值", "info", 90, InputSettingsUI.formatValue(settingId, spec.default))
+    return true
+  end
+  local ok = InputSettingsUI.applySetting(settingId, spec.default)
+  if not ok then
+    showToast("恢复默认设置失败", "error", 150, "已保留原设置")
+    return false
+  end
+  showToast("已恢复默认设置", "success", 120, InputSettingsUI.formatValue(settingId, spec.default))
+  return true
+end
+
+function InputSettingsUI.toggleSetting(settingId)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec or spec.device ~= "boolean" then return false end
+  local nextValue = state[spec.field] == false
+  local ok = InputSettingsUI.applySetting(settingId, nextValue)
+  if not ok then
+    showToast("设置保存失败", "error", 150, "已恢复原设置")
+    return false
+  end
+  showToast("设置已" .. (nextValue and "开启" or "关闭"), "success", 90)
+  return true
+end
+
 local function queueEntry(entry, requestedCount)
   if not entry then return false end
+  if entry.kind == "setting_capture" then return InputSettingsUI.beginCapture(entry.settingId) end
+  if entry.kind == "setting_reset" then return InputSettingsUI.resetSetting(entry.settingId) end
+  if entry.kind == "setting_toggle" then return InputSettingsUI.toggleSetting(entry.settingId) end
   if entry.kind == "custom_add" then
     return CustomCommandUI.beginEdit(nil)
   end
@@ -1703,6 +1871,7 @@ end
 
 local function visibleEntries()
   local category = currentCategory()
+  InputSettingsUI.refreshEntries()
   local result = {}
   local query = trim(state.search):lower()
   local greedMode = isGreedMode()
@@ -1738,6 +1907,8 @@ local function visibleEntries()
     for _, entry in ipairs(allEntries) do
       if entry.kind == "custom_command" then result[#result + 1] = entry end
     end
+  elseif category.id == "input_settings" then
+    for _, entry in ipairs(InputSettingsUI.entries) do result[#result + 1] = entry end
   else
     for _, entry in ipairs(allEntries) do
       if entry.cat == category.id then result[#result + 1] = entry end
@@ -2174,16 +2345,29 @@ local function addControllerCandidate(candidates, seen, index)
 end
 
 local function controllerCandidates()
+  if state.controllerCandidateSnapshot ~= nil then return state.controllerCandidateSnapshot end
   local candidates, seen = {}, {}
   local countOk, playerCount = pcall(function() return Game():GetNumPlayers() end)
-  assert(countOk and tonumber(playerCount), "unable to enumerate assigned controllers")
-  for playerIndex = 0, math.max(0, math.floor(tonumber(playerCount)) - 1) do
+  if not countOk or tonumber(playerCount) == nil then
+    if not state.controllerEnumerationFailureLogged then
+      state.controllerEnumerationFailureLogged = true
+      debugLog("assigned controller enumeration unavailable; controller input skipped")
+    end
+    state.controllerCandidateSnapshot = candidates
+    return candidates
+  end
+  local assignedPlayerCount = math.max(0, math.floor(tonumber(playerCount)))
+  for playerIndex = 0, assignedPlayerCount - 1 do
     local playerOk, controllerIndex = pcall(function()
       local player = Isaac.GetPlayer(playerIndex)
       return player and player.ControllerIndex
     end)
     if playerOk then addControllerCandidate(candidates, seen, controllerIndex) end
   end
+  if #candidates == 0 and state.runEndState == "game_over" then
+    addControllerCandidate(candidates, seen, state.controllerIndex)
+  end
+  state.controllerCandidateSnapshot = candidates
   return candidates
 end
 
@@ -2379,11 +2563,204 @@ local function controllerDirectionTriggered(action, button)
   return controllerRoleEvent(candidates, "direction", "button", button) ~= nil
 end
 
-local function controllerOpenPressed()
-  for _, index in ipairs(controllerCandidates()) do
-    if controllerButtonPressed(CONTROLLER_OPEN_BUTTON, index) then return true, index end
+function InputSettingsUI.openSources()
+  local sources, seen = {}, {}
+  local function add(source, value)
+    value = normalizeControllerButton(value)
+    if value == nil or seen[value] then return end
+    seen[value] = true
+    sources[#sources + 1] = { source = source, value = value }
   end
-  return false, nil
+  add("named_l3", CONTROLLER_OPEN_BUTTONS.named)
+  add("legacy_l3", CONTROLLER_OPEN_BUTTONS.legacy)
+  local fallback = state.controllerOpenFallbackButton
+  add("calibrated", fallback)
+  return sources
+end
+
+local function controllerOpenPressed()
+  if state.controllerOpenIndex ~= nil and state.controllerOpenValue ~= nil then
+    return controllerButtonPressed(state.controllerOpenValue, state.controllerOpenIndex),
+      state.controllerOpenIndex, state.controllerOpenSource, state.controllerOpenValue
+  end
+  for _, index in ipairs(controllerCandidates()) do
+    for _, candidate in ipairs(InputSettingsUI.openSources()) do
+      if controllerButtonPressed(candidate.value, index) then
+        return true, index, candidate.source, candidate.value
+      end
+    end
+  end
+  return false, nil, nil, nil
+end
+
+function InputSettingsUI.openTriggeredEvent()
+  local candidates = controllerCandidates()
+  for _, source in ipairs(InputSettingsUI.openSources()) do
+    local event = controllerRoleEvent(candidates, "close", "button", source.value)
+    if event then
+      event.openSource = source.source
+      return event
+    end
+  end
+  return nil
+end
+
+function InputSettingsUI.cancelCalibration(message, detail)
+  state.controllerCalibration = nil
+  state.inputMode = nil
+  showToast(message or "已取消按键设置", "warning", 120,
+    detail or "原设置未更改")
+end
+
+function InputSettingsUI.pressedRawButtons(candidates)
+  local pressed = {}
+  for _, index in ipairs(candidates) do
+    for button = 0, LIMITS.maxControllerButton do
+      if controllerButtonPressed(button, index) then
+        pressed[#pressed + 1] = { index = index, button = button }
+      end
+    end
+  end
+  return pressed
+end
+
+function InputSettingsUI.pressedKeyboardKeys()
+  local pressed, seen = {}, {}
+  for key in pairs(OPEN_KEY_NAMES) do
+    if not seen[key] then
+      local ok, down = pcall(Input.IsButtonPressed, key, 0)
+      if ok and down == true then pressed[#pressed + 1] = { index = 0, button = key }; seen[key] = true end
+    end
+  end
+  return pressed
+end
+
+function InputSettingsUI.updateCalibration(keyboardEnter)
+  local calibration = state.controllerCalibration
+  if not calibration then
+    state.inputMode = nil
+    return true
+  end
+  calibration.remainingFrames = calibration.remainingFrames - 1
+  if calibration.remainingFrames <= 0 then
+    InputSettingsUI.cancelCalibration("按键设置超时", "请重试；手柄也可在 Steam Input 中映射为 F6")
+    return true
+  end
+
+  local controllerEvent = controllerMenuEvent()
+  local keyboardCancel = InputSettingsUI.keyTriggered(Keyboard.KEY_ESCAPE)
+  if keyboardCancel or (controllerEvent and controllerEvent.role == "back") then
+    if controllerEvent then
+      InputSettingsUI.armControllerInputLease(controllerEvent)
+    else
+      InputSettingsUI.armInputLease("keyboard", Keyboard.KEY_ESCAPE, 0)
+    end
+    InputSettingsUI.cancelCalibration()
+    return true
+  end
+
+  if calibration.stage == "confirm" then
+    local controllerConfirm = controllerEvent and controllerEvent.role == "confirm"
+    if keyboardEnter or controllerConfirm then
+      if controllerConfirm then
+        InputSettingsUI.armControllerInputLease(controllerEvent)
+      else
+        InputSettingsUI.armInputLease("keyboard", Keyboard.KEY_ENTER, 0)
+      end
+      local ok, changed, err = InputSettingsUI.applySetting(calibration.settingId, calibration.candidateButton)
+      if not ok then
+        InputSettingsUI.cancelCalibration("按键设置保存失败", "已恢复原设置：" .. tostring(err))
+        return true
+      end
+      local button = calibration.candidateButton
+      state.controllerCalibration = nil
+      state.inputMode = nil
+      showToast(changed and (InputSettingsUI.captureLabel(calibration.settingId) .. "已保存") or "设置未变化", "success", 150,
+        InputSettingsUI.formatValue(calibration.settingId, button))
+    end
+    return true
+  end
+
+  local candidates = calibration.device == "controller" and controllerCandidates() or { 0 }
+  if calibration.device == "controller" and #candidates == 0 then
+    InputSettingsUI.cancelCalibration("未检测到已分配的手柄", "请连接手柄并进入本地游戏后重试")
+    return true
+  end
+  local pressed = calibration.device == "controller"
+    and InputSettingsUI.pressedRawButtons(candidates) or InputSettingsUI.pressedKeyboardKeys()
+  if calibration.stage == "release" then
+    if #pressed == 0 then
+      calibration.releaseFrames = calibration.releaseFrames + 1
+      calibration.status = "保持松开 " .. calibration.releaseFrames .. "/"
+        .. LIMITS.controllerCalibrationReleaseFrames
+      if calibration.releaseFrames >= LIMITS.controllerCalibrationReleaseFrames then
+        calibration.stage = "detect"
+        calibration.status = calibration.device == "keyboard"
+          and "请按住新的键盘呼出键" or "请按住希望绑定的手柄按钮"
+      end
+    else
+      calibration.releaseFrames = 0
+      calibration.status = calibration.device == "keyboard"
+        and "请先松开所有键盘按键" or "请先松开所有手柄按钮"
+    end
+    return true
+  end
+
+  if calibration.stage == "candidate_release" then
+    if #pressed == 0 then
+      calibration.stage = "confirm"
+      calibration.status = "检测到 " .. InputSettingsUI.formatValue(calibration.settingId,
+        calibration.candidateButton) .. "；Enter/A 保存，Esc/B 取消"
+    else
+      calibration.status = "请松开候选按键，再用 Enter/A 确认"
+    end
+    return true
+  end
+
+  if #pressed == 0 then
+    calibration.stableFrames = 0
+    calibration.candidateButton = nil
+    calibration.candidateIndex = nil
+    calibration.status = calibration.device == "keyboard"
+      and "请按住新的键盘呼出键" or "请按住希望绑定的手柄按钮"
+    return true
+  end
+  if #pressed > 1 then
+    calibration.stableFrames = 0
+    calibration.candidateButton = nil
+    calibration.candidateIndex = nil
+    calibration.status = "检测到多个按钮；请全部松开后只按一个"
+    return true
+  end
+
+  local candidate = pressed[1]
+  local invalid = calibration.device == "keyboard" and not isValidOpenKey(candidate.button)
+    or (calibration.settingId == "controller_open" and InputSettingsUI.isReservedButton(candidate.button))
+  if invalid then
+    calibration.stableFrames = 0
+    calibration.candidateButton = nil
+    calibration.candidateIndex = nil
+    calibration.status = "该按键与菜单操作冲突；请松开并选择其他按键"
+    return true
+  end
+  if calibration.candidateButton ~= candidate.button
+      or calibration.candidateIndex ~= candidate.index then
+    calibration.candidateButton = candidate.button
+    calibration.candidateIndex = candidate.index
+    calibration.stableFrames = 1
+  else
+    calibration.stableFrames = calibration.stableFrames + 1
+  end
+  calibration.status = "正在确认 " .. InputSettingsUI.formatValue(calibration.settingId, candidate.button) .. "："
+    .. calibration.stableFrames .. "/" .. LIMITS.controllerCalibrationStableFrames
+  if calibration.stableFrames >= LIMITS.controllerCalibrationStableFrames then
+    calibration.stage = "candidate_release"
+    calibration.status = "候选已稳定；请先松开该按键"
+    if calibration.device == "controller" then state.controllerIndex = candidate.index end
+    state.pointerActive = false
+    state.controlMode = "controller"
+  end
+  return true
 end
 
 local function moveGridSelection(entries, delta)
@@ -2453,6 +2830,10 @@ local function armControllerInputLease(event)
   local kind = event.source == "action" and "action" or "controller_button"
   armInputLease(kind, event.value, event.index)
 end
+
+InputSettingsUI.keyTriggered = keyTriggered
+InputSettingsUI.armInputLease = armInputLease
+InputSettingsUI.armControllerInputLease = armControllerInputLease
 
 local function inputLeaseActive()
   local lease = state.inputLease
@@ -2572,11 +2953,19 @@ end
 
 local function handleKeyboardAndController(entries)
   local keyboardEnter = enterTriggered()
+  if state.open and state.inputMode == "setting_capture" then
+    InputSettingsUI.updateCalibration(keyboardEnter)
+    return
+  end
   local controllerOpen = false
-  local openPressed, openIndex = controllerOpenPressed()
+  local openPressed, openIndex, openSource, openValue = controllerOpenPressed()
   if not state.open and openPressed then
-    if state.controllerOpenIndex ~= openIndex then state.controllerOpenHold = 0 end
+    if state.controllerOpenIndex ~= openIndex or state.controllerOpenValue ~= openValue then
+      state.controllerOpenHold = 0
+    end
     state.controllerOpenIndex = openIndex
+    state.controllerOpenSource = openSource
+    state.controllerOpenValue = openValue
     state.controllerOpenHold = state.controllerOpenHold + 1
     if state.controllerOpenHold >= LIMITS.controllerOpenHoldFrames and not state.controllerOpenLatched then
       state.controllerOpenLatched = true
@@ -2589,6 +2978,8 @@ local function handleKeyboardAndController(entries)
     state.controllerOpenHold = 0
     state.controllerOpenLatched = false
     state.controllerOpenIndex = nil
+    state.controllerOpenSource = nil
+    state.controllerOpenValue = nil
   end
 
   local keyboardOpen = keyTriggered(state.openKey or DEFAULT_OPEN_KEY)
@@ -2601,8 +2992,7 @@ local function handleKeyboardAndController(entries)
   end
   if not state.open then return end
 
-  local controllerClose = controllerRoleEvent(
-    controllerCandidates(), "close", "button", CONTROLLER_OPEN_BUTTON)
+  local controllerClose = InputSettingsUI.openTriggeredEvent()
   if controllerClose then
     armControllerInputLease(controllerClose)
     setMenuOpen(false)
@@ -2939,6 +3329,7 @@ local function resolveFooterContext(entries)
   if state.inputMode == "search" then return "search", nil end
   if state.inputMode == "command" then return "command", nil end
   if state.inputMode == "custom_command" then return "custom_command", nil end
+  if state.inputMode == "setting_capture" then return "setting_capture", nil end
   if state.sidebarFocus then return "category", currentCategory() end
   local entry = selectedEntry(entries)
   if entry then return "entry", entry end
@@ -3134,6 +3525,18 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
     if mode == "controller" then add("A添加（需键盘输入）")
     elseif mode == "mouse" then add("点击添加")
     else add("Enter添加") end
+  elseif entry.kind == "setting_capture" then
+    if mode == "controller" then add("A设置")
+    elseif mode == "mouse" then add("点击设置")
+    else add("Enter设置") end
+  elseif entry.kind == "setting_reset" then
+    if mode == "controller" then add("A恢复默认")
+    elseif mode == "mouse" then add("点击恢复默认")
+    else add("Enter恢复默认") end
+  elseif entry.kind == "setting_toggle" then
+    if mode == "controller" then add("A切换")
+    elseif mode == "mouse" then add("点击切换")
+    else add("Enter切换") end
   elseif entry.kind == "custom_command" then
     if mode == "controller" then add("A执行")
     elseif mode == "mouse" then add("左键执行"); add("点击命令编辑"); add("右键删除")
@@ -3167,9 +3570,12 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
 
   local candidates = { table.concat(actions, " · ") }
   if mode == "controller" then
-    local primary = entry.catalogAction == "disabled" and "已禁用"
+    local primary = entry.kind == "setting_capture" and "A设置"
+      or (entry.kind == "setting_reset" and "A恢复"
+      or (entry.kind == "setting_toggle" and "A切换"
+      or (entry.catalogAction == "disabled" and "已禁用"
       or (entry.catalogAction == "manual" and "A查看说明"
-      or (removalCommand(entry) and "A给予" or "A执行"))
+      or (removalCommand(entry) and "A给予" or "A执行")))))
     candidates[#candidates + 1] = favorite and (primary .. " · " .. favorite) or primary
     candidates[#candidates + 1] = primary
   elseif mode == "keyboard" then
@@ -3177,7 +3583,9 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
       candidates[#candidates + 1] = table.concat(actions, " · ", 1, #actions - 1)
     end
     local compact = {}
-    if entry.catalogAction == "manual" then compact[#compact + 1] = "Enter/C"
+    if entry.catalogAction == "input_setting" then
+      compact[#compact + 1] = "Enter"
+    elseif entry.catalogAction == "manual" then compact[#compact + 1] = "Enter/C"
     elseif entry.catalogAction ~= "disabled" then compact[#compact + 1] = "Enter" end
     if details then compact[#compact + 1] = "D" end
     if favorite then compact[#compact + 1] = "F" end
@@ -3202,7 +3610,9 @@ function Presentation.toastLines(toast, width)
     local label = primary .. "："
     local labelW = math.min(width, safeTextWidth(font10, label))
     local actionW = math.max(1, width - labelW)
-    return { label .. fittingInputText(toast.action, actionW) }
+    local action = toast.actionFit == "trailing"
+      and fittingInputText(toast.action, actionW) or Presentation.fittingLeadingText(toast.action, actionW)
+    return { label .. action }
   end
   if toast.action and toast.action ~= "" then
     local action = toast.actionFit == "trailing"
@@ -3467,7 +3877,7 @@ local function drawMenu(entries)
       if favoriteW > 0 then
         drawFavoriteStar(favoriteX, y, favoriteW, L.cardH, isFavorite)
       end
-      if hovered then
+      if state.inputMode == nil and hovered then
         local previousEntry = selectedEntry(entries)
         if not previousEntry or previousEntry.customId ~= entry.customId then
           state.customDeleteConfirmationId = nil
@@ -3476,14 +3886,14 @@ local function drawMenu(entries)
         state.sidebarFocus = false
       end
       local favoriteHovered = favoriteW > 0 and hit(mouse, favoriteX, y, favoriteW, L.cardH)
-      if hovered and clicked then
+      if state.inputMode == nil and hovered and clicked then
         if favoriteHovered then
           toggleFavorite(entry)
         else
           armInputLease("mouse", 0, 0)
           queueEntry(entry, state.repeatCount)
         end
-      elseif hovered and rightClicked then
+      elseif state.inputMode == nil and hovered and rightClicked then
         if entry.kind == "custom_command" then
           CustomCommandUI.requestDelete(entry)
         elseif removeCommand then
@@ -3517,8 +3927,10 @@ local function drawMenu(entries)
     state.repeatCount > 20 and TEXT.warning or TEXT.main, L.countW, true)
   drawRect(plusX, L.footerY + L.pad, L.stepW, L.buttonH, COLORS.card)
   drawText("+", plusX, footerTextY, 0.60, TEXT.accent, L.stepW, true)
-  if clicked and hit(mouse, minusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(-1) end
-  if clicked and hit(mouse, plusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(1) end
+  if state.inputMode == nil and clicked
+      and hit(mouse, minusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(-1) end
+  if state.inputMode == nil and clicked
+      and hit(mouse, plusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(1) end
 
   local detailX = L.contentX + L.repeatW + L.pad * 2
   local detailW = math.max(1, L.contentX + L.contentW - detailX - L.pad)
@@ -3542,6 +3954,16 @@ local function drawMenu(entries)
       }, fullDetailW)
     drawText(searchHint, fullDetailX, footerTextY + rowStep * 2,
       0.60, TEXT.muted, fullDetailW)
+  elseif footerMode == "setting_capture" then
+    local calibration = state.controllerCalibration
+    local status = calibration and calibration.status or "校准状态已结束"
+    drawText(fittingText({ status }, fullDetailW), fullDetailX,
+      footerTextY + rowStep, 0.60, TEXT.accent, fullDetailW)
+    local hint = calibration and calibration.stage == "confirm"
+      and "Enter/A 保存 · Esc/B 取消"
+      or "只在设置期间扫描输入 · Esc/B 取消 · 超时不修改原设置"
+    drawText(fittingText({ hint }, fullDetailW), fullDetailX,
+      footerTextY + rowStep * 2, 0.60, TEXT.muted, fullDetailW)
   elseif footerMode == "command" then
     local commandLabel = "命令："
     local commandLabelW = math.min(fullDetailW, safeTextWidth(font10, commandLabel) + L.pad)
@@ -3623,7 +4045,8 @@ local function drawMenu(entries)
     local hintCandidates = Presentation.entryHintCandidates(
       activeEntry, isFavorite, effectPageCount)
     local isCustomAdd = activeEntry.kind == "custom_add"
-    local commandLabel = isCustomAdd and "操作：" or "手动命令(C)："
+    local isSetting = activeEntry.catalogAction == "input_setting"
+    local commandLabel = isSetting and "操作：" or (isCustomAdd and "操作：" or "手动命令(C)：")
     local commandValue = isCustomAdd and "按 Enter/A 或点击卡片开始添加"
       or (activeEntry.displayCommand or activeEntry.cmd or "")
     local commandLabelW = safeTextWidth(font10, commandLabel)
@@ -3642,7 +4065,7 @@ local function drawMenu(entries)
       hint = fittingText(hintCandidates, hintW)
     end
     local commandY = footerTextY + rowStep * 3
-    local commandHovered = state.pointerActive
+    local commandHovered = not isSetting and state.pointerActive
       and hit(mouse, fullDetailX, commandY, commandW, rowStep)
     local commandColor = activeEntry.catalogAction == "disabled" and TEXT.warning
       or (commandHovered and TEXT.accent or TEXT.muted)
@@ -3650,7 +4073,7 @@ local function drawMenu(entries)
       commandColor, commandLabelW)
     drawText(fittingInputText(commandValue, commandValueW),
       fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
-    if commandHovered and clicked then
+    if not isSetting and commandHovered and clicked then
       if activeEntry.kind == "custom_command" or activeEntry.kind == "custom_add" then
         CustomCommandUI.beginEdit(activeEntry.kind == "custom_command" and activeEntry or nil)
       else
@@ -3703,6 +4126,7 @@ end
 
 local function onRender()
   loadState()
+  state.controllerCandidateSnapshot = nil
   local paused = Game():IsPaused()
   local nativePauseOwnsScreen = paused and state.runEndState ~= "game_over"
   if nativePauseOwnsScreen then
@@ -3821,6 +4245,10 @@ local function onGameStarted()
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
+  state.controllerOpenSource = nil
+  state.controllerOpenValue = nil
+  state.controllerCalibration = nil
+  state.controllerCandidateSnapshot = nil
   state.controllerIndex = nil
   clearControllerConfirm()
   clearInputLease()
@@ -3836,6 +4264,7 @@ local function onGameStarted()
     state.startupHintShown = true
     showToast("以撒中文控制台已加载", "success", 90,
       openKeyName(state.openKey) .. " / 长按 L3 打开")
+    state.toast.inlineAction = true
   end
 end
 
@@ -3858,6 +4287,10 @@ local function onGameExit()
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
+  state.controllerOpenSource = nil
+  state.controllerOpenValue = nil
+  state.controllerCalibration = nil
+  state.controllerCandidateSnapshot = nil
   state.controllerIndex = nil
   clearControllerConfirm()
   clearInputLease()

@@ -50,8 +50,8 @@ def main() -> int:
     assert len(lock["verifiedCommit"]) == 40
 
     profiles = (
-        ("workshop-mod", "Isaac Chinese Console", "2.5.18"),
-        ("workshop-mod-en", "Console UI", "2.5.4-en.13"),
+        ("workshop-mod", "Isaac Chinese Console", "2.5.20"),
+        ("workshop-mod-en", "Console UI", "2.5.4-en.15"),
     )
     for directory, mod_name, version in profiles:
         run([
@@ -67,7 +67,7 @@ def main() -> int:
             str(ROOT / directory),
             mod_name,
         ])
-    print("bilingual source gate ok: 186 Mock + 8 cold-start/lifecycle scenarios")
+    print("bilingual source gate ok: 196 Mock + 8 cold-start/lifecycle scenarios")
     return 0
 
 

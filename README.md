@@ -4,8 +4,8 @@
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前候选版本 `2.5.17`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前候选内部版本 `2.5.4-en.12`、metadata `2.5.4.12`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前候选版本 `2.5.20`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前候选内部版本 `2.5.4-en.15`、metadata `2.5.4.15`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：中英文 Lua Mock、冷启动回归和双语发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
 
@@ -27,7 +27,7 @@
 
 ## 测试
 
-使用 `tests/workshop-mod/run_all_tests.py` 作为中英文统一入口，两套 88 项 Lua Mock 与冷启动回归任一失败即停止。构建后再对中英文候选分别运行 `validate_workshop_mod_zh.py` 和 `validate_workshop_mod.py`。
+使用 `tests/workshop-mod/run_all_tests.py` 作为中英文统一入口，两套 95 项 Lua Mock 与冷启动回归任一失败即停止。构建后再对中英文候选分别运行 `validate_workshop_mod_zh.py` 和 `validate_workshop_mod.py`。
 
 发布前还需在 Repentance、Repentance+ 和 REPENTOGON 中分别手工验收；构建候选不等于上传授权。
 

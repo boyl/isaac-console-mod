@@ -10,8 +10,8 @@ from pathlib import Path
 from PIL import Image
 
 
-DISPLAY_VERSION = "2.5.18"
-METADATA_VERSION = "2.5.18"
+DISPLAY_VERSION = "2.5.20"
+METADATA_VERSION = "2.5.20"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
@@ -105,6 +105,12 @@ def main() -> int:
         "Game Over late-render isolation": 'state.runEndState ~= "game_over" or not state.open',
         "favorite state": "function FavoriteModel.finalizeOrder(forceAvailableCatalog)",
         "optional MCM command-close setting": "普通命令执行后关闭界面: ",
+        "shared setting definitions": "InputSettingsUI.specs = {",
+        "shared transactional setting update": "function InputSettingsUI.applySetting(settingId, value)",
+        "eight-card built-in settings": 'id = "close_after_command_toggle"',
+        "generic setting capture": 'state.inputMode = "setting_capture"',
+        "candidate release isolation": 'calibration.stage = "candidate_release"',
+        "capture before global open": 'state.open and state.inputMode == "setting_capture"',
     }
     for label, needle in checks.items():
         if needle not in main_lua:

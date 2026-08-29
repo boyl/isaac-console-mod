@@ -3,6 +3,7 @@ return {
     { id = "run_control", group = "Console", icon = "RUN", name = "Run Control", desc = "Run debug toggles, refresh actions, rewinds, restarts, and floor resets.", shortDesc = "Debug, refresh, and run control", eyebrow = "RUN CONTROL" },
     { id = "command_reference", group = "Console", icon = "REF", name = "Command Reference", desc = "Official syntax reference. Press C to complete parameter commands; disabled entries are reference-only.", shortDesc = "Official syntax and safety status", eyebrow = "COMMAND REFERENCE" },
     { id = "custom_commands", group = "Console", icon = "CUS", name = "Custom Commands", desc = "Advanced raw-command passthrough with optional names, search, favorites, editing, and deletion; use at your own risk.", shortDesc = "Advanced raw-command passthrough", eyebrow = "CUSTOM COMMANDS" },
+    { id = "input_settings", group = "Settings", icon = "SET", name = "Settings", desc = "Manage keyboard opening, controller favorite and compatibility bindings, startup hints, and command-close behavior.", shortDesc = "Complete built-in Mod settings", eyebrow = "SETTINGS" },
   },
   commands = {
     { commandId = "rewind", cat = "run_control", name = "Rewind Room", en = "Rewind", icon = "RW", tier = "S", desc = "Returns to the previous room state.", cmd = "rewind" },

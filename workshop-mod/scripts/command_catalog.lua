@@ -3,6 +3,7 @@ return {
     { id = "run_control", group = "控制台", icon = "运", name = "运行控制", desc = "执行调试开关、刷新、回溯、重开和楼层重置等运行命令。", shortDesc = "调试、刷新与运行控制", eyebrow = "RUN CONTROL" },
     { id = "command_reference", group = "控制台", icon = "令", name = "命令参考", desc = "官方命令语法参考；参数命令需按 C 补全，禁用项只供查阅。", shortDesc = "官方语法与安全状态", eyebrow = "COMMAND REFERENCE" },
     { id = "custom_commands", group = "控制台", icon = "自", name = "自定义命令", desc = "高级原始命令透传；可命名、搜索、收藏、编辑和删除，风险由用户承担。", shortDesc = "高级原始命令透传", eyebrow = "CUSTOM COMMANDS" },
+    { id = "input_settings", group = "设置", icon = "设", name = "设置", desc = "管理键盘呼出键、手柄收藏与兼容呼出、开局提示及命令后关闭行为。", shortDesc = "完整的内置 Mod 设置", eyebrow = "SETTINGS" },
   },
   commands = {
     { commandId = "rewind", cat = "run_control", name = "回溯房间", en = "Rewind", icon = "回", tier = "S", desc = "回到上一个房间状态。", cmd = "rewind" },

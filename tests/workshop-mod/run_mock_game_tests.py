@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.13"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.15"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -197,6 +197,39 @@ def scenarios() -> list[dict[str, object]]:
                 "physicalConfirmButton": 4,
                 "physicalFavoriteButton": 6,
                 "physicalBackButton": 5,
+            },
+            {
+                "scenario": "controller_open_compat",
+                "label": "named L3 legacy raw fallback calibration rollback persistence and dedup",
+                "repPlus": True,
+                "eid": False,
+                "controllerIndex": 2,
+                "playerControllerIndexes": [2],
+                "namedL3Button": 22,
+            },
+            {
+                "scenario": "built_in_settings",
+                "label": "eight built-in settings controller 0 capture toggle rollback and persistence",
+                "repPlus": True,
+                "eid": False,
+                "controllerIndex": 0,
+                "playerControllerIndexes": [0],
+            },
+            {
+                "scenario": "built_in_settings",
+                "label": "eight built-in settings nonzero controller capture and persistence",
+                "repPlus": True,
+                "eid": False,
+                "controllerIndex": 3,
+                "playerControllerIndexes": [3],
+            },
+            {
+                "scenario": "controller_enumeration_failure",
+                "label": "controller enumeration failure safely preserves F6 and calibration data",
+                "repPlus": True,
+                "eid": False,
+                "controllerIndex": 2,
+                "playerEnumerationFail": True,
             },
             {
                 "scenario": "cold_start_focus",
@@ -556,6 +589,14 @@ def scenarios() -> list[dict[str, object]]:
                 "repPlus": True,
                 "eid": False,
                 "mcm": True,
+            },
+            {
+                "scenario": "partial_mcm_settings",
+                "label": "built-in settings remain complete without MCM controller keybind type",
+                "repPlus": True,
+                "eid": False,
+                "mcm": True,
+                "mcmNoControllerKeybind": True,
             },
             {
                 "scenario": "device_help_contract",

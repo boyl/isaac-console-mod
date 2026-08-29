@@ -12,7 +12,7 @@ Subscribe, enable the Mod, start a run, and press **F6** or hold the left stick 
 
 ## Core Features
 
-- 18 categories covering 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 official command/reference entries, and Custom Commands;
+- 19 categories covering 721 collectibles, 188 trinkets, 97 cards/runes, 50 pill effects, 106 official command/reference entries, Custom Commands, and Settings;
 - all 1,162 built-in object and command entries can be favorited; Featured shows recent favorites first without changing command permissions;
 - Custom Commands support optional names, creation, search, favorites, editing, deletion, and history recall with no artificial item-count limit; the complete SaveData retains its 64 KiB safety gate;
 - all 1,056 valid official objects include stable IDs and English-name indexing for cross-category search;
@@ -39,7 +39,7 @@ Subscribe, enable the Mod, start a run, and press **F6** or hold the left stick 
 **Without these Mods, the catalog, search, execution, favorites, and Custom Commands remain fully usable.**
 
 - **External Item Descriptions (EID)**: can supplement names and descriptions for additional objects; Console UI does not copy or modify EID files;
-- **Mod Config Menu (MCM)**: can configure the keyboard open key, controller favorite key, startup hint, and whether regular commands close the menu; defaults remain active when MCM is absent.
+- **Mod Config Menu (MCM)**: an optional mirror of the same five values available in built-in Settings; the built-in page remains complete when MCM is absent.
 
 ## Compatibility and Language Versions
 
@@ -52,6 +52,14 @@ Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may s
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 This Mod does not access the network or launch external programs. When reporting a problem, include the game version, DLC/runtime, enabled Mod list, and relevant `log.txt` lines.
+
+## 2.5.4-en.15 update note
+
+All five existing MCM options are now available in built-in Settings as eight cards for setting/restoring keyboard open, controller favorite, and compatibility open bindings plus two behavior toggles. Built-in Settings and MCM share validation, persistence, and rollback. Capture isolates release, stable detection, candidate release, confirmation, cancellation, conflicts, multiple inputs, disconnects, and timeout. SaveData fields and defaults are unchanged.
+
+## 2.5.4-en.14 update note
+
+F6, runtime-named L3, and the legacy Repentance raw fallback remain active. Built-in Input Settings can now calibrate an additional raw open button for unknown controllers without requiring MCM, with conflict rejection, disconnect/timeout handling, transactional rollback, and Restore Automatic Detection. If the game exposes no button to Lua, map it to F6 in Steam Input.
 
 ## 2.5.4-en.13 update note
 
@@ -93,8 +101,8 @@ Fixed first-open D-pad navigation when Featured is empty; an empty first-process
 
 - Title: `Console UI`
 - Workshop ID: `3779128726`
-- In-game version: `2.5.4-en.13`
-- Metadata version: `2.5.4.13`
+- In-game version: `2.5.4-en.15`
+- Metadata version: `2.5.4.15`
 - Visibility: Public
 - Tags: Lua, Tweaks
 - Required items: none; EID is optional

@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.13"
-METADATA_VERSION = "2.5.4.13"
+DISPLAY_VERSION = "2.5.4-en.15"
+METADATA_VERSION = "2.5.4.15"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -150,7 +150,13 @@ def main() -> int:
         "independent SaveData object": "ConsoleUI:SaveData(payload)",
         "protected state load": "pcall(function() return ConsoleUI:LoadData() end)",
         "F6 hotkey": "Keyboard.KEY_F6",
-        "L3 hold-to-open": 'controllerButton("STICK_LEFT", 10)',
+        "runtime named L3 hold-to-open": 'controllerButton("STICK_LEFT")',
+        "legacy Repentance raw L3 fallback": "legacy = 10",
+        "semantic open sources": "function InputSettingsUI.openSources()",
+        "compatibility open persistence": "controllerOpenFallbackButton=",
+        "explicit calibration raw scan": "for button = 0, LIMITS.maxControllerButton do",
+        "calibration lifecycle state": 'state.inputMode = "setting_capture"',
+        "controller input snapshot": "state.controllerCandidateSnapshot",
         "controller index discovery": "local function controllerCandidates()",
         "logical confirm": 'controllerAction("ACTION_MENUCONFIRM")',
         "logical favorite": 'controllerAction("ACTION_MENUTAB")',
@@ -196,6 +202,12 @@ def main() -> int:
         "optional MCM controller favorite": 'ModConfigMenu.OptionType.KEYBIND_CONTROLLER',
         "optional MCM startup hint": 'ModConfigMenu.OptionType.BOOLEAN',
         "optional MCM command-close setting": 'Close menu after regular commands',
+        "shared setting definitions": "InputSettingsUI.specs = {",
+        "shared transactional setting update": "function InputSettingsUI.applySetting(settingId, value)",
+        "eight-card built-in settings": 'id = "close_after_command_toggle"',
+        "generic setting capture": 'state.inputMode = "setting_capture"',
+        "candidate release isolation": 'calibration.stage = "candidate_release"',
+        "capture before global open": 'state.open and state.inputMode == "setting_capture"',
         "startup hint persistence": 'startupHintEnabled=',
         "command-close persistence": 'closeAfterRegularCommand=',
         "controller favorite persistence": 'controllerFavoriteButton=',
@@ -330,7 +342,7 @@ def main() -> int:
     item_count = len(re.findall(r'^\s*\{ id = \d+, cat =', data_lua, re.M))
     command_count = len(re.findall(r'^\s*\{ cat = "[^"]+", name = .*? cmd =', data_lua, re.M))
     command_count += len(re.findall(r'^\s*\{ commandId = "[^"]+", cat =', command_catalog_lua, re.M))
-    if (category_count, item_count, command_count) != (18, 74, 106):
+    if (category_count, item_count, command_count) != (19, 74, 106):
         fail(f"catalog counts mismatch: {(category_count, item_count, command_count)}")
     if len(re.findall(r'^\s*\{ id = \d+, cat = .*? desc = "[^"]+"', data_lua, re.M)) != 74:
         fail("not every curated item has an English explanation")

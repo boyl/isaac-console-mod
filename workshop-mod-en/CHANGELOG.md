@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.4-en.15
+
+- Moved all five existing MCM options into the built-in Settings category as eight cards: set/restore keyboard open, controller favorite, and compatibility open bindings, plus startup-hint and close-after-command toggles.
+- Built-in Settings and optional MCM now share defaults, validation, formatting, persistence, and save rollback. Either entry point immediately reflects changes from the other, while the built-in page remains complete without MCM.
+- Keyboard and controller binding capture now share release, stable detection, candidate-release isolation, and confirm/cancel states. Capture owns input before the global open shortcut, so calibrating F6 cannot close the menu.
+- Settings cards now use concise device-specific titles with separated automatic states; the startup F6/L3 hint is one line again and preserves the active key at narrow widths.
+- No SaveData fields or defaults changed: F6, held L3, automatic favorite detection, startup hints, and closing after regular commands retain their prior behavior.
+
+## 2.5.4-en.14
+
+- Preserved F6, runtime-named L3, and the legacy Repentance raw-10 open paths while adding an optional compatibility open button; duplicate raw reports produce one event.
+- Added built-in Input Settings so unknown controllers can calibrate the raw button actually reported by the game without MCM, or restore automatic detection. Optional MCM edits the same value.
+- Calibration scans assigned controllers only after explicit entry and covers release, stable detection, confirmation, cancellation, conflicts, multiple inputs, disconnect, timeout, and save rollback.
+- Held opening locks the controller index, source, and raw value until release. Failed controller enumeration safely skips sampling while F6, rendering, and other features remain available.
+- SaveData adds only the optional `controllerOpenFallbackButton`; old saves need no migration, and default L3 plus existing keyboard, mouse, face-button, direction, and shoulder controls remain unchanged.
+
 ## 2.5.4-en.13
 
 - F6 and held L3 can open the menu after Game Over. Any menu instance already open at death releases its transient input state first, then waits for an explicit reopen action.

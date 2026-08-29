@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.13"
+local VERSION = "2.5.4-en.15"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -17,6 +17,9 @@ local LIMITS = {
   maxControllerButton = 31,
   controllerOpenHoldFrames = 30,
   controllerRemoveHoldFrames = 30,
+  controllerCalibrationReleaseFrames = 6,
+  controllerCalibrationStableFrames = 8,
+  controllerCalibrationTimeoutFrames = 600,
 }
 local DEFAULT_OPEN_KEY = Keyboard.KEY_F6
 
@@ -68,7 +71,7 @@ local CONTROLLER_DPAD_DOWN = controllerButton("DPAD_DOWN", 3)
 local CONTROLLER_CONFIRM = controllerButton("BUTTON_A", 4)
 local CONTROLLER_BACK = controllerButton("BUTTON_B", 5)
 local CONTROLLER_FAVORITE = controllerButton("BUTTON_X", 6)
-local CONTROLLER_OPEN_BUTTON = controllerButton("STICK_LEFT", 10)
+local CONTROLLER_OPEN_BUTTONS = { named = controllerButton("STICK_LEFT"), legacy = 10 }
 local CONTROLLER_REPEAT_DECREASE = controllerButton("BUMPER_LEFT")
 local CONTROLLER_REPEAT_INCREASE = controllerButton("BUMPER_RIGHT")
 local CONTROLLER_PAGE_PREVIOUS = controllerButton("TRIGGER_LEFT")
@@ -287,6 +290,11 @@ local state = {
   controllerOpenHold = 0,
   controllerOpenLatched = false,
   controllerOpenIndex = nil,
+  controllerOpenSource = nil,
+  controllerOpenValue = nil,
+  controllerCalibration = nil,
+  controllerCandidateSnapshot = nil,
+  controllerEnumerationFailureLogged = false,
   controllerIndex = nil,
   controllerConfirmHold = 0,
   controllerConfirmCommand = nil,
@@ -305,6 +313,7 @@ local state = {
   controlMode = "keyboard",
   openKey = DEFAULT_OPEN_KEY,
   controllerFavoriteButton = nil,
+  controllerOpenFallbackButton = nil,
   eidSuppressed = false,
   eidWasHidden = nil,
   nativePauseSuspended = false,
@@ -332,6 +341,22 @@ local Presentation = {
     error = TEXT.accent,
   },
 }
+local InputSettingsUI = {}
+
+function InputSettingsUI.isReservedButton(value)
+  value = normalizeControllerButton(value)
+  if value == nil then return true end
+  local reserved = {
+    CONTROLLER_DPAD_LEFT, CONTROLLER_DPAD_RIGHT, CONTROLLER_DPAD_UP, CONTROLLER_DPAD_DOWN,
+    CONTROLLER_CONFIRM, CONTROLLER_BACK, CONTROLLER_FAVORITE,
+    controllerButton("BUTTON_Y"), CONTROLLER_REPEAT_DECREASE, CONTROLLER_REPEAT_INCREASE,
+    CONTROLLER_PAGE_PREVIOUS, CONTROLLER_PAGE_NEXT,
+  }
+  for _, button in ipairs(reserved) do
+    if button ~= nil and value == button then return true end
+  end
+  return state.controllerFavoriteButton ~= nil and value == state.controllerFavoriteButton
+end
 local lifecycleDispatcher = { registered = false }
 
 function lifecycleDispatcher.disarm()
@@ -397,6 +422,7 @@ local function setMenuOpen(open)
     state.customEditStage = nil
     state.customSelectAll = false
     state.customDeleteConfirmationId = nil
+    state.controllerCalibration = nil
     state.nativePauseSuspended = false
     state.controllerConfirmHold = 0
     state.controllerConfirmCommand = nil
@@ -542,6 +568,40 @@ for _, command in ipairs(Catalog.commands) do
   allEntries[#allEntries + 1] = command
 end
 
+InputSettingsUI.specs = {
+  keyboard_open = { field = "openKey", default = DEFAULT_OPEN_KEY, device = "keyboard" },
+  controller_favorite = { field = "controllerFavoriteButton", default = nil, device = "controller" },
+  controller_open = { field = "controllerOpenFallbackButton", default = nil, device = "controller" },
+  startup_hint = { field = "startupHintEnabled", default = true, device = "boolean" },
+  close_after_command = { field = "closeAfterRegularCommand", default = true, device = "boolean" },
+}
+InputSettingsUI.entries = {
+  { id = "keyboard_open_bind", name = "Keyboard Open", icon = "KEY",
+    kind = "setting_capture", settingId = "keyboard_open" },
+  { id = "keyboard_open_reset", name = "Keyboard Default: F6", icon = "RST",
+    kind = "setting_reset", settingId = "keyboard_open" },
+  { id = "controller_favorite_bind", name = "Controller Favorite", icon = "FAV",
+    kind = "setting_capture", settingId = "controller_favorite" },
+  { id = "controller_favorite_reset", name = "Controller Favorite: Auto", icon = "RST",
+    kind = "setting_reset", settingId = "controller_favorite" },
+  { id = "controller_open_calibrate", name = "Controller Backup Open", icon = "IN",
+    kind = "setting_capture", settingId = "controller_open" },
+  { id = "controller_open_reset", name = "Controller Open: Auto", icon = "RST",
+    kind = "setting_reset", settingId = "controller_open" },
+  { id = "startup_hint_toggle", name = "Startup Key Hint", icon = "TIP",
+    kind = "setting_toggle", settingId = "startup_hint" },
+  { id = "close_after_command_toggle", name = "Close After Regular Command", icon = "CLS",
+    kind = "setting_toggle", settingId = "close_after_command" },
+}
+for _, entry in ipairs(InputSettingsUI.entries) do
+  entry.cat = "input_settings"
+  entry.tier = "A"
+  entry.catalogAction = "input_setting"
+  entry.canFavorite = false
+  entry.canRemove = false
+end
+InputSettingsUI.calibrateEntry = InputSettingsUI.entries[5]
+InputSettingsUI.resetEntry = InputSettingsUI.entries[6]
 local CustomCommandUI = {
   addEntry = {
     id = "custom_add",
@@ -936,6 +996,7 @@ function CustomCommandUI.buildSavePayload()
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
+      .. "controllerOpenFallbackButton=" .. tostring(state.controllerOpenFallbackButton or "auto") .. "\n"
       .. (state.favoriteOrderNeedsCatalogMigration and "" or "favoriteOrder=recent\n")
       .. "favorites=" .. table.concat(favoriteKeys, ",") .. "\n"
       .. "history=" .. table.concat(history, "|") .. "\n"
@@ -969,6 +1030,7 @@ local function loadState()
   state.startupHintEnabled = true
   state.closeAfterRegularCommand = true
   state.controllerFavoriteButton = nil
+  state.controllerOpenFallbackButton = nil
   state.customCommands:load("", nil)
   CustomCommandUI.rebuildEntries()
 
@@ -1018,6 +1080,15 @@ local function loadState()
     local normalized = normalizeControllerButton(savedFavoriteButton)
     if normalized ~= nil then
       state.controllerFavoriteButton = normalized
+    else
+      migrated = true
+    end
+  end
+  local savedOpenFallbackButton = parseRaw:match("controllerOpenFallbackButton=([^\n]*)")
+  if savedOpenFallbackButton ~= nil and savedOpenFallbackButton ~= "auto" then
+    local normalized = normalizeControllerButton(savedOpenFallbackButton)
+    if normalized ~= nil and not InputSettingsUI.isReservedButton(normalized) then
+      state.controllerOpenFallbackButton = normalized
     else
       migrated = true
     end
@@ -1124,6 +1195,10 @@ local function clearRunTransientState()
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
+  state.controllerOpenSource = nil
+  state.controllerOpenValue = nil
+  state.controllerCalibration = nil
+  state.controllerCandidateSnapshot = nil
   state.controllerConfirmHold = 0
   state.controllerConfirmCommand = nil
   state.controllerConfirmRemoveCommand = nil
@@ -1227,22 +1302,9 @@ local function registerMcmSettings()
       return "Keyboard open key: " .. openKeyName(state.openKey)
     end,
     OnChange = function(value)
-      local nextKey = tonumber(value)
-      if not isValidOpenKey(nextKey) then
-        showToast("That key conflicts with menu controls", "warning", 150, "Binding unchanged")
-        return
-      end
-      local previousKey = state.openKey or DEFAULT_OPEN_KEY
-      state.openKey = nextKey
-      local saved, err = saveState()
-      if not saved then
-        state.openKey = previousKey
-        debugLog("open key save failed; rollback: " .. tostring(err))
-        showToast("Keybind save failed", "error", 150,
-          "Restored " .. openKeyName(previousKey))
-        return
-      end
-      showToast("Open key changed to " .. openKeyName(nextKey), "success", 120)
+      local ok, changed, err = InputSettingsUI.applySetting("keyboard_open", value)
+      if not ok then showToast("Keyboard open-key setup failed", "warning", 150, err); return end
+      if changed then showToast("Open key changed to " .. openKeyName(state.openKey), "success", 120) end
     end,
     Popup = function()
       return "Press a new keyboard key.$newlineEsc cancels. Avoid gameplay keys and other Mod shortcuts."
@@ -1267,30 +1329,10 @@ local function registerMcmSettings()
         .. (button ~= nil and ("Custom button " .. button) or "Automatic")
     end,
     OnChange = function(value)
-      local numeric = tonumber(value)
-      local nextButton = nil
-      if value ~= nil and numeric ~= -1 then
-        nextButton = normalizeControllerButton(numeric)
-        if nextButton == nil then
-          showToast("Invalid controller favorite key", "warning", 150, "Binding unchanged")
-          return
-        end
-      end
-      local previousButton = state.controllerFavoriteButton
-      if nextButton == previousButton then return end
-      state.controllerFavoriteButton = nextButton
-      local saved, err = saveState()
-      if not saved then
-        state.controllerFavoriteButton = previousButton
-        debugLog("controller favorite button save failed; rollback: " .. tostring(err))
-        showToast("Controller favorite key save failed", "error", 150, "Binding restored")
-        return
-      end
-      if nextButton ~= nil then
-        showToast("Controller favorite key set to custom button " .. nextButton, "success", 120)
-      else
-        showToast("Controller favorite key restored to automatic", "success", 120)
-      end
+      local ok, changed, err = InputSettingsUI.applySetting("controller_favorite", value)
+      if not ok then showToast("Controller favorite-key setup failed", "warning", 150, err); return end
+      if changed then showToast("Controller favorite key set to "
+        .. InputSettingsUI.formatValue("controller_favorite", state.controllerFavoriteButton), "success", 120) end
     end,
     Popup = function()
       return "Press the controller button to use for favorites.$newlineBack or left clears the binding and restores automatic detection."
@@ -1301,9 +1343,37 @@ local function registerMcmSettings()
       "Confirm and back actions always outrank a conflicting favorite binding.",
     },
   } or nil
+  local controllerOpenFallbackSetting = ModConfigMenu.OptionType.KEYBIND_CONTROLLER ~= nil and {
+    Type = ModConfigMenu.OptionType.KEYBIND_CONTROLLER,
+    CurrentSetting = function() return state.controllerOpenFallbackButton or -1 end,
+    Default = -1,
+    Display = function()
+      local button = state.controllerOpenFallbackButton
+      return "Compatibility open key: "
+        .. (button ~= nil and ("Custom button " .. button) or "Automatic")
+    end,
+    OnChange = function(value)
+      local ok, changed, err = InputSettingsUI.applySetting("controller_open", value)
+      if not ok then showToast("Compatibility open-key setup failed", "warning", 150, err); return end
+      if changed then showToast("Compatibility open key set to "
+        .. InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton), "success", 120) end
+    end,
+    Popup = function()
+      return "Press a controller button to add as an open shortcut.$newlineBack or left clears it; held L3 always remains available."
+    end,
+    Info = {
+      "Works only when the runtime reports that raw controller button.",
+      "Confirm, back, favorite, navigation, and paging buttons cannot be bound.",
+      "You can also open the built-in Input Settings with F6 to calibrate.",
+    },
+  } or nil
   if controllerFavoriteSetting and type(ModConfigMenu.PopupGfx) == "table" then
     controllerFavoriteSetting.PopupGfx = ModConfigMenu.PopupGfx.WIDE_SMALL
     controllerFavoriteSetting.PopupWidth = 280
+  end
+  if controllerOpenFallbackSetting and type(ModConfigMenu.PopupGfx) == "table" then
+    controllerOpenFallbackSetting.PopupGfx = ModConfigMenu.PopupGfx.WIDE_SMALL
+    controllerOpenFallbackSetting.PopupWidth = 280
   end
   local startupHintSetting = ModConfigMenu.OptionType.BOOLEAN ~= nil and {
     Type = ModConfigMenu.OptionType.BOOLEAN,
@@ -1313,18 +1383,9 @@ local function registerMcmSettings()
       return "Show startup key hint: " .. (state.startupHintEnabled ~= false and "On" or "Off")
     end,
     OnChange = function(value)
-      local nextEnabled = value == true
-      local previousEnabled = state.startupHintEnabled ~= false
-      if nextEnabled == previousEnabled then return end
-      state.startupHintEnabled = nextEnabled
-      local saved, err = saveState()
-      if not saved then
-        state.startupHintEnabled = previousEnabled
-        debugLog("startup hint setting save failed; rollback: " .. tostring(err))
-        showToast("Startup hint setting save failed", "error", 150, "Previous value restored")
-        return
-      end
-      showToast("Startup key hint turned " .. (nextEnabled and "on" or "off"), "success")
+      local ok, changed, err = InputSettingsUI.applySetting("startup_hint", value == true)
+      if not ok then showToast("Startup hint setting failed", "error", 150, err); return end
+      if changed then showToast("Startup key hint turned " .. (state.startupHintEnabled and "on" or "off"), "success") end
     end,
     Info = {
       "Controls the F6 / L3 hint shown in the first run of each game process.",
@@ -1341,20 +1402,10 @@ local function registerMcmSettings()
         .. (state.closeAfterRegularCommand ~= false and "On" or "Off")
     end,
     OnChange = function(value)
-      local nextEnabled = value == true
-      local previousEnabled = state.closeAfterRegularCommand ~= false
-      if nextEnabled == previousEnabled then return end
-      state.closeAfterRegularCommand = nextEnabled
-      local saved, err = saveState()
-      if not saved then
-        state.closeAfterRegularCommand = previousEnabled
-        debugLog("close-after-command setting save failed; rollback: " .. tostring(err))
-        showToast("Close-after-command setting save failed", "error", 150,
-          "Previous value restored")
-        return
-      end
-      showToast("Close menu after regular commands turned "
-        .. (nextEnabled and "on" or "off"), "success")
+      local ok, changed, err = InputSettingsUI.applySetting("close_after_command", value == true)
+      if not ok then showToast("Close-after-command setting failed", "error", 150, err); return end
+      if changed then showToast("Close menu after regular commands turned "
+        .. (state.closeAfterRegularCommand and "on" or "off"), "success") end
     end,
     Info = {
       "Applies to regular give, remove, spawn, debug, batch, and manual commands.",
@@ -1366,6 +1417,9 @@ local function registerMcmSettings()
     ModConfigMenu.AddSetting("Console UI", "Settings", keybindSetting)
     if controllerFavoriteSetting then
       ModConfigMenu.AddSetting("Console UI", "Settings", controllerFavoriteSetting)
+    end
+    if controllerOpenFallbackSetting then
+      ModConfigMenu.AddSetting("Console UI", "Settings", controllerOpenFallbackSetting)
     end
     if startupHintSetting then
       ModConfigMenu.AddSetting("Console UI", "Settings", startupHintSetting)
@@ -1437,6 +1491,68 @@ local function validateKnownParameters(spec, command, verb)
     end
   end
   return true
+end
+
+function InputSettingsUI.formatValue(settingId, value)
+  if settingId == "keyboard_open" then return openKeyName(value or DEFAULT_OPEN_KEY) end
+  if settingId == "controller_favorite" or settingId == "controller_open" then
+    return value ~= nil and ("Custom button " .. value) or "Automatic"
+  end
+  return value ~= false and "On" or "Off"
+end
+
+function InputSettingsUI.captureLabel(settingId)
+  if settingId == "keyboard_open" then return "Keyboard open key" end
+  if settingId == "controller_favorite" then return "Controller favorite button" end
+  return "Controller backup open button"
+end
+
+function InputSettingsUI.applySetting(settingId, value)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec then return false, false, "Unknown setting" end
+  local nextValue = value
+  if spec.device == "keyboard" then
+    nextValue = tonumber(value)
+    if not isValidOpenKey(nextValue) then return false, false, "That key conflicts with menu controls" end
+  elseif spec.device == "controller" then
+    if value == nil or tonumber(value) == -1 then
+      nextValue = nil
+    else
+      nextValue = normalizeControllerButton(value)
+      if nextValue == nil then return false, false, "Invalid controller button" end
+      if settingId == "controller_open" and InputSettingsUI.isReservedButton(nextValue) then
+        return false, false, "That button conflicts with menu controls"
+      end
+    end
+  elseif type(value) ~= "boolean" then
+    return false, false, "Invalid setting value"
+  end
+  local previous = state[spec.field]
+  if previous == nextValue then return true, false end
+  state[spec.field] = nextValue
+  local saved, err = saveState()
+  if not saved then
+    state[spec.field] = previous
+    debugLog("setting save failed; rollback " .. settingId .. ": " .. tostring(err))
+    return false, false, tostring(err)
+  end
+  return true, true
+end
+
+function InputSettingsUI.refreshEntries()
+  local keyboard = InputSettingsUI.formatValue("keyboard_open", state.openKey)
+  local favorite = InputSettingsUI.formatValue("controller_favorite", state.controllerFavoriteButton)
+  local controllerOpen = InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton)
+  local startup = InputSettingsUI.formatValue("startup_hint", state.startupHintEnabled)
+  local closeAfter = InputSettingsUI.formatValue("close_after_command", state.closeAfterRegularCommand)
+  InputSettingsUI.entries[1].desc = "Current keyboard open key: " .. keyboard .. ". Release all keys, press one valid key, then confirm."
+  InputSettingsUI.entries[2].desc = "Current keyboard open key: " .. keyboard .. ". Restores only the keyboard binding to F6."
+  InputSettingsUI.entries[3].desc = "Current controller favorite button: " .. favorite .. ". Assigned controllers are scanned only during calibration; confirm/back still win."
+  InputSettingsUI.entries[4].desc = "Current controller favorite button: " .. favorite .. ". Clears the custom raw button and restores automatic detection."
+  InputSettingsUI.entries[5].desc = "Current controller backup open button: " .. controllerOpen .. ". Supplements held L3 without changing the keyboard key."
+  InputSettingsUI.entries[6].desc = "Current controller backup open button: " .. controllerOpen .. ". Clears it and keeps held L3."
+  InputSettingsUI.entries[7].desc = "Current: " .. startup .. ". Controls the first-run key hint in each game process."
+  InputSettingsUI.entries[8].desc = "Current: " .. closeAfter .. ". Run-changing commands still always close the menu."
 end
 
 local function validateCommand(command)
@@ -1585,8 +1701,60 @@ local function queueCommand(command, requestedCount, explicitRepeatMax, trustedU
   return true
 end
 
+function InputSettingsUI.beginCapture(settingId)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec or (spec.device ~= "keyboard" and spec.device ~= "controller") then return false end
+  state.inputMode = "setting_capture"
+  state.controllerCalibration = {
+    settingId = settingId,
+    device = spec.device,
+    stage = "release",
+    releaseFrames = 0,
+    stableFrames = 0,
+    remainingFrames = LIMITS.controllerCalibrationTimeoutFrames,
+    candidateButton = nil,
+    candidateIndex = nil,
+    status = spec.device == "keyboard" and "Release every keyboard key first"
+      or "Release every controller button first",
+  }
+  state.pointerActive = false
+  state.controlMode = "keyboard"
+  showToast(InputSettingsUI.captureLabel(settingId) .. " setup started", "info", 120,
+    "Release every input, then hold the target input")
+  return true
+end
+
+function InputSettingsUI.resetSetting(settingId)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec then return false end
+  if state[spec.field] == spec.default then
+    showToast("This is already the default", "info", 90, InputSettingsUI.formatValue(settingId, spec.default))
+    return true
+  end
+  local ok = InputSettingsUI.applySetting(settingId, spec.default)
+  if not ok then
+    showToast("Restore default failed", "error", 150, "Previous setting kept")
+    return false
+  end
+  showToast("Default restored", "success", 120, InputSettingsUI.formatValue(settingId, spec.default))
+  return true
+end
+
+function InputSettingsUI.toggleSetting(settingId)
+  local spec = InputSettingsUI.specs[settingId]
+  if not spec or spec.device ~= "boolean" then return false end
+  local nextValue = state[spec.field] == false
+  local ok = InputSettingsUI.applySetting(settingId, nextValue)
+  if not ok then showToast("Setting save failed", "error", 150, "Previous setting restored"); return false end
+  showToast("Setting turned " .. (nextValue and "on" or "off"), "success", 90)
+  return true
+end
+
 local function queueEntry(entry, requestedCount)
   if not entry then return false end
+  if entry.kind == "setting_capture" then return InputSettingsUI.beginCapture(entry.settingId) end
+  if entry.kind == "setting_reset" then return InputSettingsUI.resetSetting(entry.settingId) end
+  if entry.kind == "setting_toggle" then return InputSettingsUI.toggleSetting(entry.settingId) end
   if entry.kind == "custom_add" then
     return CustomCommandUI.beginEdit(nil)
   end
@@ -1705,6 +1873,7 @@ end
 
 local function visibleEntries()
   local category = currentCategory()
+  InputSettingsUI.refreshEntries()
   local result = {}
   local query = trim(state.search):lower()
   local greedMode = isGreedMode()
@@ -1740,6 +1909,8 @@ local function visibleEntries()
     for _, entry in ipairs(allEntries) do
       if entry.kind == "custom_command" then result[#result + 1] = entry end
     end
+  elseif category.id == "input_settings" then
+    for _, entry in ipairs(InputSettingsUI.entries) do result[#result + 1] = entry end
   else
     for _, entry in ipairs(allEntries) do
       if entry.cat == category.id then result[#result + 1] = entry end
@@ -2178,16 +2349,29 @@ local function addControllerCandidate(candidates, seen, index)
 end
 
 local function controllerCandidates()
+  if state.controllerCandidateSnapshot ~= nil then return state.controllerCandidateSnapshot end
   local candidates, seen = {}, {}
   local countOk, playerCount = pcall(function() return Game():GetNumPlayers() end)
-  assert(countOk and tonumber(playerCount), "unable to enumerate assigned controllers")
-  for playerIndex = 0, math.max(0, math.floor(tonumber(playerCount)) - 1) do
+  if not countOk or tonumber(playerCount) == nil then
+    if not state.controllerEnumerationFailureLogged then
+      state.controllerEnumerationFailureLogged = true
+      debugLog("assigned controller enumeration unavailable; controller input skipped")
+    end
+    state.controllerCandidateSnapshot = candidates
+    return candidates
+  end
+  local assignedPlayerCount = math.max(0, math.floor(tonumber(playerCount)))
+  for playerIndex = 0, assignedPlayerCount - 1 do
     local playerOk, controllerIndex = pcall(function()
       local player = Isaac.GetPlayer(playerIndex)
       return player and player.ControllerIndex
     end)
     if playerOk then addControllerCandidate(candidates, seen, controllerIndex) end
   end
+  if #candidates == 0 and state.runEndState == "game_over" then
+    addControllerCandidate(candidates, seen, state.controllerIndex)
+  end
+  state.controllerCandidateSnapshot = candidates
   return candidates
 end
 
@@ -2383,11 +2567,206 @@ local function controllerDirectionTriggered(action, button)
   return controllerRoleEvent(candidates, "direction", "button", button) ~= nil
 end
 
-local function controllerOpenPressed()
-  for _, index in ipairs(controllerCandidates()) do
-    if controllerButtonPressed(CONTROLLER_OPEN_BUTTON, index) then return true, index end
+function InputSettingsUI.openSources()
+  local sources, seen = {}, {}
+  local function add(source, value)
+    value = normalizeControllerButton(value)
+    if value == nil or seen[value] then return end
+    seen[value] = true
+    sources[#sources + 1] = { source = source, value = value }
   end
-  return false, nil
+  add("named_l3", CONTROLLER_OPEN_BUTTONS.named)
+  add("legacy_l3", CONTROLLER_OPEN_BUTTONS.legacy)
+  local fallback = state.controllerOpenFallbackButton
+  add("calibrated", fallback)
+  return sources
+end
+
+local function controllerOpenPressed()
+  if state.controllerOpenIndex ~= nil and state.controllerOpenValue ~= nil then
+    return controllerButtonPressed(state.controllerOpenValue, state.controllerOpenIndex),
+      state.controllerOpenIndex, state.controllerOpenSource, state.controllerOpenValue
+  end
+  for _, index in ipairs(controllerCandidates()) do
+    for _, candidate in ipairs(InputSettingsUI.openSources()) do
+      if controllerButtonPressed(candidate.value, index) then
+        return true, index, candidate.source, candidate.value
+      end
+    end
+  end
+  return false, nil, nil, nil
+end
+
+function InputSettingsUI.openTriggeredEvent()
+  local candidates = controllerCandidates()
+  for _, source in ipairs(InputSettingsUI.openSources()) do
+    local event = controllerRoleEvent(candidates, "close", "button", source.value)
+    if event then
+      event.openSource = source.source
+      return event
+    end
+  end
+  return nil
+end
+
+function InputSettingsUI.cancelCalibration(message, detail)
+  state.controllerCalibration = nil
+  state.inputMode = nil
+  showToast(message or "Key setup cancelled", "warning", 120,
+    detail or "The previous setting was not changed")
+end
+
+function InputSettingsUI.pressedRawButtons(candidates)
+  local pressed = {}
+  for _, index in ipairs(candidates) do
+    for button = 0, LIMITS.maxControllerButton do
+      if controllerButtonPressed(button, index) then
+        pressed[#pressed + 1] = { index = index, button = button }
+      end
+    end
+  end
+  return pressed
+end
+
+function InputSettingsUI.pressedKeyboardKeys()
+  local pressed, seen = {}, {}
+  for key in pairs(OPEN_KEY_NAMES) do
+    if not seen[key] then
+      local ok, down = pcall(Input.IsButtonPressed, key, 0)
+      if ok and down == true then pressed[#pressed + 1] = { index = 0, button = key }; seen[key] = true end
+    end
+  end
+  return pressed
+end
+
+function InputSettingsUI.updateCalibration(keyboardEnter)
+  local calibration = state.controllerCalibration
+  if not calibration then
+    state.inputMode = nil
+    return true
+  end
+  calibration.remainingFrames = calibration.remainingFrames - 1
+  if calibration.remainingFrames <= 0 then
+    InputSettingsUI.cancelCalibration("Key setup timed out",
+      "Try again, or map the target button to F6 in Steam Input")
+    return true
+  end
+
+  local controllerEvent = controllerMenuEvent()
+  local keyboardCancel = InputSettingsUI.keyTriggered(Keyboard.KEY_ESCAPE)
+  if keyboardCancel or (controllerEvent and controllerEvent.role == "back") then
+    if controllerEvent then
+      InputSettingsUI.armControllerInputLease(controllerEvent)
+    else
+      InputSettingsUI.armInputLease("keyboard", Keyboard.KEY_ESCAPE, 0)
+    end
+    InputSettingsUI.cancelCalibration()
+    return true
+  end
+
+  if calibration.stage == "confirm" then
+    local controllerConfirm = controllerEvent and controllerEvent.role == "confirm"
+    if keyboardEnter or controllerConfirm then
+      if controllerConfirm then
+        InputSettingsUI.armControllerInputLease(controllerEvent)
+      else
+        InputSettingsUI.armInputLease("keyboard", Keyboard.KEY_ENTER, 0)
+      end
+      local ok, changed, err = InputSettingsUI.applySetting(calibration.settingId, calibration.candidateButton)
+      if not ok then
+        InputSettingsUI.cancelCalibration("Key setup save failed", "Previous setting restored: " .. tostring(err))
+        return true
+      end
+      local button = calibration.candidateButton
+      state.controllerCalibration = nil
+      state.inputMode = nil
+      showToast(changed and (InputSettingsUI.captureLabel(calibration.settingId) .. " saved") or "Setting unchanged", "success", 150,
+        InputSettingsUI.formatValue(calibration.settingId, button))
+    end
+    return true
+  end
+
+  local candidates = calibration.device == "controller" and controllerCandidates() or { 0 }
+  if calibration.device == "controller" and #candidates == 0 then
+    InputSettingsUI.cancelCalibration("No assigned controller detected",
+      "Connect a controller and enter a local run before retrying")
+    return true
+  end
+  local pressed = calibration.device == "controller"
+    and InputSettingsUI.pressedRawButtons(candidates) or InputSettingsUI.pressedKeyboardKeys()
+  if calibration.stage == "release" then
+    if #pressed == 0 then
+      calibration.releaseFrames = calibration.releaseFrames + 1
+      calibration.status = "Keep every button released " .. calibration.releaseFrames .. "/"
+        .. LIMITS.controllerCalibrationReleaseFrames
+      if calibration.releaseFrames >= LIMITS.controllerCalibrationReleaseFrames then
+        calibration.stage = "detect"
+        calibration.status = calibration.device == "keyboard"
+          and "Hold the new keyboard open key" or "Hold the controller button you want to bind"
+      end
+    else
+      calibration.releaseFrames = 0
+      calibration.status = calibration.device == "keyboard"
+        and "Release every keyboard key first" or "Release every controller button first"
+    end
+    return true
+  end
+
+  if calibration.stage == "candidate_release" then
+    if #pressed == 0 then
+      calibration.stage = "confirm"
+      calibration.status = "Detected " .. InputSettingsUI.formatValue(calibration.settingId,
+        calibration.candidateButton) .. "; Enter/A saves, Esc/B cancels"
+    else
+      calibration.status = "Release the candidate input, then confirm with Enter/A"
+    end
+    return true
+  end
+
+  if #pressed == 0 then
+    calibration.stableFrames = 0
+    calibration.candidateButton = nil
+    calibration.candidateIndex = nil
+    calibration.status = calibration.device == "keyboard"
+      and "Hold the new keyboard open key" or "Hold the controller button you want to bind"
+    return true
+  end
+  if #pressed > 1 then
+    calibration.stableFrames = 0
+    calibration.candidateButton = nil
+    calibration.candidateIndex = nil
+    calibration.status = "Multiple buttons detected; release all, then hold only one"
+    return true
+  end
+
+  local candidate = pressed[1]
+  local invalid = calibration.device == "keyboard" and not isValidOpenKey(candidate.button)
+    or (calibration.settingId == "controller_open" and InputSettingsUI.isReservedButton(candidate.button))
+  if invalid then
+    calibration.stableFrames = 0
+    calibration.candidateButton = nil
+    calibration.candidateIndex = nil
+    calibration.status = "That input conflicts with menu controls; release it and choose another"
+    return true
+  end
+  if calibration.candidateButton ~= candidate.button
+      or calibration.candidateIndex ~= candidate.index then
+    calibration.candidateButton = candidate.button
+    calibration.candidateIndex = candidate.index
+    calibration.stableFrames = 1
+  else
+    calibration.stableFrames = calibration.stableFrames + 1
+  end
+  calibration.status = "Confirming " .. InputSettingsUI.formatValue(calibration.settingId, candidate.button) .. ": "
+    .. calibration.stableFrames .. "/" .. LIMITS.controllerCalibrationStableFrames
+  if calibration.stableFrames >= LIMITS.controllerCalibrationStableFrames then
+    calibration.stage = "candidate_release"
+    calibration.status = "Candidate is stable; release it before confirming"
+    if calibration.device == "controller" then state.controllerIndex = candidate.index end
+    state.pointerActive = false
+    state.controlMode = "controller"
+  end
+  return true
 end
 
 local function moveGridSelection(entries, delta)
@@ -2457,6 +2836,10 @@ local function armControllerInputLease(event)
   local kind = event.source == "action" and "action" or "controller_button"
   armInputLease(kind, event.value, event.index)
 end
+
+InputSettingsUI.keyTriggered = keyTriggered
+InputSettingsUI.armInputLease = armInputLease
+InputSettingsUI.armControllerInputLease = armControllerInputLease
 
 local function inputLeaseActive()
   local lease = state.inputLease
@@ -2576,11 +2959,19 @@ end
 
 local function handleKeyboardAndController(entries)
   local keyboardEnter = enterTriggered()
+  if state.open and state.inputMode == "setting_capture" then
+    InputSettingsUI.updateCalibration(keyboardEnter)
+    return
+  end
   local controllerOpen = false
-  local openPressed, openIndex = controllerOpenPressed()
+  local openPressed, openIndex, openSource, openValue = controllerOpenPressed()
   if not state.open and openPressed then
-    if state.controllerOpenIndex ~= openIndex then state.controllerOpenHold = 0 end
+    if state.controllerOpenIndex ~= openIndex or state.controllerOpenValue ~= openValue then
+      state.controllerOpenHold = 0
+    end
     state.controllerOpenIndex = openIndex
+    state.controllerOpenSource = openSource
+    state.controllerOpenValue = openValue
     state.controllerOpenHold = state.controllerOpenHold + 1
     if state.controllerOpenHold >= LIMITS.controllerOpenHoldFrames and not state.controllerOpenLatched then
       state.controllerOpenLatched = true
@@ -2593,6 +2984,8 @@ local function handleKeyboardAndController(entries)
     state.controllerOpenHold = 0
     state.controllerOpenLatched = false
     state.controllerOpenIndex = nil
+    state.controllerOpenSource = nil
+    state.controllerOpenValue = nil
   end
 
   local keyboardOpen = keyTriggered(state.openKey or DEFAULT_OPEN_KEY)
@@ -2605,8 +2998,7 @@ local function handleKeyboardAndController(entries)
   end
   if not state.open then return end
 
-  local controllerClose = controllerRoleEvent(
-    controllerCandidates(), "close", "button", CONTROLLER_OPEN_BUTTON)
+  local controllerClose = InputSettingsUI.openTriggeredEvent()
   if controllerClose then
     armControllerInputLease(controllerClose)
     setMenuOpen(false)
@@ -2943,6 +3335,7 @@ local function resolveFooterContext(entries)
   if state.inputMode == "search" then return "search", nil end
   if state.inputMode == "command" then return "command", nil end
   if state.inputMode == "custom_command" then return "custom_command", nil end
+  if state.inputMode == "setting_capture" then return "setting_capture", nil end
   if state.sidebarFocus then return "category", currentCategory() end
   local entry = selectedEntry(entries)
   if entry then return "entry", entry end
@@ -3136,6 +3529,18 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
     if mode == "controller" then add("A: add (keyboard input)")
     elseif mode == "mouse" then add("Click: add")
     else add("Enter: add") end
+  elseif entry.kind == "setting_capture" then
+    if mode == "controller" then add("A: set")
+    elseif mode == "mouse" then add("Click: set")
+    else add("Enter: set") end
+  elseif entry.kind == "setting_reset" then
+    if mode == "controller" then add("A: restore default")
+    elseif mode == "mouse" then add("Click: restore default")
+    else add("Enter: restore default") end
+  elseif entry.kind == "setting_toggle" then
+    if mode == "controller" then add("A: toggle")
+    elseif mode == "mouse" then add("Click: toggle")
+    else add("Enter: toggle") end
   elseif entry.kind == "custom_command" then
     if mode == "controller" then add("A: run")
     elseif mode == "mouse" then add("LMB: run"); add("Click command: edit"); add("RMB: delete")
@@ -3169,9 +3574,12 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
 
   local candidates = { table.concat(actions, " · ") }
   if mode == "controller" then
-    local primary = entry.catalogAction == "disabled" and "Disabled"
+    local primary = entry.kind == "setting_capture" and "A: set"
+      or (entry.kind == "setting_reset" and "A: restore"
+      or (entry.kind == "setting_toggle" and "A: toggle"
+      or (entry.catalogAction == "disabled" and "Disabled"
       or (entry.catalogAction == "manual" and "A: help"
-      or (removalCommand(entry) and "A: give" or "A: run"))
+      or (removalCommand(entry) and "A: give" or "A: run")))))
     candidates[#candidates + 1] = favorite and (primary .. " · " .. favorite) or primary
     candidates[#candidates + 1] = primary
   elseif mode == "keyboard" then
@@ -3179,7 +3587,9 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
       candidates[#candidates + 1] = table.concat(actions, " · ", 1, #actions - 1)
     end
     local compact = {}
-    if entry.catalogAction == "manual" then compact[#compact + 1] = "Enter/C"
+    if entry.catalogAction == "input_setting" then
+      compact[#compact + 1] = "Enter"
+    elseif entry.catalogAction == "manual" then compact[#compact + 1] = "Enter/C"
     elseif entry.catalogAction ~= "disabled" then compact[#compact + 1] = "Enter" end
     if details then compact[#compact + 1] = "D" end
     if favorite then compact[#compact + 1] = "F" end
@@ -3204,7 +3614,9 @@ function Presentation.toastLines(toast, width)
     local label = primary .. ": "
     local labelW = math.min(width, safeTextWidth(font10, label))
     local actionW = math.max(1, width - labelW)
-    return { label .. fittingInputText(toast.action, actionW) }
+    local action = toast.actionFit == "trailing"
+      and fittingInputText(toast.action, actionW) or Presentation.fittingLeadingText(toast.action, actionW)
+    return { label .. action }
   end
   if toast.action and toast.action ~= "" then
     local action = toast.actionFit == "trailing"
@@ -3469,7 +3881,7 @@ local function drawMenu(entries)
       if favoriteW > 0 then
         drawFavoriteStar(favoriteX, y, favoriteW, L.cardH, isFavorite)
       end
-      if hovered then
+      if state.inputMode == nil and hovered then
         local previousEntry = selectedEntry(entries)
         if not previousEntry or previousEntry.customId ~= entry.customId then
           state.customDeleteConfirmationId = nil
@@ -3478,14 +3890,14 @@ local function drawMenu(entries)
         state.sidebarFocus = false
       end
       local favoriteHovered = favoriteW > 0 and hit(mouse, favoriteX, y, favoriteW, L.cardH)
-      if hovered and clicked then
+      if state.inputMode == nil and hovered and clicked then
         if favoriteHovered then
           toggleFavorite(entry)
         else
           armInputLease("mouse", 0, 0)
           queueEntry(entry, state.repeatCount)
         end
-      elseif hovered and rightClicked then
+      elseif state.inputMode == nil and hovered and rightClicked then
         if entry.kind == "custom_command" then
           CustomCommandUI.requestDelete(entry)
         elseif removeCommand then
@@ -3519,8 +3931,10 @@ local function drawMenu(entries)
     state.repeatCount > 20 and TEXT.warning or TEXT.main, L.countW, true)
   drawRect(plusX, L.footerY + L.pad, L.stepW, L.buttonH, COLORS.card)
   drawText("+", plusX, footerTextY, 0.60, TEXT.accent, L.stepW, true)
-  if clicked and hit(mouse, minusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(-1) end
-  if clicked and hit(mouse, plusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(1) end
+  if state.inputMode == nil and clicked
+      and hit(mouse, minusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(-1) end
+  if state.inputMode == nil and clicked
+      and hit(mouse, plusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(1) end
 
   local detailX = L.contentX + L.repeatW + L.pad * 2
   local detailW = math.max(1, L.contentX + L.contentW - detailX - L.pad)
@@ -3547,6 +3961,16 @@ local function drawMenu(entries)
       }, fullDetailW)
     drawText(searchHint, fullDetailX, footerTextY + rowStep * 2,
       0.60, TEXT.muted, fullDetailW)
+  elseif footerMode == "setting_capture" then
+    local calibration = state.controllerCalibration
+    local status = calibration and calibration.status or "Calibration has ended"
+    drawText(fittingText({ status }, fullDetailW), fullDetailX,
+      footerTextY + rowStep, 0.60, TEXT.accent, fullDetailW)
+    local hint = calibration and calibration.stage == "confirm"
+      and "Enter/A: save · Esc/B: cancel"
+      or "Inputs are scanned only during setup · Esc/B: cancel · Timeout keeps the old setting"
+    drawText(fittingText({ hint }, fullDetailW), fullDetailX,
+      footerTextY + rowStep * 2, 0.60, TEXT.muted, fullDetailW)
   elseif footerMode == "command" then
     local commandLabel = "Cmd: "
     local commandLabelW = math.min(fullDetailW, safeTextWidth(font10, commandLabel) + L.pad)
@@ -3629,7 +4053,8 @@ local function drawMenu(entries)
     local hintCandidates = Presentation.entryHintCandidates(
       activeEntry, isFavorite, effectPageCount)
     local isCustomAdd = activeEntry.kind == "custom_add"
-    local commandLabel = isCustomAdd and "Action: " or "Manual command (C): "
+    local isSetting = activeEntry.catalogAction == "input_setting"
+    local commandLabel = isSetting and "Action: " or (isCustomAdd and "Action: " or "Manual command (C): ")
     local commandValue = isCustomAdd and "Press Enter/A or click the card to add"
       or (activeEntry.displayCommand or activeEntry.cmd or "")
     local commandLabelW = safeTextWidth(font10, commandLabel)
@@ -3648,7 +4073,7 @@ local function drawMenu(entries)
       hint = fittingText(hintCandidates, hintW)
     end
     local commandY = footerTextY + rowStep * 3
-    local commandHovered = state.pointerActive
+    local commandHovered = not isSetting and state.pointerActive
       and hit(mouse, fullDetailX, commandY, commandW, rowStep)
     local commandColor = activeEntry.catalogAction == "disabled" and TEXT.warning
       or (commandHovered and TEXT.accent or TEXT.muted)
@@ -3656,7 +4081,7 @@ local function drawMenu(entries)
       commandColor, commandLabelW)
     drawText(fittingInputText(commandValue, commandValueW),
       fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
-    if commandHovered and clicked then
+    if not isSetting and commandHovered and clicked then
       if activeEntry.kind == "custom_command" or activeEntry.kind == "custom_add" then
         CustomCommandUI.beginEdit(activeEntry.kind == "custom_command" and activeEntry or nil)
       else
@@ -3706,6 +4131,7 @@ end
 
 local function onRender()
   loadState()
+  state.controllerCandidateSnapshot = nil
   local paused = Game():IsPaused()
   local nativePauseOwnsScreen = paused and state.runEndState ~= "game_over"
   if nativePauseOwnsScreen then
@@ -3827,7 +4253,11 @@ local function onGameStarted()
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
+  state.controllerOpenSource = nil
+  state.controllerOpenValue = nil
   state.controllerIndex = nil
+  state.controllerCalibration = nil
+  state.controllerCandidateSnapshot = nil
   clearControllerConfirm()
   clearInputLease()
   state.pointerActive = false
@@ -3842,6 +4272,7 @@ local function onGameStarted()
     state.startupHintShown = true
     showToast("Console UI loaded", "success", 90,
       openKeyName(state.openKey) .. " / hold L3 to open")
+    state.toast.inlineAction = true
   end
 end
 
@@ -3865,7 +4296,11 @@ local function onGameExit()
   state.controllerOpenHold = 0
   state.controllerOpenLatched = false
   state.controllerOpenIndex = nil
+  state.controllerOpenSource = nil
+  state.controllerOpenValue = nil
   state.controllerIndex = nil
+  state.controllerCalibration = nil
+  state.controllerCandidateSnapshot = nil
   clearControllerConfirm()
   clearInputLease()
   state.pointerActive = false
