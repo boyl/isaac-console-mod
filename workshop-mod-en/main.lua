@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.15"
+local VERSION = "2.5.4-en.16"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -283,6 +283,7 @@ local state = {
   startupHintShown = false,
   startupHintEnabled = true,
   closeAfterRegularCommand = true,
+  fullscreenCursorEnabled = true,
   loaded = false,
   layoutSignature = nil,
   detailEntryId = nil,
@@ -574,6 +575,7 @@ InputSettingsUI.specs = {
   controller_open = { field = "controllerOpenFallbackButton", default = nil, device = "controller" },
   startup_hint = { field = "startupHintEnabled", default = true, device = "boolean" },
   close_after_command = { field = "closeAfterRegularCommand", default = true, device = "boolean" },
+  fullscreen_cursor = { field = "fullscreenCursorEnabled", default = true, device = "boolean" },
 }
 InputSettingsUI.entries = {
   { id = "keyboard_open_bind", name = "Keyboard Open", icon = "KEY",
@@ -592,6 +594,8 @@ InputSettingsUI.entries = {
     kind = "setting_toggle", settingId = "startup_hint" },
   { id = "close_after_command_toggle", name = "Close After Regular Command", icon = "CLS",
     kind = "setting_toggle", settingId = "close_after_command" },
+  { id = "fullscreen_cursor_toggle", name = "Fullscreen Console Cursor", icon = "PTR",
+    kind = "setting_toggle", settingId = "fullscreen_cursor" },
 }
 for _, entry in ipairs(InputSettingsUI.entries) do
   entry.cat = "input_settings"
@@ -995,6 +999,7 @@ function CustomCommandUI.buildSavePayload()
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
+      .. "fullscreenCursorEnabled=" .. (state.fullscreenCursorEnabled == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
       .. "controllerOpenFallbackButton=" .. tostring(state.controllerOpenFallbackButton or "auto") .. "\n"
       .. (state.favoriteOrderNeedsCatalogMigration and "" or "favoriteOrder=recent\n")
@@ -1029,6 +1034,7 @@ local function loadState()
   state.openKey = DEFAULT_OPEN_KEY
   state.startupHintEnabled = true
   state.closeAfterRegularCommand = true
+  state.fullscreenCursorEnabled = true
   state.controllerFavoriteButton = nil
   state.controllerOpenFallbackButton = nil
   state.customCommands:load("", nil)
@@ -1073,6 +1079,14 @@ local function loadState()
   elseif savedCloseAfterRegularCommand == "1" then
     state.closeAfterRegularCommand = true
   elseif savedCloseAfterRegularCommand ~= nil then
+    migrated = true
+  end
+  local savedFullscreenCursor = parseRaw:match("fullscreenCursorEnabled=([^\n]*)")
+  if savedFullscreenCursor == "0" then
+    state.fullscreenCursorEnabled = false
+  elseif savedFullscreenCursor == "1" then
+    state.fullscreenCursorEnabled = true
+  elseif savedFullscreenCursor ~= nil then
     migrated = true
   end
   local savedFavoriteButton = parseRaw:match("controllerFavoriteButton=([^\n]*)")
@@ -1413,6 +1427,25 @@ local function registerMcmSettings()
       "Rewind, restart, warp, and other run-changing commands always close the menu.",
     },
   } or nil
+  local fullscreenCursorSetting = ModConfigMenu.OptionType.BOOLEAN ~= nil and {
+    Type = ModConfigMenu.OptionType.BOOLEAN,
+    CurrentSetting = function() return state.fullscreenCursorEnabled ~= false end,
+    Default = true,
+    Display = function()
+      return "Fullscreen console cursor: " .. (state.fullscreenCursorEnabled ~= false and "On" or "Off")
+    end,
+    OnChange = function(value)
+      local ok, changed, err = InputSettingsUI.applySetting("fullscreen_cursor", value == true)
+      if not ok then showToast("Cursor setting failed", "error", 150, err); return end
+      if changed then showToast("Fullscreen console cursor: "
+        .. (state.fullscreenCursorEnabled and "On" or "Off"), "success") end
+    end,
+    Info = {
+      "Draws a pointer only while the fullscreen console is visible.",
+      "Windowed mode stays unchanged; disable if two cursors appear.",
+      "Does not change game mouse controls or existing input behavior.",
+    },
+  } or nil
   local ok, err = pcall(function()
     ModConfigMenu.AddSetting("Console UI", "Settings", keybindSetting)
     if controllerFavoriteSetting then
@@ -1426,6 +1459,9 @@ local function registerMcmSettings()
     end
     if closeAfterRegularCommandSetting then
       ModConfigMenu.AddSetting("Console UI", "Settings", closeAfterRegularCommandSetting)
+    end
+    if fullscreenCursorSetting then
+      ModConfigMenu.AddSetting("Console UI", "Settings", fullscreenCursorSetting)
     end
   end)
   if ok then
@@ -1545,6 +1581,7 @@ function InputSettingsUI.refreshEntries()
   local controllerOpen = InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton)
   local startup = InputSettingsUI.formatValue("startup_hint", state.startupHintEnabled)
   local closeAfter = InputSettingsUI.formatValue("close_after_command", state.closeAfterRegularCommand)
+  local cursor = InputSettingsUI.formatValue("fullscreen_cursor", state.fullscreenCursorEnabled)
   InputSettingsUI.entries[1].desc = "Current keyboard open key: " .. keyboard .. ". Release all keys, press one valid key, then confirm."
   InputSettingsUI.entries[2].desc = "Current keyboard open key: " .. keyboard .. ". Restores only the keyboard binding to F6."
   InputSettingsUI.entries[3].desc = "Current controller favorite button: " .. favorite .. ". Assigned controllers are scanned only during calibration; confirm/back still win."
@@ -1553,6 +1590,10 @@ function InputSettingsUI.refreshEntries()
   InputSettingsUI.entries[6].desc = "Current controller backup open button: " .. controllerOpen .. ". Clears it and keeps held L3."
   InputSettingsUI.entries[7].desc = "Current: " .. startup .. ". Controls the first-run key hint in each game process."
   InputSettingsUI.entries[8].desc = "Current: " .. closeAfter .. ". Run-changing commands still always close the menu."
+  InputSettingsUI.entries[9].name = "Fullscreen Cursor: " .. cursor
+  InputSettingsUI.entries[9].desc = "Current state: " .. cursor .. ". Click to turn "
+    .. (state.fullscreenCursorEnabled == false and "on" or "off")
+    .. ". Shows a pointer only in the fullscreen console. Turn off for duplicate cursors; game mouse controls stay unchanged."
 end
 
 local function validateCommand(command)
@@ -3204,6 +3245,35 @@ local function drawRect(x, y, width, height, color)
   pixel:Render(Vector(x, y), Vector(0, 0), Vector(0, 0))
 end
 
+-- The outer tip is the existing hit-test position. Only the menu surface
+-- calls this renderer; it never owns input or changes the game's Options.
+Presentation.cursor = {
+  outline = {
+    {0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}, {0, 6}, {0, 7},
+    {0, 8}, {0, 9}, {0, 6}, {0, 2, 3, 3}, {3, 3}, {4, 2},
+  },
+  fill = {
+    {}, {}, {1, 1}, {1, 2}, {1, 3}, {1, 4}, {1, 5},
+    {1, 6}, {1, 3}, {1, 1, 3, 2}, {4, 1}, {4, 1}, {},
+  },
+  outlineColor = Color(0, 0, 0, 1, 0, 0, 0),
+  fillColor = Color(1, 1, 1, 1, 0, 0, 0),
+}
+
+Presentation.cursor.layers = {Presentation.cursor.outline, Presentation.cursor.fill}
+
+function Presentation.drawFullscreenCursor(mouse)
+  if not state.open or state.fullscreenCursorEnabled == false or not Options.Fullscreen then return end
+  for layerIndex, rows in ipairs(Presentation.cursor.layers) do
+    local color = layerIndex == 1 and Presentation.cursor.outlineColor or Presentation.cursor.fillColor
+    for row, spans in ipairs(rows) do
+      for index = 1, #spans, 2 do
+        drawRect(mouse.X + spans[index], mouse.Y + row - 1, spans[index + 1], 1, color)
+      end
+    end
+  end
+end
+
 local FAVORITE_STAR_SPANS = {
   { 4, 1 }, { 3, 3 }, { 0, 9 }, { 1, 7 }, { 2, 5 },
   { 2, 5 }, { 1, 2, 6, 2 }, { 0, 2, 7, 2 }, { 0, 1, 8, 1 },
@@ -3686,12 +3756,11 @@ end
 
 -- Measured layout: every rectangle is computed from the current render size
 -- and the official bitmap font metrics before anything is drawn.
-local function drawMenu(entries)
+local function drawMenu(entries, mouse)
   local screenWidth = Isaac.GetScreenWidth()
   local screenHeight = Isaac.GetScreenHeight()
   local L = computeLayout(screenWidth, screenHeight)
   local greedMode = isGreedMode()
-  local mouse = Isaac.WorldToScreen(Input.GetMousePosition(true))
   local mousePressed = Input.IsMouseBtnPressed(0)
   local rightPressed = Input.IsMouseBtnPressed(1)
   local clicked = mousePressed and not state.mouseDown
@@ -4114,9 +4183,10 @@ local function drawMenu(entries)
 end
 
 function Presentation.renderMenuSurface(entries)
+  local mouse = Isaac.WorldToScreen(Input.GetMousePosition(true))
   pcall(function() Game():GetHUD():SetVisible(false) end)
   if fontLoaded then
-    drawMenu(entries)
+    drawMenu(entries, mouse)
   else
     local screenWidth, screenHeight = Isaac.GetScreenWidth(), Isaac.GetScreenHeight()
     drawRect(0, 0, screenWidth, screenHeight, COLORS.overlay)
@@ -4127,6 +4197,7 @@ function Presentation.renderMenuSurface(entries)
     Isaac.RenderText("See log.txt for [Console UI] details.", 48, 136, 1, 1, 1, 1)
     Isaac.RenderText("Press " .. openKeyName(state.openKey) .. " or ESC to close.", 48, 164, 1, 1, 1, 1)
   end
+  Presentation.drawFullscreenCursor(mouse)
 end
 
 local function onRender()
@@ -4324,4 +4395,3 @@ if fontLoaded then
 else
   print("[Console UI] v" .. VERSION .. " loaded; UTF8 font=failed; " .. tostring(fontLoadError))
 end
-

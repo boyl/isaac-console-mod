@@ -1,5 +1,13 @@
 # Changelog
 
+
+## 2.5.4-en.16
+
+- The settings card now shows “Fullscreen Cursor: On/Off” and updates immediately; its description explains the next click.
+- Added Fullscreen Console Cursor on the second Settings page and optional MCM. It defaults to On, including older saves, applies immediately, and rolls back if saving fails.
+- Draws a white arrow with a black outline only inside the fullscreen console, using the existing click coordinates and pixel resource. Game settings and input behavior stay unchanged; disable it if another cursor is already visible.
+- Follows the existing pause, close, restart, exit, and Game Over rendering paths. Added bilingual automated regression; actual game verification is recorded separately.
+
 ## 2.5.4-en.15
 
 - Moved all five existing MCM options into the built-in Settings category as eight cards: set/restore keyboard open, controller favorite, and compatibility open bindings, plus startup-hint and close-after-command toggles.
@@ -148,4 +156,3 @@
 - Switched optional EID enrichment to `en_us`, with `ItemConfig` fallback.
 - Made both Repentance and Repentance+ use the self-contained Fusion Pixel 10/12px font pair.
 - Isolated the Mod identity, directory, SaveData, package, and future Workshop ID from Isaac Chinese Console.
-

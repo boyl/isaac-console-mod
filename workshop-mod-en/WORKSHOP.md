@@ -39,7 +39,7 @@ Subscribe, enable the Mod, start a run, and press **F6** or hold the left stick 
 **Without these Mods, the catalog, search, execution, favorites, and Custom Commands remain fully usable.**
 
 - **External Item Descriptions (EID)**: can supplement names and descriptions for additional objects; Console UI does not copy or modify EID files;
-- **Mod Config Menu (MCM)**: an optional mirror of the same five values available in built-in Settings; the built-in page remains complete when MCM is absent.
+- **Mod Config Menu (MCM)**: an optional mirror of the same six values available in built-in Settings; the built-in page remains complete when MCM is absent.
 
 ## Compatibility and Language Versions
 

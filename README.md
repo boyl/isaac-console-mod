@@ -4,8 +4,8 @@
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前候选版本 `2.5.20`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前候选内部版本 `2.5.4-en.15`、metadata `2.5.4.15`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前候选版本 `2.5.21`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前候选内部版本 `2.5.4-en.16`、metadata `2.5.4.16`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：中英文 Lua Mock、冷启动回归和双语发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
 
@@ -27,7 +27,9 @@
 
 ## 测试
 
-使用 `tests/workshop-mod/run_all_tests.py` 作为中英文统一入口，两套 95 项 Lua Mock 与冷启动回归任一失败即停止。构建后再对中英文候选分别运行 `validate_workshop_mod_zh.py` 和 `validate_workshop_mod.py`。
+全屏光标相关工作优先使用 `tools/run-cursor-acceptance.ps1 -PythonPath <python.exe> -NodePath <node.exe>` 批量验收；实机整组执行入口、起始条件与失败恢复见 [光标验收脚本](tools/acceptance/README.md)。该入口区分源码、执行器自测与真实游戏结果，后续不要将稳定流程默认拆成逐张截图对话。
+
+使用 `tests/workshop-mod/run_all_tests.py` 作为中英文统一入口，两套 Lua Mock（含全屏光标矩阵） 与冷启动回归任一失败即停止。构建后再对中英文候选分别运行 `validate_workshop_mod_zh.py` 和 `validate_workshop_mod.py`。
 
 发布前还需在 Repentance、Repentance+ 和 REPENTOGON 中分别手工验收；构建候选不等于上传授权。
 

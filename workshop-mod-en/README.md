@@ -68,3 +68,8 @@ When reporting an issue, include:
 - keyboard, mouse, and controller model/path used;
 - other enabled Mods;
 - relevant `[Console UI]` lines from `log.txt`.
+
+
+### Fullscreen Console Cursor
+
+Toggle Fullscreen Console Cursor on the second Settings page or through optional MCM. It defaults to On, applies immediately, and is saved. A white pointer with a black outline appears only in the fullscreen console. Windowed mode and game mouse controls stay unchanged; turn it off if another cursor is already visible.

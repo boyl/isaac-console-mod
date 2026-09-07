@@ -14,8 +14,8 @@ from PIL import Image
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.15"
-METADATA_VERSION = "2.5.4.15"
+DISPLAY_VERSION = "2.5.4-en.16"
+METADATA_VERSION = "2.5.4.16"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -297,7 +297,7 @@ def main() -> int:
         fail("fractional BMFont scaling would blur the UI")
     if main_lua.count("state.open =") != 1:
         fail("menu visibility must only change through setMenuOpen")
-    if main_lua.count("local function drawMenu(entries)") != 1:
+    if len(re.findall(r"local function drawMenu\(", main_lua)) != 1:
         fail("runtime must contain exactly one menu renderer")
 
     state_needles = [

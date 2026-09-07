@@ -11,11 +11,14 @@ local function fail(message)
   error("[mock game] " .. tostring(message), 2)
 end
 
+local assertionCount = 0
 local function assertTrue(value, message)
+  assertionCount = assertionCount + 1
   if not value then fail(message or "expected true") end
 end
 
 local function assertEqual(actual, expected, message)
+  assertionCount = assertionCount + 1
   if actual ~= expected then
     fail((message or "values differ") .. ": expected=" .. tostring(expected) .. " actual=" .. tostring(actual))
   end
@@ -69,6 +72,13 @@ elseif TEST_CONFIG.scenario == "upgrade" then
 elseif TEST_CONFIG.initialFavorite then
   TEST.saveData = "version=2.5.4-en.2\nfavorites=c:182\nhistory="
 end
+
+-- Keep values outside the proxy so EVERY production option write is trapped.
+TEST.gameOptions = { Fullscreen = false, MouseControl = false, UseBorderlessFullscreen = false }
+Options = setmetatable({}, {
+  __index = TEST.gameOptions,
+  __newindex = function(_, key) fail("Mod changed game option: " .. tostring(key)) end,
+})
 
 REPENTANCE_PLUS = TEST_CONFIG.repPlus == true
 REPENTOGON = TEST_CONFIG.repentogon == true and {} or nil
@@ -146,6 +156,7 @@ function Sprite()
     TEST.spriteRenders = TEST.spriteRenders + 1
     if TEST.captureGeometry then
       TEST.spriteRecords[#TEST.spriteRecords + 1] = {
+        color = self.Color,
         x = position and tonumber(position.X) or 0,
         y = position and tonumber(position.Y) or 0,
         width = self.Scale and tonumber(self.Scale.X) or 0,
@@ -1920,7 +1931,7 @@ end
 local function testMcmKeybind()
   assertTrue(TEST_CONFIG.mcm, "MCM keybind scenario requires optional MCM")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 5, "MCM settings were not registered exactly once each")
+  assertEqual(TEST.mcmAddCalls, 6, "MCM settings were not registered exactly once each")
   assertEqual(TEST.mcmCategory, IS_ZH and "Isaac Chinese Console" or "Console UI", "MCM category changed")
   assertEqual(TEST.mcmSubcategory, IS_ZH and "设置" or "Settings", "MCM subcategory changed")
   assertTrue(type(TEST.mcmSetting) == "table", "MCM keybind setting missing")
@@ -1949,7 +1960,7 @@ local function testMcmKeybind()
   state.loaded = false
   onStarted()
   assertEqual(state.openKey, Keyboard.KEY_F7, "persisted custom key did not reload")
-  assertEqual(TEST.mcmAddCalls, 5, "rewind duplicated the MCM settings")
+  assertEqual(TEST.mcmAddCalls, 6, "rewind duplicated the MCM settings")
 end
 
 local function testEidOverlayIsolation()
@@ -3021,7 +3032,7 @@ end
 local function testMcmSettings254()
   assertTrue(TEST_CONFIG.mcm, "MCM 2.5.4 scenario requires optional MCM")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 5, "MCM did not register all five settings")
+  assertEqual(TEST.mcmAddCalls, 6, "MCM did not register all six settings")
   local keyboardSetting, favoriteSetting, openFallbackSetting, startupSetting, closeSetting
   for _, setting in ipairs(TEST.mcmSettings) do
     if setting.Type == ModConfigMenu.OptionType.KEYBIND_KEYBOARD then keyboardSetting = setting end
@@ -3174,11 +3185,11 @@ local function testPartialMcmSettings()
   assertTrue(TEST_CONFIG.mcm and TEST_CONFIG.mcmNoControllerKeybind,
     "partial MCM scenario requires a missing controller keybind type")
   onStarted()
-  assertEqual(TEST.mcmAddCalls, 3, "partial MCM did not retain keyboard and boolean mirrors")
+  assertEqual(TEST.mcmAddCalls, 4, "partial MCM did not retain keyboard and boolean mirrors")
   openMenu()
   setCategory(categoryById.input_settings.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 8, "partial MCM removed built-in settings")
+  assertEqual(#settings, 9, "partial MCM removed built-in settings")
   assertEqual(settings[3].id, "controller_favorite_bind", "built-in favorite calibration depends on MCM")
   assertEqual(settings[5].id, "controller_open_calibrate", "built-in open calibration depends on MCM")
 end
@@ -3737,7 +3748,7 @@ local function testBuiltInSettings()
   openMenu()
   setCategory(categoryById.input_settings.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 8, "built-in Settings did not fit one complete page")
+  assertEqual(#settings, 9, "built-in Settings must expose nine actions across pages")
   local expectedNames = IS_ZH and {
     "键盘呼出",
     "键盘默认：F6",
@@ -3747,6 +3758,7 @@ local function testBuiltInSettings()
     "手柄呼出：自动",
     "开局键位提示",
     "普通命令后关闭",
+    "全屏光标：开启",
   } or {
     "Keyboard Open",
     "Keyboard Default: F6",
@@ -3756,6 +3768,7 @@ local function testBuiltInSettings()
     "Controller Open: Auto",
     "Startup Key Hint",
     "Close After Regular Command",
+    "Fullscreen Cursor: On",
   }
   for i, expectedName in ipairs(expectedNames) do
     assertEqual(settings[i].name, expectedName, "built-in Settings title order or wording changed at card " .. i)
@@ -3894,11 +3907,11 @@ local function testControllerOpenCompatibility()
   assertTrue(inputCategory ~= nil, "Input Settings category is unavailable without MCM")
   setCategory(inputCategory.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 8, "built-in Settings must expose all eight actions")
+  assertEqual(#settings, 9, "built-in Settings must expose all nine actions")
   local expectedSettingIds = {
     "keyboard_open_bind", "keyboard_open_reset", "controller_favorite_bind",
     "controller_favorite_reset", "controller_open_calibrate", "controller_open_reset",
-    "startup_hint_toggle", "close_after_command_toggle",
+    "startup_hint_toggle", "close_after_command_toggle", "fullscreen_cursor_toggle",
   }
   for settingIndex, expectedId in ipairs(expectedSettingIds) do
     assertEqual(settings[settingIndex].id, expectedId, "built-in setting order differs")
@@ -4032,7 +4045,19 @@ local function testControllerEnumerationFailure()
     "unreadable controller enumeration modified the binding")
 end
 
+local function testFullscreenCursor()
+  local test = dofile(MOD_ROOT .. "/../tests/workshop-mod/fullscreen_cursor_scenarios.lua")
+  test({ TEST = TEST, config = TEST_CONFIG, state = state, assertTrue = assertTrue, assertEqual = assertEqual,
+    onStarted = onStarted, onExit = onExit, onGameEnd = onGameEnd, onInput = onInput,
+    openMenu = openMenu, renderFrame = renderFrame, pressKey = pressKey, clickMouse = clickMouse,
+    pressDirection = pressDirection, runShaderCallbacks = runShaderCallbacks,
+    setCategory = setCategory, categoryById = categoryById, visibleEntries = visibleEntries,
+    computeLayout = computeLayout, saveState = saveState, CustomCommandUI = CustomCommandUI,
+    Presentation = PresentationModel, InputSettingsUI = InputSettingsUI, IS_ZH = IS_ZH })
+end
+
 local scenarios = {
+  fullscreen_cursor = testFullscreenCursor,
   search = testSearch,
   favorite = testFavorite,
   idle_restarts = testIdleRestarts,
@@ -4084,4 +4109,4 @@ local scenarios = {
 local scenario = scenarios[TEST_CONFIG.scenario]
 assertTrue(type(scenario) == "function", "unknown scenario: " .. tostring(TEST_CONFIG.scenario))
 scenario()
-print("MOCK PASS " .. tostring(TEST_CONFIG.label or TEST_CONFIG.scenario))
+print("MOCK PASS " .. tostring(TEST_CONFIG.label or TEST_CONFIG.scenario) .. "; assertions=" .. assertionCount)
