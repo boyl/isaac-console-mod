@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/adobe-fonts/source-han-sans",
+  "revision": "a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2",
+  "files": [
+    {"Path": "Regular.otf", "remote": "OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf", "Hash": "f1d8611151880c6c336aabeac4640ef434fa13cbfbf1ffe82d0a71b2a5637256"},
+    {"Path": "Medium.otf", "remote": "OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf", "Hash": "1df61d31687d04fd2f928a3bb6ca6cd61f0e988cc267cf317f32406edbb49f70"}
+  ]
+}

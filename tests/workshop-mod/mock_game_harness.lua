@@ -72,6 +72,7 @@ elseif TEST_CONFIG.scenario == "upgrade" then
 elseif TEST_CONFIG.initialFavorite then
   TEST.saveData = "version=2.5.4-en.2\nfavorites=c:182\nhistory="
 end
+if TEST_CONFIG.initialSave then TEST.saveData = TEST_CONFIG.initialSave end
 
 -- Keep values outside the proxy so EVERY production option write is trapped.
 TEST.gameOptions = { Fullscreen = false, MouseControl = false, UseBorderlessFullscreen = false }
@@ -117,7 +118,10 @@ function Font()
     self.lineHeight = tonumber(TEST_CONFIG.fontLineHeight)
       or (self.path:find("12", 1, true) and 12 or 10)
     TEST.fontLoads[#TEST.fontLoads + 1] = self.path
-    if TEST_CONFIG.fontMode == "all_fail" then
+    if TEST_CONFIG.hdFonts and self.path:find("hd_", 1, true) then
+      self.lineHeight = self.path:find("title", 1, true) and 35 or 30
+    end
+    if TEST_CONFIG.fontMode == "all_fail" or (TEST_CONFIG.hdFail and self.path:find("hd_", 1, true)) then
       self.loaded = false
     else
       self.loaded = true
@@ -126,7 +130,7 @@ function Font()
   function font:IsLoaded() return self.loaded end
   function font:GetStringWidthUTF8(value)
     if not self.loaded then return 0 end
-    return utf8Length(value) * 6
+    return utf8Length(value) * (TEST_CONFIG.hdFonts and self.path:find("hd_", 1, true) and 20 or 6)
   end
   function font:GetLineHeight() return self.lineHeight end
   function font:DrawStringUTF8(value, x, y, color, width, centered)
@@ -140,6 +144,13 @@ function Font()
         text = text, x = tonumber(x) or 0, y = tonumber(y) or 0,
         width = tonumber(width) or 0, centered = centered == true,
       }
+    end
+  end
+  if TEST_CONFIG.hdFonts then
+    function font:DrawStringScaledUTF8(value, x, y, sx, sy, color, width, centered)
+      assertEqual(sx, 0.5, "HD raster scale X")
+      assertEqual(sy, 0.5, "HD raster scale Y")
+      self:DrawStringUTF8(value, x, y, color, width, centered)
     end
   end
   return font
@@ -175,7 +186,7 @@ Keyboard = {
   KEY_0 = 48, KEY_9 = 57, KEY_A = 65, KEY_Z = 90,
   KEY_SPACE = 32, KEY_PERIOD = 46, KEY_MINUS = 45, KEY_SLASH = 47, KEY_EQUAL = 61,
   KEY_ESCAPE = 256, KEY_ENTER = 257, KEY_BACKSPACE = 259, KEY_DELETE = 261,
-  KEY_F6 = 295, KEY_F7 = 296, KEY_F8 = 297, KEY_C = 67, KEY_R = 82,
+  KEY_F4 = 293, KEY_F6 = 295, KEY_F7 = 296, KEY_F8 = 297, KEY_C = 67, KEY_R = 82,
   KEY_F = 70, KEY_D = 68, KEY_KP_ADD = 334, KEY_PAGE_UP = 266, KEY_PAGE_DOWN = 267,
   KEY_UP = 265, KEY_DOWN = 264, KEY_LEFT = 263, KEY_RIGHT = 262,
   KEY_LEFT_CONTROL = 341, KEY_RIGHT_CONTROL = 345,
@@ -3189,7 +3200,7 @@ local function testPartialMcmSettings()
   openMenu()
   setCategory(categoryById.input_settings.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 9, "partial MCM removed built-in settings")
+  assertEqual(#settings, 10, "partial MCM removed built-in settings")
   assertEqual(settings[3].id, "controller_favorite_bind", "built-in favorite calibration depends on MCM")
   assertEqual(settings[5].id, "controller_open_calibrate", "built-in open calibration depends on MCM")
 end
@@ -3748,7 +3759,7 @@ local function testBuiltInSettings()
   openMenu()
   setCategory(categoryById.input_settings.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 9, "built-in Settings must expose nine actions across pages")
+  assertEqual(#settings, 10, "built-in Settings must expose ten actions across pages")
   local expectedNames = IS_ZH and {
     "键盘呼出",
     "键盘默认：F6",
@@ -3907,7 +3918,7 @@ local function testControllerOpenCompatibility()
   assertTrue(inputCategory ~= nil, "Input Settings category is unavailable without MCM")
   setCategory(inputCategory.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 9, "built-in Settings must expose all nine actions")
+  assertEqual(#settings, 10, "built-in Settings must expose all ten actions")
   local expectedSettingIds = {
     "keyboard_open_bind", "keyboard_open_reset", "controller_favorite_bind",
     "controller_favorite_reset", "controller_open_calibrate", "controller_open_reset",
@@ -4056,7 +4067,110 @@ local function testFullscreenCursor()
     Presentation = PresentationModel, InputSettingsUI = InputSettingsUI, IS_ZH = IS_ZH })
 end
 
+local function testFirstStartCallbackInterruption()
+  -- Deliberately skip onStarted: an earlier Mod failed in PostGameStart.
+  assertEqual(state.loaded, false, "fixture must start before SaveData loading")
+  if TEST_CONFIG.blockRender then
+    local callbacks = TEST.callbackLists[ModCallbacks.MC_POST_RENDER]
+    table.insert(callbacks, 1, function() error("injected earlier Mod render failure") end)
+    for attempt = 1, 3 do
+      TEST.keyTriggers[Keyboard.KEY_F6] = true
+      local ok, err = pcall(renderFrame)
+      assertEqual(ok, false, "earlier callback error must escape the dispatcher")
+      assertTrue(tostring(err):find("injected earlier Mod render failure", 1, true) ~= nil,
+        "unexpected failure masked the injected callback error")
+      clearInput()
+      assertEqual(state.loaded, false, "blocked console callback unexpectedly loaded state")
+      assertEqual(state.open, false, "blocked console callback unexpectedly received F6")
+    end
+    table.remove(callbacks, 1)
+  end
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.loaded, true, "first render must load state without PostGameStart")
+  assertEqual(state.open, true, "F6 must open once the render callback is reachable")
+  assertEqual(TEST.getItemConfigCalls, 1, "opened menu must build its catalog")
+end
+
 local scenarios = {
+  hd_font = function()
+    onStarted()
+    assertEqual(state.hdFontEnabled, false, "HD must default off")
+    openMenu()
+    local classic = computeLayout(488, 260)
+    for _, path in ipairs(TEST.fontLoads) do assertTrue(not path:find("hd_", 1, true), "disabled HD loaded atlases") end
+    state.manualCommand = "giveitem c1"
+    state.search = "heart"
+    state.page, state.selection = 1, 1
+    local selected = visibleEntries()[1]
+    local savedCore = CustomCommandUI.buildSavePayload():gsub("hdFontEnabled=[01]", "")
+    TEST_CONFIG.saveFail = true
+    assertEqual(InputSettingsUI.toggleSetting("hd_font"), false, "failed style save accepted")
+    assertEqual(state.hdFontEnabled, false, "failed style save changed preference")
+    TEST_CONFIG.saveFail = false
+    assertTrue(InputSettingsUI.toggleSetting("hd_font"), "HD toggle failed")
+    renderFrame()
+    assertEqual(state.search, "heart", "style switch cleared search")
+    assertEqual(state.manualCommand, "giveitem c1", "style switch cleared draft")
+    assertEqual(visibleEntries()[1], selected, "style switch replaced entries")
+    assertEqual(#TEST.executed, 0, "style switch executed a command")
+    assertEqual(CustomCommandUI.buildSavePayload():gsub("hdFontEnabled=[01]", ""), savedCore, "style switch changed saved data")
+    assertTrue(TEST.saveData:find("hdFontEnabled=1", 1, true), "HD preference not saved")
+    local hd = computeLayout(488, 260)
+    if TEST_CONFIG.hdFail then
+      assertEqual(PresentationModel.typography.active, false, "failed fonts did not fall back")
+      assertEqual(hd.cardH, classic.cardH, "fallback kept HD geometry")
+      assertEqual(state.hdFontEnabled, true, "failure overwrote preference")
+      assertTrue(PresentationModel.hdWarningShown, "failure not reported")
+    else
+      assertEqual(PresentationModel.typography.active, true, "HD not active")
+      for key, value in pairs(classic) do assertEqual(hd[key], value, "HD changed classic geometry: " .. key) end
+      assertEqual(hd.gridRows, 4, "HD changed grid rows")
+      assertEqual((hd.categoryNavY - hd.categoryTop - hd.pad) / hd.categoryRowH, 6, "HD changed category capacity")
+      local font = PresentationModel.typography:get("body")
+      assertEqual(font:GetStringWidthUTF8("中😀文"), 26, "missing glyph width must use fallback font")
+      font:DrawStringUTF8("中😀文", 0, 0, KColor(1,1,1,1), 0, false)
+    end
+    state.loaded = false
+    renderFrame()
+    assertEqual(state.hdFontEnabled, true, "saved preference not reloaded")
+    assertTrue(InputSettingsUI.toggleSetting("hd_font"), "classic toggle failed")
+    renderFrame()
+    local restored = computeLayout(488, 260)
+    for key, value in pairs(classic) do assertEqual(restored[key], value, "classic layout differs: " .. key) end
+    assertEqual(PresentationModel.typography.active, false, "classic font not restored")
+  end,
+  remapped_keyboard_shared_l3 = function()
+    onStarted()
+    assertTrue(InputSettingsUI.applySetting("keyboard_open", Keyboard.KEY_F4), "F4 remap failed")
+    onStarted()
+    assertEqual(state.openKey, Keyboard.KEY_F4, "F4 did not survive loading")
+    pressKey(Keyboard.KEY_F6)
+    assertEqual(state.open, false, "old F6 still opened menu")
+    pressKey(Keyboard.KEY_F4)
+    assertEqual(state.open, true, "F4 failed to open menu")
+    pressKey(Keyboard.KEY_F4)
+    renderFrame()
+    assertEqual(onInput(nil, nil, InputHook.IS_ACTION_PRESSED, ButtonAction.ACTION_LEFT), nil,
+      "F4 close retained movement interception after release")
+    -- Another menu can observe the same raw L3 input. Its visibility is not
+    -- communicated to this Mod; model its open/close separately.
+    local otherMenuOpen = true
+    holdButton(Controller.STICK_LEFT, 30, TEST_CONFIG.controllerIndex or 0)
+    releaseButton(Controller.STICK_LEFT, TEST_CONFIG.controllerIndex or 0)
+    assertEqual(state.open, true, "remapping the keyboard unexpectedly disabled L3")
+    otherMenuOpen = false
+    renderFrame()
+    assertEqual(state.open, true, "external menu closing unexpectedly closed our menu")
+    assertEqual(onInput(nil, nil, InputHook.IS_ACTION_PRESSED, ButtonAction.ACTION_LEFT), false,
+      "open console must still intercept movement after external menu closes")
+    pressKey(Keyboard.KEY_F4)
+    renderFrame()
+    assertEqual(onInput(nil, nil, InputHook.IS_ACTION_PRESSED, ButtonAction.ACTION_LEFT), nil,
+      "closing the remaining console failed to release movement")
+    assertEqual(state.inputLease, nil, "released F4 retained an input lease")
+    assertEqual(otherMenuOpen, false, "external menu fixture changed")
+  end,
+  first_start_callback_interruption = testFirstStartCallbackInterruption,
   fullscreen_cursor = testFullscreenCursor,
   search = testSearch,
   favorite = testFavorite,

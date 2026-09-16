@@ -1,0 +1,2 @@
+# Font manifests hash exact bytes; preserve them across Windows checkouts.
+**/resources/font/hd/** -text

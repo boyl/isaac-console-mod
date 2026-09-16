@@ -57,6 +57,18 @@ def main() -> int:
             "expectedModName": expected_name,
         },
     ]
+    for block_render in (False, True):
+        cases.append({
+            "scenario": "first_start_callback_interruption",
+            "label": "first start: skipped startup callback; " + (
+                "earlier render failure blocks F6 until removed" if block_render
+                else "reachable render still opens with F6"
+            ),
+            "repPlus": True,
+            "eid": False,
+            "blockRender": block_render,
+            "expectedModName": expected_name,
+        })
     for index, config in enumerate(cases, 1):
         print(f"[{index:02d}/{len(cases):02d}] {config['label']}")
         suite.run_scenario(dll, config)

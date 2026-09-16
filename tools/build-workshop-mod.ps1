@@ -31,7 +31,9 @@ $commonFiles = @(
     'scripts/command_specs.lua',
     'scripts/command_catalog.lua',
     'scripts/custom_commands.lua',
-    'scripts/official_objects.lua'
+    'scripts/official_objects.lua',
+    'scripts/typography.lua',
+    'resources/font/hd/manifest.json'
 )
 
 $languageFiles = if ($Language -eq 'zh') {
@@ -58,7 +60,18 @@ $expectedPreview = if ($Language -eq 'zh') {
     'D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C'
 }
 
-$files = $commonFiles + $languageFiles
+$fontManifest = Get-Content -LiteralPath (Join-Path $sourceRoot 'resources/font/hd/manifest.json') -Raw | ConvertFrom-Json
+$hdFiles = @($fontManifest.files.PSObject.Properties | ForEach-Object {
+    if ($_.Name -notmatch '^(hd_(title|body|caption)(_[0-9]{3}\.png|\.fnt)|coverage\.lua|LICENSE-OFL\.txt)$') {
+        throw "高清字体清单含非法文件：$($_.Name)"
+    }
+    $relative = 'resources/font/hd/' + $_.Name
+    if ((Get-FileHash -LiteralPath (Join-Path $sourceRoot $relative)).Hash -ne $_.Value) {
+        throw "高清字体哈希不符：$relative"
+    }
+    $relative
+})
+$files = $commonFiles + $languageFiles + $hdFiles
 foreach ($relativePath in $files) {
     $sourcePath = Join-Path $sourceRoot $relativePath
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {

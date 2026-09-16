@@ -8,10 +8,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image
+from validate_hd_payload import validate_hd_payload
 
 
-DISPLAY_VERSION = "2.5.21"
-METADATA_VERSION = "2.5.21"
+DISPLAY_VERSION = "2.5.22"
+METADATA_VERSION = "2.5.22"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
@@ -64,8 +65,9 @@ def main() -> int:
         for path in root.rglob("*")
         if path.is_file()
     }
-    missing = sorted(REQUIRED_FILES - package_files)
-    unexpected = sorted(package_files - REQUIRED_FILES)
+    required = REQUIRED_FILES | validate_hd_payload(root)
+    missing = sorted(required - package_files)
+    unexpected = sorted(package_files - required)
     if missing:
         fail(f"missing files: {missing}")
     if unexpected:

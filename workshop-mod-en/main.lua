@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.16"
+local VERSION = "2.5.4-en.17"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -334,6 +334,9 @@ local state = {
 }
 
 local Presentation = {
+  hdRoot = normalizePath(getCurrentModPath()):match("(mods/[^/]+/)$") or "mods/console_ui_workshop/",
+  typographyModule = include("scripts.typography"),
+  hdCoverage = include("resources.font.hd.coverage"),
   toastDurations = { success = 30, default = 60 },
   toastColors = {
     info = TEXT.main,
@@ -575,6 +578,7 @@ InputSettingsUI.specs = {
   controller_open = { field = "controllerOpenFallbackButton", default = nil, device = "controller" },
   startup_hint = { field = "startupHintEnabled", default = true, device = "boolean" },
   close_after_command = { field = "closeAfterRegularCommand", default = true, device = "boolean" },
+  hd_font = { field = "hdFontEnabled", default = false, device = "boolean" },
   fullscreen_cursor = { field = "fullscreenCursorEnabled", default = true, device = "boolean" },
 }
 InputSettingsUI.entries = {
@@ -596,6 +600,8 @@ InputSettingsUI.entries = {
     kind = "setting_toggle", settingId = "close_after_command" },
   { id = "fullscreen_cursor_toggle", name = "Fullscreen Console Cursor", icon = "PTR",
     kind = "setting_toggle", settingId = "fullscreen_cursor" },
+  { id = "hd_font_toggle", name = "HD Font", en = "HD Font", icon = "T",
+    kind = "setting_toggle", settingId = "hd_font" },
 }
 for _, entry in ipairs(InputSettingsUI.entries) do
   entry.cat = "input_settings"
@@ -999,6 +1005,7 @@ function CustomCommandUI.buildSavePayload()
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
+      .. "hdFontEnabled=" .. (state.hdFontEnabled == true and "1" or "0") .. "\n"
       .. "fullscreenCursorEnabled=" .. (state.fullscreenCursorEnabled == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
       .. "controllerOpenFallbackButton=" .. tostring(state.controllerOpenFallbackButton or "auto") .. "\n"
@@ -1035,6 +1042,7 @@ local function loadState()
   state.startupHintEnabled = true
   state.closeAfterRegularCommand = true
   state.fullscreenCursorEnabled = true
+  state.hdFontEnabled = false
   state.controllerFavoriteButton = nil
   state.controllerOpenFallbackButton = nil
   state.customCommands:load("", nil)
@@ -1081,6 +1089,7 @@ local function loadState()
   elseif savedCloseAfterRegularCommand ~= nil then
     migrated = true
   end
+  state.hdFontEnabled = ("\n" .. parseRaw):match("\nhdFontEnabled=([^\n]*)") == "1"
   local savedFullscreenCursor = parseRaw:match("fullscreenCursorEnabled=([^\n]*)")
   if savedFullscreenCursor == "0" then
     state.fullscreenCursorEnabled = false
@@ -1576,6 +1585,8 @@ function InputSettingsUI.applySetting(settingId, value)
 end
 
 function InputSettingsUI.refreshEntries()
+  InputSettingsUI.entries[10].name = "HD Font: " .. (state.hdFontEnabled and "On" or "Off")
+  InputSettingsUI.entries[10].desc = "Off by default. Uses HD fonts at the original text size and layout. Turn off for classic fonts. Your choice is saved."
   local keyboard = InputSettingsUI.formatValue("keyboard_open", state.openKey)
   local favorite = InputSettingsUI.formatValue("controller_favorite", state.controllerFavoriteButton)
   local controllerOpen = InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton)
@@ -3323,16 +3334,41 @@ local function drawFavoriteStar(x, y, width, height, filled)
   end
 end
 
-local function drawText(value, x, y, scale, color, boxWidth, centered)
+function Presentation.syncTypography()
+  if not Presentation.typography then
+    local root = Presentation.hdRoot
+    debugLog("HD font root=" .. root)
+    Presentation.typography = Presentation.typographyModule.new({body = font10, title = font12,
+      root = root .. "resources/font/hd/", log = debugLog,
+      coverage = function() return Presentation.hdCoverage end})
+  end
+  local before = Presentation.typography.active
+  local ok, err = Presentation.typography:enable(state.hdFontEnabled == true)
+  font10, font12 = Presentation.typography:get("body"), Presentation.typography:get("title")
+  if err and not Presentation.hdWarningShown then
+    Presentation.hdWarningShown = true
+    showToast("HD font unavailable; using Classic this session", "warning", 240)
+  end
+  if before ~= Presentation.typography.active then
+    state.pointerActive, state.layoutSignature = false, nil
+    state.lastMouseX, state.lastMouseY = nil, nil
+    state.mouseDown = Input.IsMouseBtnPressed(0)
+    state.rightMouseDown = Input.IsMouseBtnPressed(1)
+    debugLog("menu style=" .. (Presentation.typography.active and "hd" or "classic"))
+  end
+end
+
+local function drawText(value, x, y, role, color, boxWidth, centered)
   if fontLoaded then
-    -- Native bitmap rendering stays sharp. Layout spacing, truncation and
-    -- dedicated detail rows handle density instead of fractional scaling.
-    local selectedFont = scale >= 0.85 and font12 or font10
+    -- Measure glyphs with the active font; keep classic container and text sizes.
+    local selectedFont = role == "title" and font12 or font10
+    if role == "caption" and Presentation.typography then selectedFont = Presentation.typography:get(role) end
     local text = tostring(value)
     local width = math.floor((boxWidth or 0) + 0.5)
     if width > 0 and selectedFont:GetStringWidthUTF8(text) > width then
       local limit = math.min(#text, 96)
-      local fitted = "..."
+      local fitted = (Presentation.typography and Presentation.typography.active
+        and selectedFont:GetStringWidthUTF8("...") > width) and "" or "..."
       while limit > 1 do
         local candidate = utf8sub(text, limit) .. "..."
         if selectedFont:GetStringWidthUTF8(candidate) <= width then
@@ -3424,6 +3460,9 @@ local function categoryFooterText(category, greedMode, width)
     candidates = { category.desc or "", category.shortDesc or "" }
   end
   local text = fittingText(candidates, width)
+  if text == "" and Presentation.typography and Presentation.typography.active then
+    return Presentation.fittingLeadingText(candidates[1], width)
+  end
   assert(text ~= "", "category description does not fit: " .. tostring(category.id))
   return text
 end
@@ -3445,6 +3484,9 @@ local function splitUtf8(value)
 end
 
 local function wrapText(value, width, maxLines)
+  if Presentation.typography and Presentation.typography.active then
+    return Presentation.typography:wrap(value, width, maxLines, "body")
+  end
   local lines = {}
   local current = ""
   local chars = splitUtf8(value)
@@ -3466,8 +3508,11 @@ local function wrapText(value, width, maxLines)
 end
 
 local function computeLayout(screenWidth, screenHeight)
-  local line10 = safeLineHeight(font10, 16)
-  local line12 = safeLineHeight(font12, line10 + 4)
+  -- The font option preserves classic control geometry and pagination.
+  local geometryBody = Presentation.typography and Presentation.typography.classic.body or font10
+  local geometryTitle = Presentation.typography and Presentation.typography.classic.title or font12
+  local line10 = safeLineHeight(geometryBody, 16)
+  local line12 = safeLineHeight(geometryTitle, line10 + 4)
   local shortSide = math.min(screenWidth, screenHeight)
   local pad = clamp(math.floor(shortSide * 0.012), 5, 12)
   local margin = clamp(math.floor(shortSide * 0.025), 8, 22)
@@ -3475,13 +3520,13 @@ local function computeLayout(screenWidth, screenHeight)
   local panelW, panelH = screenWidth - margin * 2, screenHeight - margin * 2
 
   local widestCategory = math.max(
-    safeTextWidth(font10, "ISAAC TOOLS"),
-    safeTextWidth(font10, "CONSOLE UI")
+    safeTextWidth(geometryBody, "ISAAC TOOLS"),
+    safeTextWidth(geometryBody, "CONSOLE UI")
   )
   for _, category in ipairs(Catalog.categories) do
-    widestCategory = math.max(widestCategory, safeTextWidth(font10, category.name or ""))
+    widestCategory = math.max(widestCategory, safeTextWidth(geometryBody, category.name or ""))
   end
-  local iconW = math.max(line10, safeTextWidth(font10, "ALL"))
+  local iconW = math.max(line10, safeTextWidth(geometryBody, "ALL"))
   local sidebarMin = math.floor(panelW * 0.22)
   local sidebarMax = math.floor(panelW * 0.34)
   local sidebarW = clamp(widestCategory + iconW + pad * 5, sidebarMin, sidebarMax)
@@ -3496,7 +3541,7 @@ local function computeLayout(screenWidth, screenHeight)
 
   local closeW = line10 + pad * 2
   local searchH = line10 + pad * 2
-  local desiredSearchW = safeTextWidth(font10, "Search: name/alias/ID") + pad * 3
+  local desiredSearchW = safeTextWidth(geometryBody, "Search: name/alias/ID") + pad * 3
   local searchW = clamp(desiredSearchW, math.floor(contentW * 0.30), math.floor(contentW * 0.46))
   local searchX = contentX + contentW - closeW - pad - searchW
   local searchY = panelY + pad
@@ -3514,9 +3559,9 @@ local function computeLayout(screenWidth, screenHeight)
   local cardH = math.floor((gridH - gap * (gridRows - 1)) / gridRows)
 
   local buttonH = line10 + pad * 2
-  local repeatLabelW = math.max(safeTextWidth(font10, "LB/RB"), safeTextWidth(font10, "Repeat"))
-  local countW = math.max(safeTextWidth(font10, "99"), line10 + pad)
-  local stepW = math.max(safeTextWidth(font10, "+"), line10) + pad * 2
+  local repeatLabelW = math.max(safeTextWidth(geometryBody, "LB/RB"), safeTextWidth(geometryBody, "Repeat"))
+  local countW = math.max(safeTextWidth(geometryBody, "99"), line10 + pad)
+  local stepW = math.max(safeTextWidth(geometryBody, "+"), line10) + pad * 2
   local repeatW = repeatLabelW + stepW * 2 + countW + pad * 5
   local starW = 9 + pad * 2
 
@@ -3545,6 +3590,14 @@ local function computeLayout(screenWidth, screenHeight)
     debugLog("measured layout " .. signature .. " content=" .. contentW .. "x" .. gridH)
   end
   return layout
+end
+
+function Presentation.hdCategoryName(category)
+  return category.name or ""
+end
+
+function Presentation.iconText(value)
+  return value or "?"
 end
 
 function Presentation.effectLines(entry, width)
@@ -3705,6 +3758,7 @@ local function hit(mouse, x, y, width, height)
 end
 
 local function drawToast(screenWidth, screenHeight, hostRect)
+  local toastFont = Presentation.typography and Presentation.typography:get("caption") or font10
   if state.queue and clamp(math.floor(tonumber(state.queue.total) or 1), 1, 99) > 1 then
     local queue = state.queue
     local total = clamp(math.floor(tonumber(queue.total) or 1), 1, 99)
@@ -3716,8 +3770,7 @@ local function drawToast(screenWidth, screenHeight, hostRect)
       local textY = hostRect.y + math.floor((hostRect.height - lineH) / 2)
       drawRect(hostRect.x, hostRect.y, hostRect.width, hostRect.height, COLORS.sidebar)
       drawRect(hostRect.x, hostRect.y, hostRect.width * (done / total), 2, COLORS.accent)
-      drawText("Running " .. done .. "/" .. total, contentX, textY,
-        0.64, TEXT.main, contentW, true)
+      drawText("Running " .. done .. "/" .. total, contentX, textY, "body", TEXT.main, contentW, true)
       return
     end
     local x, width = screenWidth * 0.20, screenWidth * 0.60
@@ -3726,15 +3779,15 @@ local function drawToast(screenWidth, screenHeight, hostRect)
     local prefixW = math.min(contentW, safeTextWidth(font10, prefix))
     drawRect(x, screenHeight - 28, width, 20, COLORS.panel)
     drawRect(x, screenHeight - 28, width * (done / total), 2, COLORS.accent)
-    drawText(prefix, contentX, screenHeight - 24, 0.64, TEXT.main, prefixW)
+    drawText(prefix, contentX, screenHeight - 24, "body", TEXT.main, prefixW)
     drawText(fittingInputText(queue.command, contentW - prefixW), contentX + prefixW,
-      screenHeight - 24, 0.64, TEXT.main, contentW - prefixW)
+      screenHeight - 24, "body", TEXT.main, contentW - prefixW)
   elseif state.toast and state.toastFramesRemaining > 0 then
     local maxWidth = hostRect and math.max(1, hostRect.width - 12)
       or math.max(1, math.min(screenWidth - 40, 360))
     local lines = Presentation.toastLines(state.toast, math.max(1, maxWidth - 12))
     local measuredW = 0
-    for _, line in ipairs(lines) do measuredW = math.max(measuredW, safeTextWidth(font10, line)) end
+    for _, line in ipairs(lines) do measuredW = math.max(measuredW, safeTextWidth(toastFont, line)) end
     local width = hostRect and hostRect.width
       or clamp(measuredW + 12, math.min(96, maxWidth), maxWidth)
     local contentW = math.max(1, width - 12)
@@ -3748,8 +3801,7 @@ local function drawToast(screenWidth, screenHeight, hostRect)
     drawRect(x, y, width, height, hostRect and COLORS.sidebar or COLORS.panel)
     local textY = y + math.floor((height - #lines * lineH) / 2)
     for index, line in ipairs(lines) do
-      drawText(line, x + 6, textY + (index - 1) * lineH,
-        0.64, Presentation.toastColors[state.toast.kind or "info"], contentW, hostRect ~= nil)
+      drawText(line, x + 6, textY + (index - 1) * lineH, "caption", Presentation.toastColors[state.toast.kind or "info"], contentW, hostRect ~= nil)
     end
   end
 end
@@ -3784,9 +3836,9 @@ local function drawMenu(entries, mouse)
   local sideX = L.panelX + L.pad * 2
   local sideTextW = L.sidebarW - L.pad * 4
   local sideY = L.panelY + L.pad
-  drawText("ISAAC TOOLS", sideX, sideY, 0.60, TEXT.accent, sideTextW)
-  drawText("CONSOLE UI", sideX, sideY + L.line10 + L.pad, 0.60, TEXT.main, sideTextW)
-  drawText("v" .. VERSION, sideX, sideY + (L.line10 + L.pad) * 2, 0.60, TEXT.muted, sideTextW)
+  drawText("ISAAC TOOLS", sideX, sideY, "body", TEXT.accent, sideTextW)
+  drawText("CONSOLE UI", sideX, sideY + L.line10 + L.pad, "body", TEXT.main, sideTextW)
+  drawText("v" .. VERSION, sideX, sideY + (L.line10 + L.pad) * 2, "body", TEXT.muted, sideTextW)
 
   local categoryPageCount = math.max(1, math.ceil(#Catalog.categories / CATEGORIES_PER_PAGE))
   state.categoryPage = clamp(state.categoryPage, 1, categoryPageCount)
@@ -3805,9 +3857,9 @@ local function drawMenu(entries, mouse)
         drawRect(rowX, rowY, rowW, L.categoryRowH - 1, COLORS.cardHover)
       end
       local textY = rowY + math.floor((L.categoryRowH - L.line10) / 2)
-      drawText(category.icon or "?", rowX + L.pad, textY, 0.60,
+      drawText(Presentation.iconText(category.icon), rowX + L.pad, textY, "body",
         index == state.categoryIndex and TEXT.accent or TEXT.muted, L.iconW)
-      drawText(category.name or "", rowX + L.pad * 2 + L.iconW, textY, 0.60, TEXT.main,
+      drawText(Presentation.hdCategoryName(category), rowX + L.pad * 2 + L.iconW, textY, "body", TEXT.main,
         rowW - L.iconW - L.pad * 3)
       if hovered and clicked then
         setCategory(index)
@@ -3828,10 +3880,10 @@ local function drawMenu(entries, mouse)
   local categoryNextLabel = categoryPaging and "RT" or ">"
   drawRect(navX, L.categoryNavY, arrowW, L.categoryNavH, COLORS.selected)
   drawRect(navX + navW - arrowW, L.categoryNavY, arrowW, L.categoryNavH, COLORS.selected)
-  drawText(categoryPreviousLabel, navX, navTextY, 0.60, TEXT.main, arrowW, true)
+  drawText(categoryPreviousLabel, navX, navTextY, "body", TEXT.main, arrowW, true)
   drawText(state.categoryPage .. "/" .. categoryPageCount,
-    navX + arrowW, navTextY, 0.60, TEXT.muted, navW - arrowW * 2, true)
-  drawText(categoryNextLabel, navX + navW - arrowW, navTextY, 0.60, TEXT.main, arrowW, true)
+    navX + arrowW, navTextY, "body", TEXT.muted, navW - arrowW * 2, true)
+  drawText(categoryNextLabel, navX + navW - arrowW, navTextY, "body", TEXT.main, arrowW, true)
   if clicked and hit(mouse, navX, L.categoryNavY, arrowW, L.categoryNavH) then
     changeCategoryPage(-1)
     state.sidebarFocus = true
@@ -3845,11 +3897,11 @@ local function drawMenu(entries, mouse)
   local category = currentCategory()
   local titleY = L.panelY + L.pad
   local titleW = math.max(1, L.searchX - L.contentX - L.pad)
-  local titleText = state.search ~= "" and "Global Search" or category.name
-  local titleScale = safeTextWidth(font12, titleText) <= titleW and 0.90 or 0.60
+  local titleText = state.search ~= "" and "Global Search" or Presentation.hdCategoryName(category)
+  local titleRole = (safeTextWidth(font12, titleText) <= titleW) and "title" or "body"
   local fittedTitle = fittingText({ titleText }, titleW)
   drawText(fittedTitle ~= "" and fittedTitle or titleText,
-    L.contentX, titleY, titleScale, TEXT.main, titleW)
+    L.contentX, titleY, titleRole, TEXT.main, titleW)
 
   drawRect(L.searchX, L.searchY, L.searchW, L.searchH,
     state.inputMode == "search" and COLORS.selected or COLORS.sidebar)
@@ -3863,15 +3915,12 @@ local function drawMenu(entries, mouse)
   end
   local clearW = state.search ~= "" and (L.line10 + L.pad * 2) or 0
   searchLabel = fittingInputText(searchLabel, L.searchW - L.pad * 2 - clearW)
-  drawText(searchLabel, L.searchX + L.pad, L.searchY + math.floor((L.searchH - L.line10) / 2),
-    0.60, state.inputMode == "search" and TEXT.main or TEXT.muted,
+  drawText(searchLabel, L.searchX + L.pad, L.searchY + math.floor((L.searchH - L.line10) / 2), "body", state.inputMode == "search" and TEXT.main or TEXT.muted,
     L.searchW - L.pad * 2 - clearW)
   if clearW > 0 then
-    drawText("×", L.searchX + L.searchW - clearW, L.searchY + math.floor((L.searchH - L.line10) / 2),
-      0.60, TEXT.accent, clearW, true)
+    drawText("×", L.searchX + L.searchW - clearW, L.searchY + math.floor((L.searchH - L.line10) / 2), "body", TEXT.accent, clearW, true)
   end
-  drawText("×", L.closeX, L.searchY + math.floor((L.searchH - L.line10) / 2),
-    0.60, TEXT.accent, L.closeW, true)
+  drawText("×", L.closeX, L.searchY + math.floor((L.searchH - L.line10) / 2), "body", TEXT.accent, L.closeW, true)
 
   if clicked and clearW > 0 and hit(mouse, L.searchX + L.searchW - clearW, L.searchY, clearW, L.searchH) then
     state.search = ""
@@ -3906,9 +3955,9 @@ local function drawMenu(entries, mouse)
   local entryNextLabel = entryPaging and "RT" or ">"
   drawRect(pageNavX, pageButtonY, pageArrowW, pageButtonH, COLORS.selected)
   drawRect(pageNavX + pageArrowW + pageLabelW, pageButtonY, pageArrowW, pageButtonH, COLORS.selected)
-  drawText(entryPreviousLabel, pageNavX, subY, 0.60, TEXT.main, pageArrowW, true)
-  drawText(pageLabel, pageNavX + pageArrowW, subY, 0.60, TEXT.muted, pageLabelW, true)
-  drawText(entryNextLabel, pageNavX + pageArrowW + pageLabelW, subY, 0.60, TEXT.main, pageArrowW, true)
+  drawText(entryPreviousLabel, pageNavX, subY, "body", TEXT.main, pageArrowW, true)
+  drawText(pageLabel, pageNavX + pageArrowW, subY, "body", TEXT.muted, pageLabelW, true)
+  drawText(entryNextLabel, pageNavX + pageArrowW + pageLabelW, subY, "body", TEXT.main, pageArrowW, true)
   if clicked and hit(mouse, pageNavX, pageButtonY, pageArrowW, pageButtonH) then
     changeEntryPage(-1, entries)
   elseif clicked and hit(mouse, pageNavX + pageArrowW + pageLabelW, pageButtonY, pageArrowW, pageButtonH) then
@@ -3917,9 +3966,9 @@ local function drawMenu(entries, mouse)
 
   local pageStart = (state.page - 1) * ITEMS_PER_PAGE
   if #entries == 0 and category.id == "featured" then
-    drawText("No favorites yet", L.contentX, L.gridY + L.cardH, 0.72, TEXT.main, L.contentW, true)
+    drawText("No favorites yet", L.contentX, L.gridY + L.cardH, "body", TEXT.main, L.contentW, true)
     drawText(Presentation.emptyFeaturedHint(), L.contentX,
-      L.gridY + L.cardH + L.line10 + L.pad, 0.60, TEXT.muted, L.contentW, true)
+      L.gridY + L.cardH + L.line10 + L.pad, "body", TEXT.muted, L.contentW, true)
   end
   for localIndex = 1, ITEMS_PER_PAGE do
     local entry = entries[pageStart + localIndex]
@@ -3942,9 +3991,9 @@ local function drawMenu(entries, mouse)
         and state.favorites[entry.objectKey] == true
       local favoriteW = entry.canFavorite and L.starW or 0
       local favoriteX = x + L.cardW - favoriteW
-      drawText(entry.icon or "?", iconX, textY, 0.60,
+      drawText(Presentation.iconText(entry.icon), iconX, textY, "body",
         entryDisabled and TEXT.muted or (entry.tier == "S" and TEXT.accent or TEXT.gold), L.iconW, true)
-      drawText(entry.name or "", iconX + L.iconW + L.pad, textY, 0.60,
+      drawText(entry.name or "", iconX + L.iconW + L.pad, textY, "body",
         entryDisabled and TEXT.muted or TEXT.main,
         math.max(1, favoriteX - (iconX + L.iconW + L.pad) - L.pad))
       if favoriteW > 0 then
@@ -3990,16 +4039,16 @@ local function drawMenu(entries, mouse)
   local footerTextY = L.footerY + L.pad
   local repeatX = L.contentX + L.pad
   local repeatLabel = Presentation.repeatLabel()
-  drawText(repeatLabel, repeatX, footerTextY, 0.60, TEXT.main, L.repeatLabelW)
+  drawText(repeatLabel, repeatX, footerTextY, "body", TEXT.main, L.repeatLabelW)
   local minusX = repeatX + L.repeatLabelW + L.pad
   local countX = minusX + L.stepW + L.pad
   local plusX = countX + L.countW + L.pad
   drawRect(minusX, L.footerY + L.pad, L.stepW, L.buttonH, COLORS.card)
-  drawText("-", minusX, footerTextY, 0.60, TEXT.main, L.stepW, true)
-  drawText(tostring(state.repeatCount), countX, footerTextY, 0.60,
+  drawText("-", minusX, footerTextY, "body", TEXT.main, L.stepW, true)
+  drawText(tostring(state.repeatCount), countX, footerTextY, "body",
     state.repeatCount > 20 and TEXT.warning or TEXT.main, L.countW, true)
   drawRect(plusX, L.footerY + L.pad, L.stepW, L.buttonH, COLORS.card)
-  drawText("+", plusX, footerTextY, 0.60, TEXT.accent, L.stepW, true)
+  drawText("+", plusX, footerTextY, "body", TEXT.accent, L.stepW, true)
   if state.inputMode == nil and clicked
       and hit(mouse, minusX, L.footerY + L.pad, L.stepW, L.buttonH) then changeRepeat(-1) end
   if state.inputMode == nil and clicked
@@ -4018,7 +4067,7 @@ local function drawMenu(entries, mouse)
     } or {
       "Name / alias / command / ID",
       "Name / alias / ID",
-    }, fullDetailW), fullDetailX, footerTextY + rowStep, 0.60, TEXT.main, fullDetailW)
+    }, fullDetailW), fullDetailX, footerTextY + rowStep, "body", TEXT.main, fullDetailW)
     local searchHint = state.controlMode == "controller"
       and fittingText({
         "Ctrl+A: select all · Enter/A: done · Esc/B: back",
@@ -4028,18 +4077,17 @@ local function drawMenu(entries, mouse)
         "Ctrl+A: select all · Enter: done · Esc: back",
         "Ctrl+A · Enter · Esc",
       }, fullDetailW)
-    drawText(searchHint, fullDetailX, footerTextY + rowStep * 2,
-      0.60, TEXT.muted, fullDetailW)
+    drawText(searchHint, fullDetailX, footerTextY + rowStep * 2, "body", TEXT.muted, fullDetailW)
   elseif footerMode == "setting_capture" then
     local calibration = state.controllerCalibration
     local status = calibration and calibration.status or "Calibration has ended"
     drawText(fittingText({ status }, fullDetailW), fullDetailX,
-      footerTextY + rowStep, 0.60, TEXT.accent, fullDetailW)
+      footerTextY + rowStep, "body", TEXT.accent, fullDetailW)
     local hint = calibration and calibration.stage == "confirm"
       and "Enter/A: save · Esc/B: cancel"
       or "Inputs are scanned only during setup · Esc/B: cancel · Timeout keeps the old setting"
     drawText(fittingText({ hint }, fullDetailW), fullDetailX,
-      footerTextY + rowStep * 2, 0.60, TEXT.muted, fullDetailW)
+      footerTextY + rowStep * 2, "body", TEXT.muted, fullDetailW)
   elseif footerMode == "command" then
     local commandLabel = "Cmd: "
     local commandLabelW = math.min(fullDetailW, safeTextWidth(font10, commandLabel) + L.pad)
@@ -4047,9 +4095,9 @@ local function drawMenu(entries, mouse)
     local commandInput = state.commandSelectAll
       and ("[" .. state.manualCommand .. "]") or (state.manualCommand .. "_")
     local commandY = footerTextY + rowStep
-    drawText(commandLabel, fullDetailX, commandY, 0.60, TEXT.accent, commandLabelW)
+    drawText(commandLabel, fullDetailX, commandY, "body", TEXT.accent, commandLabelW)
     drawText(fittingInputText(commandInput, commandInputW), fullDetailX + commandLabelW,
-      commandY, 0.60, TEXT.accent, commandInputW)
+      commandY, "body", TEXT.accent, commandInputW)
     local awaitingUnknown = state.unknownCommandConfirmation == trim(state.manualCommand)
     local commandHint = awaitingUnknown
       and fittingText({ "Unknown/third-party command: press Enter again to run once", "Unknown: press Enter again" }, fullDetailW)
@@ -4062,8 +4110,7 @@ local function drawMenu(entries, mouse)
           "Up/Down history · Ctrl+A · Enter · Esc",
           "History ↑↓ · Ctrl+A · Enter · Esc",
         }, fullDetailW))
-    drawText(commandHint, fullDetailX, footerTextY + rowStep * 2,
-      0.60, awaitingUnknown and TEXT.warning or TEXT.muted, fullDetailW)
+    drawText(commandHint, fullDetailX, footerTextY + rowStep * 2, "body", awaitingUnknown and TEXT.warning or TEXT.muted, fullDetailW)
   elseif footerMode == "custom_command" then
     local editingName = state.customEditStage == "name"
     local label = editingName and "Name (optional): " or "Custom command: "
@@ -4071,22 +4118,19 @@ local function drawMenu(entries, mouse)
     local labelW = math.min(fullDetailW, safeTextWidth(font10, label) + L.pad)
     local inputW = math.max(1, fullDetailW - labelW)
     local input = state.customSelectAll and ("[" .. value .. "]") or (value .. "_")
-    drawText(label, fullDetailX, footerTextY + rowStep, 0.60, TEXT.accent, labelW)
+    drawText(label, fullDetailX, footerTextY + rowStep, "body", TEXT.accent, labelW)
     drawText(fittingInputText(input, inputW), fullDetailX + labelW,
-      footerTextY + rowStep, 0.60, TEXT.accent, inputW)
+      footerTextY + rowStep, "body", TEXT.accent, inputW)
     local hint = editingName and "Name may be blank · Enter saves · Esc cancels"
       or "Up/Down history · Advanced raw passthrough · Enter continues · Esc cancels"
-    drawText(fittingText({ hint }, fullDetailW), fullDetailX, footerTextY + rowStep * 2,
-      0.60, TEXT.muted, fullDetailW)
+    drawText(fittingText({ hint }, fullDetailW), fullDetailX, footerTextY + rowStep * 2, "body", TEXT.muted, fullDetailW)
     drawText("64 KiB total storage limit; an oversized change is fully rolled back",
-      fullDetailX, footerTextY + rowStep * 3, 0.60, TEXT.muted, fullDetailW)
+      fullDetailX, footerTextY + rowStep * 3, "body", TEXT.muted, fullDetailW)
   elseif footerMode == "category" then
     local categoryText = categoryFooterText(footerTarget, greedMode, fullDetailW)
-    drawText(categoryText, fullDetailX, footerTextY + rowStep,
-      0.60, TEXT.main, fullDetailW)
+    drawText(categoryText, fullDetailX, footerTextY + rowStep, "body", TEXT.main, fullDetailW)
     local categoryHint = Presentation.categoryHint()
-    drawText(categoryHint, fullDetailX, footerTextY + rowStep * 2,
-      0.60, TEXT.muted, fullDetailW)
+    drawText(categoryHint, fullDetailX, footerTextY + rowStep * 2, "body", TEXT.muted, fullDetailW)
   elseif footerMode == "entry" then
     local activeEntry = footerTarget
     local detailEntryId = activeEntry.objectKey
@@ -4104,15 +4148,15 @@ local function drawMenu(entries, mouse)
     -- Row 0 is shared with the repeat controls, so it only carries the page
     -- indicator. The title receives the full width on row 1.
     drawText(indicator, L.contentX + L.contentW - L.pad - indicatorW,
-      footerTextY, 0.60, effectPageCount > 1 and TEXT.accent or TEXT.muted, indicatorW, true)
+      footerTextY, "body", effectPageCount > 1 and TEXT.accent or TEXT.muted, indicatorW, true)
     local detailTitle = activeEntry.name or activeEntry.en or ""
     if activeEntry.en and activeEntry.en ~= "" and activeEntry.en ~= detailTitle then
       detailTitle = detailTitle .. " / " .. activeEntry.en
     end
-    drawText(detailTitle, fullDetailX, footerTextY + rowStep, 0.60, TEXT.main, fullDetailW)
+    drawText(detailTitle, fullDetailX, footerTextY + rowStep, "body", TEXT.main, fullDetailW)
     local effectLine = effectLines[state.detailPage]
     if effectLine then
-      drawText(effectLine, fullDetailX, footerTextY + rowStep * 2, 0.60, TEXT.main, fullDetailW)
+      drawText(effectLine, fullDetailX, footerTextY + rowStep * 2, "body", TEXT.main, fullDetailW)
     end
     local effectHitY = footerTextY + rowStep * 2
     if effectPageCount > 1 and clicked and hit(mouse, fullDetailX, effectHitY, fullDetailW, rowStep) then
@@ -4146,10 +4190,10 @@ local function drawMenu(entries, mouse)
       and hit(mouse, fullDetailX, commandY, commandW, rowStep)
     local commandColor = activeEntry.catalogAction == "disabled" and TEXT.warning
       or (commandHovered and TEXT.accent or TEXT.muted)
-    drawText(commandLabel, fullDetailX, commandY, 0.60,
+    drawText(commandLabel, fullDetailX, commandY, "body",
       commandColor, commandLabelW)
     drawText(fittingInputText(commandValue, commandValueW),
-      fullDetailX + commandLabelW, commandY, 0.60, commandColor, commandValueW)
+      fullDetailX + commandLabelW, commandY, "body", commandColor, commandValueW)
     if not isSetting and commandHovered and clicked then
       if activeEntry.kind == "custom_command" or activeEntry.kind == "custom_add" then
         CustomCommandUI.beginEdit(activeEntry.kind == "custom_command" and activeEntry or nil)
@@ -4158,19 +4202,16 @@ local function drawMenu(entries, mouse)
       end
     end
     if detailHint then
-      drawText(detailHint, detailX, footerTextY, 0.60, TEXT.muted, topHintW)
+      drawText(detailHint, detailX, footerTextY, "body", TEXT.muted, topHintW)
     end
     if hintOnTop then
-      drawText(hint, detailX, footerTextY, 0.60, TEXT.muted, hintW)
+      drawText(hint, detailX, footerTextY, "body", TEXT.muted, hintW)
     elseif hint ~= "" and hintW > L.pad then
-      drawText(hint, fullDetailX + commandW + L.pad, footerTextY + rowStep * 3,
-        0.60, TEXT.muted, hintW)
+      drawText(hint, fullDetailX + commandW + L.pad, footerTextY + rowStep * 3, "body", TEXT.muted, hintW)
     end
   else
-    drawText("No matching entries in this view", fullDetailX, footerTextY + rowStep,
-      0.60, TEXT.warning, fullDetailW)
-    drawText("Clear the search or try another term", fullDetailX, footerTextY + rowStep * 2,
-      0.60, TEXT.muted, fullDetailW)
+    drawText("No matching entries in this view", fullDetailX, footerTextY + rowStep, "body", TEXT.warning, fullDetailW)
+    drawText("Clear the search or try another term", fullDetailX, footerTextY + rowStep * 2, "body", TEXT.muted, fullDetailW)
   end
 
   state.mouseDown = mousePressed
@@ -4183,6 +4224,7 @@ local function drawMenu(entries, mouse)
 end
 
 function Presentation.renderMenuSurface(entries)
+  Presentation.syncTypography()
   local mouse = Isaac.WorldToScreen(Input.GetMousePosition(true))
   pcall(function() Game():GetHUD():SetVisible(false) end)
   if fontLoaded then
@@ -4200,8 +4242,24 @@ function Presentation.renderMenuSurface(entries)
   Presentation.drawFullscreenCursor(mouse)
 end
 
+function Presentation.traceMenu()
+  -- Trace state changes without search text, custom commands or player data.
+  local category = Catalog.categories[state.categoryIndex]
+  local entry = state.open and selectedEntry(visibleEntries()) or nil
+  local signature = table.concat({state.open and "open" or "closed",
+    Game():IsPaused() and "paused" or "active", category and category.id or "none",
+    state.sidebarFocus and "sidebar" or "entries", tostring(state.page), tostring(state.selection),
+    entry and tostring(entry.id or "object") or "none", state.inputMode or "none",
+    Presentation.typography and Presentation.typography.active and "hd" or "classic",
+    tostring(ITEMS_PER_PAGE)}, "|")
+  if Presentation.lastTrace ~= signature then
+    Presentation.lastTrace = signature
+    debugLog("menu-state " .. signature)
+  end
+end
 local function onRender()
   loadState()
+  Presentation.traceMenu()
   state.controllerCandidateSnapshot = nil
   local paused = Game():IsPaused()
   local nativePauseOwnsScreen = paused and state.runEndState ~= "game_over"
@@ -4246,6 +4304,8 @@ local function onRender()
   -- Building 732 runtime entries and scanning them is menu work. Deferring it
   -- keeps normal gameplay, R restarts and exits independent of the catalog.
   loadCompleteCatalog()
+  Presentation.syncTypography()
+  computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
   local entries = resolveInitialMenuFocus(visibleEntries())
   if not inputHandled and not blockResumeInput then handleKeyboardAndController(entries) end
   if not state.open then

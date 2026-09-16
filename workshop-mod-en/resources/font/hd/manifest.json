@@ -1,0 +1,69 @@
+{
+  "source": {
+    "repository": "https://github.com/adobe-fonts/source-han-sans",
+    "files": [
+      {
+        "Path": "Medium.otf",
+        "Hash": "1DF61D31687D04FD2F928A3BB6CA6CD61F0E988CC267CF317F32406EDBB49F70"
+      },
+      {
+        "Path": "Regular.otf",
+        "Hash": "F1D8611151880C6C336AABEAC4640EF434FA13CBFBF1FFE82D0A71B2A5637256"
+      }
+    ],
+    "revision": "a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2"
+  },
+  "profiles": {
+    "title": {
+      "logicalSize": 12,
+      "atlasSize": 24,
+      "scale": 0.5,
+      "lineHeight": 17.5,
+      "baseline": 14.0,
+      "glyphs": 7544,
+      "pages": 6
+    },
+    "body": {
+      "logicalSize": 10,
+      "atlasSize": 20,
+      "scale": 0.5,
+      "lineHeight": 15.0,
+      "baseline": 12.0,
+      "glyphs": 7544,
+      "pages": 5
+    },
+    "caption": {
+      "logicalSize": 10,
+      "atlasSize": 20,
+      "scale": 0.5,
+      "lineHeight": 15.0,
+      "baseline": 12.0,
+      "glyphs": 7544,
+      "pages": 5
+    }
+  },
+  "requiredGlyphs": 1200,
+  "files": {
+    "coverage.lua": "daf12556fb06432367202c52f8a0884467c3e54fce764646a030cd56acc08eb2",
+    "hd_body.fnt": "0360352c94af5a7f8d373267db203b2c12fab6a0fb4ecfc058871b9a844f381d",
+    "hd_body_000.png": "18c441d16e4005ca7160bd3a8a5a4f8352cded07c07cac519731c9388711d4ac",
+    "hd_body_001.png": "a7f39b522dac3b88ba8ab36dd60cd701244753d3590e47c6f7eb577531ae4f80",
+    "hd_body_002.png": "126be37ac94e06c038edd53452bf31670c66152f24d041c3ce8f0630cc5af2fc",
+    "hd_body_003.png": "addbe478557ce2dd318cbb2255fe5c982bdad993eaf23106a262b5300a004609",
+    "hd_body_004.png": "a04a5e75b5b3ad0bfec524f1fb0848f95930f62fda18fb83c05e1272a8952a31",
+    "hd_caption.fnt": "3d46480a8065082012b93f51389334a69c848f0d7b8b775035305f67e93fd183",
+    "hd_caption_000.png": "18c441d16e4005ca7160bd3a8a5a4f8352cded07c07cac519731c9388711d4ac",
+    "hd_caption_001.png": "a7f39b522dac3b88ba8ab36dd60cd701244753d3590e47c6f7eb577531ae4f80",
+    "hd_caption_002.png": "126be37ac94e06c038edd53452bf31670c66152f24d041c3ce8f0630cc5af2fc",
+    "hd_caption_003.png": "addbe478557ce2dd318cbb2255fe5c982bdad993eaf23106a262b5300a004609",
+    "hd_caption_004.png": "a04a5e75b5b3ad0bfec524f1fb0848f95930f62fda18fb83c05e1272a8952a31",
+    "hd_title.fnt": "3f43053e41fc8ddfd73803d20123d4a69492f3e2006b9acdbaa5aa042781ac0d",
+    "hd_title_000.png": "0e8885e255e6c23eba04869b6c30f17f300789a0b88a3c77aad395b596fc03a0",
+    "hd_title_001.png": "cb5589bbb88669d08190902bdeb8fdd9cdec7bbfccd8d2bf0763327f18fd3e3d",
+    "hd_title_002.png": "56ac558215761b5a1b9cabfdc381017bea219118e865ddc6920bd426d784f805",
+    "hd_title_003.png": "f2f7a7db473809b29c3ff0927ddb224bdfc9d02dcf6b709418776dc4f2d87326",
+    "hd_title_004.png": "8d402a35e557502a8010427e515224e3f6c1039dcbb6c8105196901c923dbeca",
+    "hd_title_005.png": "ebc96016a421ce2c98771cf829e686b9779a65f64e58e40dad4b1888a6c08f61",
+    "LICENSE-OFL.txt": "fcac737e761ec63dbfbdce11030a1780161920d80315edba9c8beff1c2bac5a2"
+  }
+}

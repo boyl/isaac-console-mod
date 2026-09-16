@@ -95,7 +95,7 @@ return function(env)
 
   env.setCategory(env.categoryById.input_settings.index)
   local entries = env.visibleEntries()
-  eq(#entries, 9, "new setting must be the ninth action")
+  eq(#entries, 10, "settings include cursor and optional HD font")
   eq(entries[9].id, "fullscreen_cursor_toggle", "existing setting order changed")
   eq(entries[9].name, env.IS_ZH and "全屏光标：开启" or "Fullscreen Cursor: On", "enabled state missing from card title")
   state.sidebarFocus = false
