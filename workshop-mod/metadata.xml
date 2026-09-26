@@ -44,6 +44,7 @@
 
 [h1]兼容性与语言版本[/h1]
 同一订阅支持 Repentance、Repentance+ 与 REPENTOGON（忏悔龙），无需安装第二个运行时版本。
+为避免 Repentance+ 重开时瞬间黑屏，本版本不加载自定义 Shader；死亡结算菜单可能被原生遗书遮挡。其他 Mod 的 Shader 仍可能造成同类问题。
 
 中文版与英文版使用相同的 F6 和 L3 呼出方式；可以同时订阅，但请只启用一个语言版本。
 
@@ -51,7 +52,7 @@
 这是用于本地娱乐、构筑测试和截图录制的调试工具，会改变当前局面。请勿用于每日挑战或在线联机；重要存档建议提前备份。
 
 本 Mod 不联网、不启动外部程序。反馈问题时，请提供游戏版本、DLC/运行时、已启用 Mod 列表和 log.txt 相关内容。</description>
-    <version>2.5.22</version>
+    <version>2.5.23</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

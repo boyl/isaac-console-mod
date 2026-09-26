@@ -2586,19 +2586,12 @@ local function testGameOverOverlayAccess()
 
   TEST.rendered = {}
   runCallbacks(ModCallbacks.MC_POST_RENDER)
-  assertEqual(#TEST.rendered, 0,
-    "Game Over menu rendered in MC_POST_RENDER below the native paper")
-  TEST.rendered[#TEST.rendered + 1] = "__NATIVE_GAME_OVER__"
-  runShaderCallbacks("UnrelatedShader")
-  assertEqual(#TEST.rendered, 1, "unrelated shader rendered the Game Over menu")
-  runShaderCallbacks("IsaacConsoleLateOverlay")
-  assertTrue(#TEST.rendered > 1, "late shader did not render the Game Over menu")
-  assertEqual(TEST.rendered[1], "__NATIVE_GAME_OVER__",
-    "Game Over menu was not rendered after the native paper")
-  local renderedAfterLatePass = #TEST.rendered
-  runShaderCallbacks("IsaacConsoleLateOverlay")
-  assertEqual(#TEST.rendered, renderedAfterLatePass,
-    "late shader rendered the menu more than once in one frame")
+  do
+    assertTrue(#TEST.rendered > 0, "shader-free Game Over menu has no ordinary render path")
+    local count = #TEST.rendered
+    runShaderCallbacks("IsaacConsoleLateOverlay")
+    assertEqual(#TEST.rendered, count, "shader-free build rendered in the shader callback")
+  end
 
   pressKey(Keyboard.KEY_F6)
   assertEqual(state.open, false, "F6 did not close the Game Over overlay")

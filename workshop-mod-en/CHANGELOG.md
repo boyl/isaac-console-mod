@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.4-en.18
+
+- Removed the custom shader to address the instant black screen when holding R in Repentance+. The equivalent Chinese test build was confirmed to restore the fade.
+- The Game Over menu now uses ordinary rendering and may be covered by the native death screen. Normal gameplay controls and save data behavior are unchanged.
+- Updated bilingual regression and package checks to reject leftover shader files.
+
 
 ## 2.5.4-en.16
 

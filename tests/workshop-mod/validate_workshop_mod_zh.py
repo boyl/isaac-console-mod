@@ -11,8 +11,8 @@ from PIL import Image
 from validate_hd_payload import validate_hd_payload
 
 
-DISPLAY_VERSION = "2.5.22"
-METADATA_VERSION = "2.5.22"
+DISPLAY_VERSION = "2.5.23"
+METADATA_VERSION = "2.5.23"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
@@ -20,7 +20,6 @@ REQUIRED_FILES = {
     "main.lua",
     "metadata.xml",
     "preview.png",
-    "content/shaders.xml",
     "FONT-LICENSE-OFL.txt",
     "THIRD-PARTY-DATA.md",
     "THIRD-PARTY-FONTS.md",
@@ -121,10 +120,8 @@ def main() -> int:
         if forbidden_source in main_lua:
             fail(f"runtime-specific controller behavior remains: {forbidden_source}")
 
-    shader_root = ET.parse(root / "content/shaders.xml").getroot()
-    shader = shader_root.find("./shader[@name='IsaacConsoleLateOverlay']")
-    if shader is None or shader.find("vertex") is None or shader.find("fragment") is None:
-        fail("late-overlay pass-through shader is missing or incomplete")
+    if list(root.rglob("shaders.xml")) or "lateOverlayEnabled = false" not in main_lua:
+        fail("restart-fade fix requires a shader-free payload and ordinary rendering")
 
     animation_root = ET.parse(root / "resources/gfx/ui/isaac_console_pixel.anm2").getroot()
     animation_info = animation_root.find("Info")

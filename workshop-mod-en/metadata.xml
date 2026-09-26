@@ -44,6 +44,7 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 
 [h1]Compatibility and Language Versions[/h1]
 One subscription supports Repentance, Repentance+, and REPENTOGON without a second runtime-specific edition.
+This version removes the custom shader to restore the Repentance+ restart fade. The Game Over menu may be covered by the native death screen. Shaders from other mods may still cause the same issue.
 
 Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may subscribe to both, but enable only one language version at a time.
 
@@ -51,7 +52,7 @@ Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may s
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 This Mod does not access the network or launch external programs. When reporting a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.17</version>
+    <version>2.5.4.18</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

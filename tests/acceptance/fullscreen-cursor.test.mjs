@@ -15,12 +15,12 @@ async function session({enabled = true, fault = '', legacy = false} = {}) {
     savePath: path.join(root, fault === 'wrong-slot' ? 'save2.dat' : 'save1.dat'), optionsPath: path.join(root, 'options.ini'),
     logPath: path.join(root, 'game.log'), installedMain: path.join(repo, 'workshop-mod/main.lua'),
     gameExe: 'C:/game/isaac-ng.exe', timeoutMs: 600, settleMs: 0, captureIntervalMs: 0};
-  const original = legacy ? 'version=2.5.20\nfavorites=c:182\n'
-    : `version=2.5.21\nfullscreenCursorEnabled=${enabled ? 1 : 0}\nfavorites=c:182\n`;
-  await fs.writeFile(config.savePath, original);
-  await fs.writeFile(config.optionsPath, 'Fullscreen=1\nUseExclusiveFullscreen=0\nMouseControl=0\n');
   const source = await fs.readFile(config.installedMain, 'utf8');
   const version = source.match(/local VERSION = "([^"]+)"/)[1];
+  const original = legacy ? 'version=2.5.20\nfavorites=c:182\n'
+    : `version=${version}\nfullscreenCursorEnabled=${enabled ? 1 : 0}\nfavorites=c:182\n`;
+  await fs.writeFile(config.savePath, original);
+  await fs.writeFile(config.optionsPath, 'Fullscreen=1\nUseExclusiveFullscreen=0\nMouseControl=0\n');
   await fs.writeFile(config.logPath, `Binding of Isaac: Repentance+ v1.9.7.17\n[Isaac Chinese Console] v${version};\nLoading PersistentGameData from Steam Cloud: rep+persistentgamedata1.dat.`);
   let clicks = 0, captures = 0, value = enabled;
   const window = {id: 1, app: config.gameExe, title: 'Isaac'};
@@ -70,7 +70,7 @@ test('旧存档缺省开启并保留迁移之外的全部字段', async () => {
   const s = await session({legacy: true});
   assert.equal(s.result.status, 'PASS'); assert.equal(s.clicks, 2);
   assert.equal(s.result.restoration, 'restored-with-save-migration');
-  assert.equal(s.save, 'version=2.5.21\nfullscreenCursorEnabled=1\nfavorites=c:182\n');
+  assert.equal(s.save, 'version=2.5.23\nfullscreenCursorEnabled=1\nfavorites=c:182\n');
 });
 for (const fault of ['wrong-page', 'stale', 'ambiguous', 'wrong-slot']) {
   test(`前置失败不点击：${fault}`, async () => {

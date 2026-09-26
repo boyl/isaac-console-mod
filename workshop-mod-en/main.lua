@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.17"
+local VERSION = "2.5.4-en.18"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -334,6 +334,7 @@ local state = {
 }
 
 local Presentation = {
+  lateOverlayEnabled = false, -- Rep+ custom shaders break the native restart fade.
   hdRoot = normalizePath(getCurrentModPath()):match("(mods/[^/]+/)$") or "mods/console_ui_workshop/",
   typographyModule = include("scripts.typography"),
   hdCoverage = include("resources.font.hd.coverage"),
@@ -4316,11 +4317,12 @@ local function onRender()
   -- The native Game Over paper is drawn after MC_POST_RENDER. Defer only this
   -- surface to the shader callback so the menu remains above it; input and all
   -- non-Game-Over rendering stay on the established callback path.
-  if state.runEndState == "game_over" then return end
+  if state.runEndState == "game_over" and Presentation.lateOverlayEnabled then return end
   Presentation.renderMenuSurface(entries)
 end
 
 function Presentation.onLateOverlayShader(_, shaderName)
+  if not Presentation.lateOverlayEnabled then return nil end
   if shaderName ~= "IsaacConsoleLateOverlay"
       or state.runEndState ~= "game_over" or not state.open then return nil end
   local frame = Isaac.GetFrameCount()

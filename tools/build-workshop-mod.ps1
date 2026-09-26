@@ -16,7 +16,6 @@ $commonFiles = @(
     'main.lua',
     'metadata.xml',
     'preview.png',
-    'content/shaders.xml',
     'FONT-LICENSE-OFL.txt',
     'THIRD-PARTY-DATA.md',
     'THIRD-PARTY-FONTS.md',
