@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
+#include <bcrypt.h>
 #include "vendor/minhook/include/MinHook.h"
 
 /* 当前 J460 的离线反汇编证据；加载器另行验证完整 EXE SHA-256。 */
@@ -10,6 +11,21 @@
 #define CONSOLE_OFFSET 0x68d78
 #define PAUSED_RVA 0x2fd350
 #define PCALL_IAT_RVA 0x7183d8
+typedef struct {
+    const char *name,*sha256;
+    unsigned game_ptr,console_offset,paused,pcall_iat,input,render;
+    unsigned char paused_bytes[7],input_bytes[6],render_bytes[6];
+    int paused_length,input_length,render_length;
+} Runtime;
+static const Runtime runtimes[]={
+    {"Repentance+ J460","3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B",
+     0x871678,0x68d78,0x2fd350,0x7183d8,0x28b260,0x28c2e0,
+     {0x8b,0xd1,0x56,0x8b,0x35},{0x55,0x8b,0xec,0x6a,0xff},{0x53,0x8b,0xdc,0x83,0xec,0x08},5,5,6},
+    {"Repentance 1.7.9b","04469D0C3D3581936FCF85BEA5F9F4F3A65B2CCF96B36310456C9626BAC36DC6",
+     0x7fd65c,0x1bb80,0x2d0380,0x60623c,0x263550,0x263d10,
+     {0x83,0xb9,0x80,0xbb,0x01,0,0},{0x55,0x8b,0xec,0x83,0xec,0x3c},{0x55,0x8b,0xec,0x6a,0xff},7,6,5}
+};
+static const Runtime *runtime=&runtimes[0];
 typedef struct lua_State lua_State;
 typedef int (__cdecl *LuaC)(lua_State *);
 typedef int (__cdecl *Pcall)(lua_State *,int,int,int,int,void *);
@@ -30,15 +46,15 @@ static void *test_game;
 static int test_other_pause;
 static void *game(void) { return test_game; }
 #else
-static void *game(void) { return *(void **)(base+GAME_PTR_RVA); }
+static void *game(void) { return *(void **)(base+runtime->game_ptr); }
 #endif
-static int *console_state(void *g) { return (int *)((unsigned char *)g+CONSOLE_OFFSET); }
+static int *console_state(void *g) { return (int *)((unsigned char *)g+runtime->console_offset); }
 static int native_paused(void *g) {
 #ifdef NATIVE_PAUSE_TEST
     return test_other_pause || *console_state(g)!=0;
 #else
     int result;
-    void *fn=base+PAUSED_RVA;
+    void *fn=base+runtime->paused;
 #ifdef _MSC_VER
     __asm {
         mov ecx,g
@@ -115,29 +131,54 @@ static int prepare_suppression(Hook *hook,unsigned rva,const unsigned char *expe
 }
 static HINSTANCE module;
 static LONG initialized;
+static int exe_sha256(char output[65]) {
+    wchar_t path[32768]; unsigned char chunk[65536],digest[32]; DWORD read; int i,ok=0;
+    BCRYPT_ALG_HANDLE algorithm=0; BCRYPT_HASH_HANDLE hash=0; HANDLE file=INVALID_HANDLE_VALUE;
+    if(!GetModuleFileNameW(0,path,32768)) return 0;
+    file=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,0);
+    if(file==INVALID_HANDLE_VALUE) return 0;
+    if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,0,0)<0
+       || BCryptCreateHash(algorithm,&hash,0,0,0,0,0)<0) goto done;
+    for(;;) {
+        if(!ReadFile(file,chunk,sizeof(chunk),&read,0)) goto done;
+        if(!read) break;
+        if(BCryptHashData(hash,chunk,read,0)<0) goto done;
+    }
+    if(BCryptFinishHash(hash,digest,sizeof(digest),0)<0) goto done;
+    for(i=0;i<32;i++) sprintf(output+i*2,"%02X",digest[i]);
+    ok=1;
+done:
+    if(hash) BCryptDestroyHash(hash);
+    if(algorithm) BCryptCloseAlgorithmProvider(algorithm,0);
+    CloseHandle(file); return ok;
+}
 __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
     HMODULE lua;
-    const unsigned char input_bytes[]={0x55,0x8b,0xec,0x6a,0xff};
-    const unsigned char render_bytes[]={0x53,0x8b,0xdc,0x83,0xec,0x08};
     wchar_t path[32768];
+    char digest[65]; int i;
     Hook input_hook={0},render_hook={0};
     if(InterlockedCompareExchange(&initialized,1,0)!=0) return 10;
+    if(!GetModuleFileNameW(module,path,32768) || !wcsrchr(path,L'\\')) return 11;
+    wcscpy(wcsrchr(path,L'\\')+1,L"native-pause.log");
+    logfile=_wfopen(path,L"a");
+    if(!exe_sha256(digest)) { log_event("DISABLED EXE hash unavailable"); return 16; }
+    runtime=0;
+    for(i=0;i<sizeof(runtimes)/sizeof(runtimes[0]);i++) if(!strcmp(digest,runtimes[i].sha256)){runtime=&runtimes[i];break;}
+    if(!runtime){log_event("DISABLED unsupported EXE hash");return 17;}
     base=(unsigned char *)GetModuleHandleW(0);
     lua=GetModuleHandleA("Lua5.3.3r.dll");
-    if(!lua || memcmp(base+PAUSED_RVA,"\x8b\xd1\x56\x8b\x35",5)
-        || memcmp(base+0x28b260,input_bytes,5) || memcmp(base+0x28c2e0,render_bytes,6)) return FALSE;
+    if(!lua || memcmp(base+runtime->paused,runtime->paused_bytes,runtime->paused_length)
+        || memcmp(base+runtime->input,runtime->input_bytes,runtime->input_length)
+        || memcmp(base+runtime->render,runtime->render_bytes,runtime->render_length)) return FALSE;
     pushclosure=(void *)GetProcAddress(lua,"lua_pushcclosure");
     setglobal=(void *)GetProcAddress(lua,"lua_setglobal");
     pushboolean=(void *)GetProcAddress(lua,"lua_pushboolean");
     tointeger=(void *)GetProcAddress(lua,"lua_tointegerx");
     if(!pushclosure || !setglobal || !pushboolean || !tointeger) return FALSE;
-    if(!GetModuleFileNameW(module,path,32768) || !wcsrchr(path,L'\\')) return 11;
-    wcscpy(wcsrchr(path,L'\\')+1,L"native-pause.log");
-    logfile=_wfopen(path,L"a");
-    original_pcall=*(Pcall *)(base+PCALL_IAT_RVA);
+    original_pcall=*(Pcall *)(base+runtime->pcall_iat);
     if((void *)original_pcall!=(void *)GetProcAddress(lua,"lua_pcallk")) return FALSE;
-    if(!prepare_suppression(&input_hook,0x28b260,input_bytes,5)
-       || !prepare_suppression(&render_hook,0x28c2e0,render_bytes,6)) return FALSE;
+    if(!prepare_suppression(&input_hook,runtime->input,runtime->input_bytes,runtime->input_length)
+       || !prepare_suppression(&render_hook,runtime->render,runtime->render_bytes,runtime->render_length)) return FALSE;
     if(MH_Initialize()!=MH_OK) return 12;
     if(MH_CreateHook(input_hook.target,input_hook.stub,0)!=MH_OK
        || MH_CreateHook(render_hook.target,render_hook.stub,0)!=MH_OK
@@ -149,20 +190,39 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
         return 13;
     }
     { DWORD old,unused;
-      if(!VirtualProtect(base+PCALL_IAT_RVA,sizeof(Pcall),PAGE_READWRITE,&old)) return 14;
+      if(!VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),PAGE_READWRITE,&old)) return 14;
       /* 对齐 IAT 入口原子交换；其他线程永远看到完整旧或新指针。 */
-      if(InterlockedCompareExchangePointer((PVOID *)(base+PCALL_IAT_RVA),
+      if(InterlockedCompareExchangePointer((PVOID *)(base+runtime->pcall_iat),
           (PVOID)wrapped_pcall,(PVOID)original_pcall)!=(PVOID)original_pcall) {
-          VirtualProtect(base+PCALL_IAT_RVA,sizeof(Pcall),old,&unused);
+          VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused);
           log_event("DISABLED IAT changed during initialization"); return 15;
       }
-      VirtualProtect(base+PCALL_IAT_RVA,sizeof(Pcall),old,&unused);
+      VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused);
     }
-    log_event("LOADED J460 native-pause 0.1.0");
+    log_event(runtime->name);
+    log_event("LOADED native-pause 0.2.0");
     return 1;
 }
+#ifdef NATIVE_PAUSE_AUTO
+static DWORD WINAPI automatic_initialize(void *unused) {
+    int attempt;
+    for(attempt=0;attempt<600;attempt++) {
+        if(GetModuleHandleW(L"Lua5.3.3r.dll")) return NativePauseInitialize(0);
+        Sleep(50);
+    }
+    /* 即使没有 Lua 也执行哈希拒绝，便于非游戏启动测试输出可观察证据。 */
+    return NativePauseInitialize(0);
+}
+#endif
 BOOL WINAPI DllMain(HINSTANCE self,DWORD reason,LPVOID reserved) {
-    if(reason==DLL_PROCESS_ATTACH) { module=self; DisableThreadLibraryCalls(self); }
+    if(reason==DLL_PROCESS_ATTACH) {
+        module=self; DisableThreadLibraryCalls(self);
+#ifdef NATIVE_PAUSE_AUTO
+        HANDLE worker=CreateThread(0,0,automatic_initialize,0,0,0);
+        if(!worker) return FALSE;
+        CloseHandle(worker);
+#endif
+    }
     /* 挂钩与日志初始化必须在加载器锁之外执行。进程退出统一释放资源。 */
     return TRUE;
 }

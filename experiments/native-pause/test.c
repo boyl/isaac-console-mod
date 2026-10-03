@@ -26,7 +26,7 @@ int main(int argc,char **argv) {
     void (__cdecl *settop)(lua_State *,int);
     int (__cdecl *toboolean)(lua_State *,int);
     void (__cdecl *close_lua)(lua_State *);
-    void *g2;
+    void *g1,*g2; int variant;
     if(argc!=2) return 2;
     lua=LoadLibraryA(argv[1]); if(!lua) return 3;
 #define LOAD(name,exported) name=(void *)GetProcAddress(lua,exported)
@@ -35,8 +35,12 @@ int main(int argc,char **argv) {
     LOAD(original_pcall,"lua_pcallk"); LOAD(newstate,"luaL_newstate");
     LOAD(loadstring,"luaL_loadstring"); LOAD(gettop,"lua_gettop");
     LOAD(settop,"lua_settop"); LOAD(toboolean,"lua_toboolean"); LOAD(close_lua,"lua_close");
-    L=newstate(); test_game=calloc(1,CONSOLE_OFFSET+8); g2=calloc(1,CONSOLE_OFFSET+8);
+    L=newstate(); g1=calloc(1,CONSOLE_OFFSET+8); g2=calloc(1,CONSOLE_OFFSET+8);
 #define CALL(op) (loadstring(L,"return IsaacConsoleNativePausePrototype(" #op ")"),wrapped_pcall(L,0,1,0,0,0))
+    for(variant=0;variant<2;variant++) {
+    runtime=&runtimes[variant]; test_game=g1; owned=0; owner_game=0; test_other_pause=0;
+    memset(g1,0,CONSOLE_OFFSET+8); memset(g2,0,CONSOLE_OFFSET+8);
+    printf("RUNTIME_CONTRACT %s\n",runtime->name);
     check(CALL(1)==0 && toboolean(L,-1) && *console_state(test_game)==2,"acquire native console state"); settop(L,0);
     check(CALL(1)==0 && toboolean(L,-1),"idempotent acquire"); settop(L,0);
     check(CALL(2)==0 && toboolean(L,-1) && *console_state(test_game)==2,"owned query restores console state"); settop(L,0);
@@ -54,6 +58,7 @@ int main(int argc,char **argv) {
     check(CALL(0)==0 && *console_state(g2)==2 && !owned,"new game state is not unpaused"); settop(L,0);
     check(CALL(99)==0 && !toboolean(L,-1),"unknown operation has no effect"); settop(L,0);
     check(gettop(L)==0,"bridge registration preserves Lua stack");
+    }
     {
         unsigned char expected[]={0x55,0x8b,0xec,0x6a,0xff};
         unsigned char wrong[]={0,0,0,0,0};

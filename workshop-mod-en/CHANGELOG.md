@@ -3,7 +3,7 @@
 ## 2.5.4-en.19
 
 - Added an optional native pause bridge. Without the DLL, the menu, search, and commands retain their existing behavior.
-- Companion component 0.1.0 pauses gameplay while the menu is open and resumes on close. The DLL supports Repentance+ v1.9.7.17/J460 only; a Workshop subscription does not install or load it.
+- Companion component 0.2.0 pauses gameplay while the menu is open and resumes on close. Install once for automatic loading with normal game startup. Supported EXEs are Repentance 1.7.9b and Repentance+ v1.9.7.17/J460; a Workshop subscription does not install the native component.
 - Commands use render frames while paused, and the overlay continues to yield to other native pause states.
 
 ## 2.5.4-en.18

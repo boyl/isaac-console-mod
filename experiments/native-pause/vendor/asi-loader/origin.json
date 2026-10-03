@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/ThirteenAG/Ultimate-ASI-Loader",
+  "version": "v9.7.4",
+  "asset": "Ultimate-ASI-Loader-NoPDB.zip",
+  "archiveSha256": "14B3A1AD018899571AC9AA01482977F3C6D49E6CBA99F552D01C5ACACD1315E1",
+  "binarySha256": "EC2F4824ECA58DD40F425756A4A7CEC77B8E381F21D11D7C846EC4B339B617AB",
+  "architecture": "x86",
+  "originalName": "dinput8.dll",
+  "installedName": "winmm.dll",
+  "license": "MIT"
+}

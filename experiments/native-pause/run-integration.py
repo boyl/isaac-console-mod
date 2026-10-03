@@ -25,10 +25,11 @@ for directory, name, version, language in [
     ("workshop-mod-en", "Console UI", "2.5.4-en.19", "en"),
 ]:
     mock.MOD_ROOT = root / directory
-    mock.run_scenario(dll, {
-        "scenario": "native_pause_prototype", "repPlus": True,
-        "expectedModName": name, "expectedVersion": version,
-        "language": language, "label": "native pause " + language,
-    })
-print("PAUSE_MENU_INTEGRATION_PASS languages=2")
+    for rep_plus in (False, True):
+        mock.run_scenario(dll, {
+            "scenario": "native_pause_prototype", "repPlus": rep_plus,
+            "expectedModName": name, "expectedVersion": version,
+            "language": language, "label": "native pause " + language + (" Rep+" if rep_plus else " Rep"),
+        })
+print("PAUSE_MENU_INTEGRATION_PASS languages=2 runtimes=2")
 mock.HARNESS.unlink()
