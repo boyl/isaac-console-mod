@@ -394,6 +394,15 @@ local function restoreEidOverlay()
     EID.isHidden = wasHidden
   end
 end
+-- Native pause experiment: this bridge exists only with the prototype DLL loaded.
+function Presentation.nativePauseOwned()
+  return type(IsaacConsoleNativePausePrototype) == "function"
+    and IsaacConsoleNativePausePrototype(2) == true
+end
+function Presentation.commandFrame()
+  if Presentation.nativePauseOwned() then return Isaac.GetFrameCount() end
+  return Game():GetFrameCount()
+end
 local function setMenuOpen(open)
   open = open == true
   if open == state.open then
@@ -415,6 +424,9 @@ local function setMenuOpen(open)
     end
   end
   state.open = open
+  if type(IsaacConsoleNativePausePrototype) == "function" then
+    IsaacConsoleNativePausePrototype(open and 1 or 0)
+  end
   if not open then
     state.inputMode = nil
     state.searchSelectAll = false
@@ -1746,7 +1758,8 @@ local function queueCommand(command, requestedCount, explicitRepeatMax, trustedU
     command = value,
     total = count,
     done = 0,
-    nextFrame = Game():GetFrameCount(),
+    nextFrame = Presentation.commandFrame(),
+    renderClock = Presentation.nativePauseOwned(),
     failed = nil,
     finished = false,
   }
@@ -1861,7 +1874,7 @@ local function processQueue()
     finishQueue(queue)
     return
   end
-  local frame = Game():GetFrameCount()
+  local frame = queue.renderClock and Isaac.GetFrameCount() or Game():GetFrameCount()
   if frame < queue.nextFrame then return end
 
   local ok, result = pcall(Isaac.ExecuteCommand, queue.command)
@@ -4263,7 +4276,9 @@ local function onRender()
   Presentation.traceMenu()
   state.controllerCandidateSnapshot = nil
   local paused = Game():IsPaused()
-  local nativePauseOwnsScreen = paused and state.runEndState ~= "game_over"
+  local prototypeOwned = Presentation.nativePauseOwned()
+  if prototypeOwned then processQueue() end
+  local nativePauseOwnsScreen = paused and not prototypeOwned and state.runEndState ~= "game_over"
   if nativePauseOwnsScreen then
     state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
     if state.open then
