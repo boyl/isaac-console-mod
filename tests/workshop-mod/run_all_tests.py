@@ -50,8 +50,8 @@ def main() -> int:
     assert len(lock["verifiedCommit"]) == 40
 
     profiles = (
-        ("workshop-mod", "Isaac Chinese Console", "2.5.23"),
-        ("workshop-mod-en", "Console UI", "2.5.4-en.18"),
+        ("workshop-mod", "Isaac Chinese Console", "2.5.24"),
+        ("workshop-mod-en", "Console UI", "2.5.4-en.19"),
     )
     for directory, mod_name, version in profiles:
         run([

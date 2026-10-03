@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.18"
+local VERSION = "2.5.4-en.19"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6

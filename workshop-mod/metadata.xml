@@ -48,11 +48,14 @@
 
 中文版与英文版使用相同的 F6 和 L3 呼出方式；可以同时订阅，但请只启用一个语言版本。
 
+[h1]可选原生暂停组件[/h1]
+未下载和加载 DLL 时，本 Mod 保持原有行为。需要菜单打开时暂停游戏，可另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.1.0]原生暂停组件 0.1.0[/url]，解压后通过 start.cmd 启动。此组件需要 PowerShell 7，仅支持忏悔+ v1.9.7.17/J460；Workshop 订阅不会自动安装或加载 DLL。退出游戏后可用 restore.cmd 恢复。
+
 [h1]安全及使用限制[/h1]
 这是用于本地娱乐、构筑测试和截图录制的调试工具，会改变当前局面。请勿用于每日挑战或在线联机；重要存档建议提前备份。
 
 本 Mod 不联网、不启动外部程序。反馈问题时，请提供游戏版本、DLC/运行时、已启用 Mod 列表和 log.txt 相关内容。</description>
-    <version>2.5.23</version>
+    <version>2.5.24</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

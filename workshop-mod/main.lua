@@ -7,7 +7,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.23"
+local VERSION = "2.5.24"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6

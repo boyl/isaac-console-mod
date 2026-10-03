@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.4-en.19
+
+- Added an optional native pause bridge. Without the DLL, the menu, search, and commands retain their existing behavior.
+- Companion component 0.1.0 pauses gameplay while the menu is open and resumes on close. The DLL supports Repentance+ v1.9.7.17/J460 only; a Workshop subscription does not install or load it.
+- Commands use render frames while paused, and the overlay continues to yield to other native pause states.
+
 ## 2.5.4-en.18
 
 - Removed the custom shader to address the instant black screen when holding R in Repentance+. The equivalent Chinese test build was confirmed to restore the fade.
