@@ -16,6 +16,7 @@ typedef struct {
     unsigned game_ptr,console_offset,paused,pcall_iat,input,render;
     unsigned char paused_bytes[7],input_bytes[6],render_bytes[6];
     int paused_length,input_length,render_length;
+    int independent_pause;
 } Runtime;
 static const Runtime runtimes[]={
     {"Repentance+ J460","3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B",
@@ -23,7 +24,10 @@ static const Runtime runtimes[]={
      {0x8b,0xd1,0x56,0x8b,0x35},{0x55,0x8b,0xec,0x6a,0xff},{0x53,0x8b,0xdc,0x83,0xec,0x08},5,5,6},
     {"Repentance 1.7.9b","04469D0C3D3581936FCF85BEA5F9F4F3A65B2CCF96B36310456C9626BAC36DC6",
      0x7fd65c,0x1bb80,0x2d0380,0x60623c,0x263550,0x263d10,
-     {0x83,0xb9,0x80,0xbb,0x01,0,0},{0x55,0x8b,0xec,0x83,0xec,0x3c},{0x55,0x8b,0xec,0x6a,0xff},7,6,5}
+     {0x83,0xb9,0x80,0xbb,0x01,0,0},{0x55,0x8b,0xec,0x83,0xec,0x3c},{0x55,0x8b,0xec,0x6a,0xff},7,6,5},
+    {"REPENTOGON+","CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4",
+     0x7e49f4,0x67fd4,0x2f92a0,0x6aa278,0,0,
+     {0x8b,0xd1,0x56,0x8b,0x35},{0},{0},5,0,0,1}
 };
 static const Runtime *runtime=&runtimes[0];
 typedef struct lua_State lua_State;
@@ -38,6 +42,12 @@ static unsigned char *base;
 static volatile unsigned char owned;
 static void *owner_game;
 static FILE *logfile;
+typedef unsigned char (__fastcall *PausedFunction)(void *,void *);
+static PausedFunction original_paused;
+static unsigned char __fastcall owned_paused(void *g,void *unused) {
+    if(owned && g==owner_game) return 1;
+    return original_paused(g,0);
+}
 static void log_event(const char *event) {
     if(logfile) { fprintf(logfile,"%lu %s\n",GetTickCount(),event); fflush(logfile); }
 }
@@ -54,6 +64,7 @@ static int native_paused(void *g) {
     return test_other_pause || *console_state(g)!=0;
 #else
     int result;
+    if(runtime->independent_pause) return original_paused(g,0);
     void *fn=base+runtime->paused;
 #ifdef _MSC_VER
     __asm {
@@ -72,27 +83,29 @@ static int native_paused(void *g) {
 }
 static void release_pause(void) {
     void *g=game();
-    if(owned && g==owner_game && *console_state(g)==2) *console_state(g)=0;
+    if(!runtime->independent_pause && owned && g==owner_game && *console_state(g)==2) *console_state(g)=0;
     if(owned) log_event("RELEASE");
     owned=0; owner_game=0;
 }
 static int bridge(lua_State *L) {
     int valid=0, op=(int)tointeger(L,1,&valid), result=0;
     void *g=game();
-    if(owned && (g!=owner_game || !g || *console_state(g)!=2)) {
+    if(owned && (g!=owner_game || !g || (!runtime->independent_pause && *console_state(g)!=2))) {
         owned=0; owner_game=0; log_event("OWNERSHIP_LOST");
     }
     if(valid && op==0) release_pause();
     else if(valid && op==1 && g) {
         if(!owned && *console_state(g)==0 && !native_paused(g)) {
-            owner_game=g; owned=1; *console_state(g)=2; log_event("ACQUIRE");
+            owner_game=g; owned=1;
+            if(!runtime->independent_pause) *console_state(g)=2;
+            log_event("ACQUIRE");
         }
         result=owned;
     } else if(valid && op==2 && owned) {
         /* 其他暂停原因仍拥有画面，Lua 菜单不能覆盖它们。 */
-        *console_state(g)=0;
+        if(!runtime->independent_pause) *console_state(g)=0;
         result=!native_paused(g);
-        *console_state(g)=2;
+        if(!runtime->independent_pause) *console_state(g)=2;
     }
     pushboolean(L,result);
     return 1;
@@ -168,8 +181,9 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
     base=(unsigned char *)GetModuleHandleW(0);
     lua=GetModuleHandleA("Lua5.3.3r.dll");
     if(!lua || memcmp(base+runtime->paused,runtime->paused_bytes,runtime->paused_length)
-        || memcmp(base+runtime->input,runtime->input_bytes,runtime->input_length)
-        || memcmp(base+runtime->render,runtime->render_bytes,runtime->render_length)) return FALSE;
+        || (!runtime->independent_pause && (
+        memcmp(base+runtime->input,runtime->input_bytes,runtime->input_length)
+        || memcmp(base+runtime->render,runtime->render_bytes,runtime->render_length)))) return FALSE;
     pushclosure=(void *)GetProcAddress(lua,"lua_pushcclosure");
     setglobal=(void *)GetProcAddress(lua,"lua_setglobal");
     pushboolean=(void *)GetProcAddress(lua,"lua_pushboolean");
@@ -177,9 +191,15 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
     if(!pushclosure || !setglobal || !pushboolean || !tointeger) return FALSE;
     original_pcall=*(Pcall *)(base+runtime->pcall_iat);
     if((void *)original_pcall!=(void *)GetProcAddress(lua,"lua_pcallk")) return FALSE;
+    if(MH_Initialize()!=MH_OK) return 12;
+    if(runtime->independent_pause) {
+        if(MH_CreateHook(base+runtime->paused,owned_paused,(void **)&original_paused)!=MH_OK
+           || MH_EnableHook(base+runtime->paused)!=MH_OK) {
+            log_event("DISABLED independent pause hook failed"); return 13;
+        }
+    } else {
     if(!prepare_suppression(&input_hook,runtime->input,runtime->input_bytes,runtime->input_length)
        || !prepare_suppression(&render_hook,runtime->render,runtime->render_bytes,runtime->render_length)) return FALSE;
-    if(MH_Initialize()!=MH_OK) return 12;
     if(MH_CreateHook(input_hook.target,input_hook.stub,0)!=MH_OK
        || MH_CreateHook(render_hook.target,render_hook.stub,0)!=MH_OK
        || MH_QueueEnableHook(input_hook.target)!=MH_OK
@@ -188,6 +208,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
         log_event("DISABLED hook initialization failed");
         /* 不卸载：部分生效的跳板仍可能引用本模块，owned 始终为零。 */
         return 13;
+    }
     }
     { DWORD old,unused;
       if(!VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),PAGE_READWRITE,&old)) return 14;
@@ -200,7 +221,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
       VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused);
     }
     log_event(runtime->name);
-    log_event("LOADED native-pause 0.2.0");
+    log_event("LOADED native-pause 0.2.1");
     return 1;
 }
 #ifdef NATIVE_PAUSE_AUTO

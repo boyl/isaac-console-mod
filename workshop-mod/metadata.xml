@@ -49,7 +49,7 @@
 中文版与英文版使用相同的 F6 和 L3 呼出方式；可以同时订阅，但请只启用一个语言版本。
 
 [h1]可选原生暂停组件[/h1]
-未安装原生组件时，本 Mod 保持原有行为。需要菜单打开时暂停游戏，可另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.0]原生暂停组件 0.2.0[/url]，按说明复制到游戏目录；安装一次，以后从 Steam 正常启动即可。支持明确 EXE 哈希的 Repentance 1.7.9b 与 Repentance+ v1.9.7.17/J460。手动复制不需要 PowerShell；也可使用配套 PowerShell 7 安装/卸载脚本。Workshop 订阅不会自动安装原生组件。
+未安装原生组件时，本 Mod 保持原有行为。需要菜单打开时暂停游戏，可另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.1]原生暂停组件 0.2.0[/url]，按说明复制到游戏目录；安装一次，以后从 Steam 正常启动即可。支持明确 EXE 哈希的 Repentance 1.7.9b 与 Repentance+ v1.9.7.17/J460。手动复制不需要 PowerShell；也可使用配套 PowerShell 7 安装/卸载脚本。Workshop 订阅不会自动安装原生组件。
 
 [h1]安全及使用限制[/h1]
 这是用于本地娱乐、构筑测试和截图录制的调试工具，会改变当前局面。请勿用于每日挑战或在线联机；重要存档建议提前备份。

@@ -37,13 +37,13 @@ int main(int argc,char **argv) {
     LOAD(settop,"lua_settop"); LOAD(toboolean,"lua_toboolean"); LOAD(close_lua,"lua_close");
     L=newstate(); g1=calloc(1,CONSOLE_OFFSET+8); g2=calloc(1,CONSOLE_OFFSET+8);
 #define CALL(op) (loadstring(L,"return IsaacConsoleNativePausePrototype(" #op ")"),wrapped_pcall(L,0,1,0,0,0))
-    for(variant=0;variant<2;variant++) {
+    for(variant=0;variant<3;variant++) {
     runtime=&runtimes[variant]; test_game=g1; owned=0; owner_game=0; test_other_pause=0;
     memset(g1,0,CONSOLE_OFFSET+8); memset(g2,0,CONSOLE_OFFSET+8);
     printf("RUNTIME_CONTRACT %s\n",runtime->name);
-    check(CALL(1)==0 && toboolean(L,-1) && *console_state(test_game)==2,"acquire native console state"); settop(L,0);
+    check(CALL(1)==0 && toboolean(L,-1) && *console_state(test_game)==(runtime->independent_pause?0:2),"acquire pause without changing another backend state"); settop(L,0);
     check(CALL(1)==0 && toboolean(L,-1),"idempotent acquire"); settop(L,0);
-    check(CALL(2)==0 && toboolean(L,-1) && *console_state(test_game)==2,"owned query restores console state"); settop(L,0);
+    check(CALL(2)==0 && toboolean(L,-1) && *console_state(test_game)==(runtime->independent_pause?0:2),"owned query preserves console state"); settop(L,0);
     test_other_pause=1;
     check(CALL(2)==0 && !toboolean(L,-1),"other pause keeps screen authority"); settop(L,0);
     check(CALL(0)==0 && *console_state(test_game)==0 && test_other_pause,"release preserves other pause"); settop(L,0);
@@ -53,11 +53,33 @@ int main(int argc,char **argv) {
     check(CALL(0)==0 && *console_state(test_game)==2,"release preserves original console"); settop(L,0);
     *console_state(test_game)=0;
     CALL(1); settop(L,0); *console_state(test_game)=0;
-    check(CALL(2)==0 && !toboolean(L,-1) && !owned,"detect ownership loss"); settop(L,0);
+    if(runtime->independent_pause) {
+        check(CALL(2)==0 && toboolean(L,-1) && owned,"REPENTOGON console reset cannot release owned pause"); settop(L,0);
+        *console_state(g1)=2;
+        check(CALL(2)==0 && !toboolean(L,-1) && *console_state(g1)==2,"REPENTOGON console keeps screen authority"); settop(L,0);
+        CALL(0); settop(L,0);
+        check(*console_state(g1)==2,"release preserves REPENTOGON console");
+        *console_state(g1)=0;
+    } else {check(CALL(2)==0 && !toboolean(L,-1) && !owned,"detect ownership loss"); settop(L,0);}
     CALL(1); settop(L,0); test_game=g2; *console_state(g2)=2;
     check(CALL(0)==0 && *console_state(g2)==2 && !owned,"new game state is not unpaused"); settop(L,0);
     check(CALL(99)==0 && !toboolean(L,-1),"unknown operation has no effect"); settop(L,0);
     check(gettop(L)==0,"bridge registration preserves Lua stack");
+    }
+    {
+        unsigned char *code=VirtualAlloc(0,64,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
+        PausedFunction fn=(void *)code;
+        /* 引擎 bool 只约定 AL；EAX 高位不保证清零。 */
+        unsigned char body[]={0x55,0x8b,0xec,0xb8,0,0x34,0x12,0,0x5d,0xc3};
+        memcpy(code,body,sizeof(body)); owned=0; owner_game=g1;
+        check(MH_Initialize()==MH_OK && MH_CreateHook(code,owned_paused,(void **)&original_paused)==MH_OK
+              && MH_EnableHook(code)==MH_OK,"install independent engine pause hook");
+        check(!fn(g1,0),"independent unowned pause preserves engine result");
+        owned=1;
+        check(fn(g1,0) && !fn(g2,0),"independent pause affects only owned game");
+        owned=0;
+        check(!fn(g1,0),"independent release restores engine result");
+        check(MH_DisableHook(code)==MH_OK && MH_RemoveHook(code)==MH_OK && MH_Uninitialize()==MH_OK,"remove isolated independent hook");
     }
     {
         unsigned char expected[]={0x55,0x8b,0xec,0x6a,0xff};
