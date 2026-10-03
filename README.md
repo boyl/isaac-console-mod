@@ -2,6 +2,10 @@
 
 这是 The Binding of Isaac: Rebirth 游戏内控制台 Mod 的独立源仓库，与桌面版控制台项目分开维护。
 
+## 可选原生暂停组件安装
+
+[安装说明与目录结构示意](experiments/native-pause/AUTOLOAD-RELEASE.md#安装后的目录结构示意)包含原版和忏悔龙两种布局。插件必须位于实际 EXE 目录下的 scripts 子目录；请保留下载包 game-files 内的目录结构。
+
 ## 目录
 
 - `workshop-mod/`：中文版正式源码，当前候选版本 `2.5.21`，Workshop ID `3776882944`。

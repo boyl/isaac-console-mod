@@ -13,6 +13,39 @@ REPENTOGON 启动器使用独立 EXE 时，须将相同三项文件复制到该 
 
 `.asi` 是原生DLL插件的扩展名；需要自动加载器和插件一起复制，单独复制暂停插件不会生效。
 
+### 安装后的目录结构示意
+
+复制的是压缩包 `game-files` **里面的内容**，保留 `scripts` 文件夹结构。不要把三个文件全部放在同一层，也不要把整个 `game-files` 文件夹放进游戏目录。
+
+**原版 Rep / Rep+：**
+
+```text
+The Binding of Isaac Rebirth/
+├── isaac-ng.exe                         ← 游戏原有文件
+├── winmm.dll                            ← 复制到这里
+├── winmm.ini                            ← 复制到这里
+└── scripts/                             ← 没有此文件夹就创建
+    └── IsaacConsoleNativePause.asi      ← 插件必须放在这一层
+```
+
+**忏悔龙启动器使用独立 EXE：**
+
+```text
+The Binding of Isaac Rebirth/
+└── Repentogon/
+    ├── isaac-ng.exe                     ← 实际运行的独立 EXE
+    ├── winmm.dll                        ← 复制到这里
+    ├── winmm.ini                        ← 复制到这里
+    └── scripts/
+        └── IsaacConsoleNativePause.asi  ← 插件必须放在这一层
+```
+
+以实际运行的 `isaac-ng.exe` 所在目录为准。如果分别使用原版和独立的忏悔龙 EXE，两处都需要按上述结构安装。
+
+**常见错误：** `IsaacConsoleNativePause.asi` 与 `winmm.dll` 放在同一层，或多套了一层 `game-files/scripts`。这两种结构不会被当前加载器配置发现。
+
+安装完成后完全退出并重新启动游戏，无需每次运行安装脚本。`scripts/native-pause.log` 是启动后尝试生成的日志，不是安装文件，下载包中没有它是正常的；资源管理器隐藏扩展名时可能显示为 `native-pause`。
+
 ## 一次性安装与卸载脚本
 
 可选：安装PowerShell 7后双击 `install.cmd`，脚本校验支持的EXE与文件哈希、检查冲突后安装。自定义目录传 `./install.ps1 -GameDirectory "实际目录"`。脚本只安装原生组件，不替换Mod、游戏EXE或存档。出现实际权限拒绝时请求UAC。
