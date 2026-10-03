@@ -17,6 +17,7 @@ typedef struct {
     unsigned char paused_bytes[7],input_bytes[6],render_bytes[6];
     int paused_length,input_length,render_length;
     int independent_pause;
+    unsigned update;
 } Runtime;
 static const Runtime runtimes[]={
     {"Repentance+ J460","3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B",
@@ -27,7 +28,7 @@ static const Runtime runtimes[]={
      {0x83,0xb9,0x80,0xbb,0x01,0,0},{0x55,0x8b,0xec,0x83,0xec,0x3c},{0x55,0x8b,0xec,0x6a,0xff},7,6,5},
     {"REPENTOGON+","CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4",
      0x7e49f4,0x67fd4,0x2f92a0,0x6aa278,0,0,
-     {0x8b,0xd1,0x56,0x8b,0x35},{0},{0},5,0,0,1}
+     {0x8b,0xd1,0x56,0x8b,0x35},{0},{0},5,0,0,1,0x2f6d30}
 };
 static const Runtime *runtime=&runtimes[0];
 typedef struct lua_State lua_State;
@@ -81,6 +82,24 @@ static int native_paused(void *g) {
     return result;
 #endif
 }
+typedef void (__fastcall *UpdateFunction)(void *,void *);
+static UpdateFunction original_update;
+static int update_hook_state;
+static void __fastcall owned_update(void *g,void *unused) {
+    if(owned && g==owner_game) return;
+    original_update(g,0);
+}
+static void initialize_update_hook(void) {
+    MH_STATUS status;
+    if(!runtime->independent_pause || update_hook_state || !game()) return;
+    /* REPENTOGON 先安装自己的更新链。Lua 调用所在游戏线程再接入已完成的链。 */
+    if(!GetModuleHandleW(L"zhlREPENTOGON.dll") || base[runtime->update]!=0xe9) return;
+    update_hook_state=-1;
+    status=MH_CreateHook(base+runtime->update,owned_update,(void **)&original_update);
+    if(status==MH_OK && MH_EnableHook(base+runtime->update)==MH_OK) {
+        update_hook_state=1; log_event("ENGINE_UPDATE_HOOK_READY");
+    } else log_event("DISABLED engine update hook failed");
+}
 static void release_pause(void) {
     void *g=game();
     if(!runtime->independent_pause && owned && g==owner_game && *console_state(g)==2) *console_state(g)=0;
@@ -95,7 +114,8 @@ static int bridge(lua_State *L) {
     }
     if(valid && op==0) release_pause();
     else if(valid && op==1 && g) {
-        if(!owned && *console_state(g)==0 && !native_paused(g)) {
+        if(!owned && (!runtime->independent_pause || update_hook_state==1)
+           && *console_state(g)==0 && !native_paused(g)) {
             owner_game=g; owned=1;
             if(!runtime->independent_pause) *console_state(g)=2;
             log_event("ACQUIRE");
@@ -111,6 +131,7 @@ static int bridge(lua_State *L) {
     return 1;
 }
 static int __cdecl wrapped_pcall(lua_State *L,int args,int results,int error,int ctx,void *continuation) {
+    initialize_update_hook();
     /* 两次操作净栈变化为零；每次注册以支持 luareset 和同地址重建。 */
     pushclosure(L,bridge,0);
     setglobal(L,"IsaacConsoleNativePausePrototype");

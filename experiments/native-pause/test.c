@@ -4,6 +4,8 @@
 #undef DllMain
 #include <stdlib.h>
 static int checks;
+static int update_calls;
+static void __fastcall mock_update(void *g,void *unused) {update_calls++;}
 static volatile LONG stress_stop,stress_calls,stress_errors;
 static int (__cdecl *stress_fn)(void);
 static DWORD WINAPI stress_worker(void *unused) {
@@ -39,6 +41,7 @@ int main(int argc,char **argv) {
 #define CALL(op) (loadstring(L,"return IsaacConsoleNativePausePrototype(" #op ")"),wrapped_pcall(L,0,1,0,0,0))
     for(variant=0;variant<3;variant++) {
     runtime=&runtimes[variant]; test_game=g1; owned=0; owner_game=0; test_other_pause=0;
+    update_hook_state=1;
     memset(g1,0,CONSOLE_OFFSET+8); memset(g2,0,CONSOLE_OFFSET+8);
     printf("RUNTIME_CONTRACT %s\n",runtime->name);
     check(CALL(1)==0 && toboolean(L,-1) && *console_state(test_game)==(runtime->independent_pause?0:2),"acquire pause without changing another backend state"); settop(L,0);
@@ -66,6 +69,11 @@ int main(int argc,char **argv) {
     check(CALL(99)==0 && !toboolean(L,-1),"unknown operation has no effect"); settop(L,0);
     check(gettop(L)==0,"bridge registration preserves Lua stack");
     }
+    original_update=mock_update; owner_game=g1; owned=0; update_calls=0;
+    owned_update(g1,0); check(update_calls==1,"unowned update preserves engine chain");
+    owned=1; owned_update(g1,0); check(update_calls==1,"owned pause blocks engine updates");
+    owned_update(g2,0); check(update_calls==2,"pause preserves other game updates");
+    owned=0; owned_update(g1,0); check(update_calls==3,"release resumes engine updates");
     {
         unsigned char *code=VirtualAlloc(0,64,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
         PausedFunction fn=(void *)code;

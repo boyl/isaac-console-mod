@@ -10,4 +10,4 @@ build-native.ps1 构建原生组件和测试；test.c 覆盖两个运行时契�
 
 vendor/minhook 保留 MinHook 1.3.4 原始源码与许可证；vendor/asi-loader 保留固定版本 Ultimate ASI Loader、来源与哈希。inject.c 和旧手动加载脚本仅保留作诊断与历史追溯，不进入当前发布包。
 
-REPENTOGON+ 使用独立 EXE 时须在该目录安装相同组件。其控制台会自行重置状态，因此适配器通过独立的 Game::IsPaused 挂钩合并菜单暂停归属，不写控制台状态，也不挂钩其输入与绘制。原生 bool 返回按 AL 读取，避免 EAX 高位导致外部暂停误判。支持清单仅声明已匹配完整 EXE 哈希的变体。
+REPENTOGON+ 使用独立 EXE 时须在该目录安装相同组件。其控制台会自行重置状态，因此适配器在其更新链安装完成后，通过 Game::Update 挂钩阻止菜单期间的战斗更新，并用 Game::IsPaused 合并菜单暂停归属，不写控制台状态，也不挂钩其输入与绘制。原生 bool 返回按 AL 读取，避免 EAX 高位导致外部暂停误判。支持清单仅声明已匹配完整 EXE 哈希的变体。
