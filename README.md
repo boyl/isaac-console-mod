@@ -8,10 +8,13 @@
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前候选版本 `2.5.21`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前候选内部版本 `2.5.4-en.16`、metadata `2.5.4.16`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前版本 `2.5.24`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.19`、metadata `2.5.4.19`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：中英文 Lua Mock、冷启动回归和双语发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
+- `tools/build-nexus-mod.ps1`、`tools/verify-nexus-packages.ps1`：Nexus 发布包构建与整链路校验。
+- `tools/nexus/`：在用户已登录的浏览器里执行 Nexus 网页上传的编排脚本（CDP）。
+- `NEXUS_UPLOAD.md`：Nexus 页面字段、中英文文案、内容与授权检查、发布顺序与上传后核验清单。
 
 两个语言版本共享功能设计和回归要求，但保持各自的 `RegisterMod`、目录、Workshop ID 和 SaveData 身份。用户只能同时启用其中一个版本。
 
@@ -55,3 +58,16 @@ pwsh -NoLogo -NoProfile -File .\tools\publish-workshop.ps1 `
 ```
 
 自动化会在每个 GUI 操作前重新枚举并确认前台窗口，上传按钮对每个项目至多点击一次；上传后只轮询 Steam 的只读接口。证据和发布清单位于 `dist/workshop-publish/`。超时或状态不符时停止并保留截图，不会自动重复上传。
+
+## Nexus 发布
+
+Nexus 没有面向普通作者的上传 API，因此仓库侧只负责"打包 + 校验 + 页面文案"，网页操作由 `tools/nexus/` 在已登录的可见浏览器里完成。整条链路：
+
+```powershell
+& 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -NoProfile -File .\tools\verify-nexus-packages.ps1 `
+  -PythonPath 'C:\Users\lw\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe'
+```
+
+该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.24-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.19-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
+
+页面字段与可复制文案见 [NEXUS_UPLOAD.md](NEXUS_UPLOAD.md)；网页上传步骤与安全约定见 [tools/nexus/README.md](tools/nexus/README.md)。
