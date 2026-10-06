@@ -235,6 +235,14 @@ This is a local debug and entertainment tool that changes the current run. Do no
 
 ## 7. 浏览器上传（自动化与兜底）
 
+2026-10-06 实测的平台事实：
+
+- 旧的 `https://www.nexusmods.com/thebindingofisaacrebirth/mods/upload` 已失效，只会重定向回游戏页；当前上传入口是新站的 `https://next.nexusmods.com/games/thebindingofisaacrebirth?uploadMod=true`（游戏页上的 `UPLOAD A MOD` 按钮就指向这里）。
+- 未登录访问该入口会退回游戏页；页面还会先弹 Cookiebot 同意框，需先点 `Deny`/`Allow all` 才能点到表单。**上传必须在已登录 Nexus 的浏览器里完成。**
+- 外部程序无法接入"已经开着的"普通 Chrome：Chrome 136+（本机 154）出于安全拒绝对默认配置目录开放 `--remote-debugging-port`。所以要么在当前浏览器里手工完成本文件的步骤，要么按下面的脚本另开一个受控窗口。
+
+自动化脚本（可选，仅用于减少手工步骤）：
+
 ```powershell
 # 1) 启动一个带 CDP 的可见 Chrome（独立配置目录，避免动到日常配置）
 & .\tools\nexus\invoke-nexus-upload.ps1 -Packages dist\nexus-packages -Step inspect

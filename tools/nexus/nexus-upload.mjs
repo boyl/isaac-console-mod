@@ -8,7 +8,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join, resolve } from 'node:path';
 import { Cdp, findPageTarget } from './nexus-cdp.mjs';
 
-const GAME_URL = 'https://www.nexusmods.com/thebindingofisaacrebirth';
+const GAME_URL = 'https://www.nexusmods.com/games/thebindingofisaacrebirth';
+const NEXT_UPLOAD_URL = 'https://next.nexusmods.com/games/thebindingofisaacrebirth?uploadMod=true';
 const CLOUDFLARE_TITLES = /请稍候|Just a moment|Attention Required|Checking your browser/i;
 
 const args = parseArgs(process.argv.slice(2));
@@ -16,7 +17,7 @@ const step = args.step || 'inspect';
 const port = Number(args.port || 9222);
 const repoRoot = resolve(args.repo || process.cwd());
 const packageRoot = resolve(args.packages || join(repoRoot, 'dist', 'nexus-packages'));
-const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
+const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
 const evidenceRoot = resolve(args.evidence || join(packageRoot, 'browser-evidence', stamp));
 mkdirSync(evidenceRoot, { recursive: true });
 
@@ -82,8 +83,28 @@ function loadPackages() {
   return files;
 }
 
-function saveScreenshot(cdp, name) {
-  return cdp.screenshot(join(evidenceRoot, name));
+async function saveScreenshot(cdp, name) {
+  const target = join(evidenceRoot, name);
+  const { bytes } = await cdp.screenshot(target);
+  writeFileSync(target, bytes);
+  note(`SCREENSHOT=${target} bytes=${bytes.length}`);
+  return target;
+}
+
+// Nexus fronts the page with a Cookiebot banner that would swallow the first click of any step.
+async function dismissConsent(cdp) {
+  const clicked = await cdp.evaluate(`(() => {
+    const byId = document.getElementById('CybotCookiebotDialogBodyButtonDecline');
+    if (byId) { byId.click(); return 'decline'; }
+    const button = [...document.querySelectorAll('button')].find((el) => /^(deny|allow all)$/i.test((el.innerText || '').trim()));
+    if (button) { button.click(); return (button.innerText || '').trim(); }
+    return '';
+  })()`);
+  if (clicked) {
+    note(`CONSENT_DISMISSED=${clicked}`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return clicked;
 }
 
 function writeEvidence(name, payload) {
@@ -148,10 +169,13 @@ async function assertLoaded(cdp, { timeoutMs = 240000 } = {}) {
 
 async function signedIn(cdp) {
   return cdp.evaluate(`(() => {
-    const links = [...document.querySelectorAll('a')].map((a) => (a.innerText || '').trim().toLowerCase());
-    const signIn = links.some((text) => text === 'sign in' || text === 'log in' || text.startsWith('sign in'));
-    const account = !!document.querySelector('a[href*="/users/myaccount"], a[href*="/users/"][href*="myaccount"]');
-    return { signIn, account };
+    const text = document.body.innerText || '';
+    return {
+      signIn: /(^|\\n)\\s*(log in|sign in)\\s*($|\\n)/i.test(text),
+      signOut: /sign out/i.test(text),
+      profileZero: !!document.querySelector('a[href$="/users/0"]'),
+      myAccount: !!document.querySelector('a[href*="users/myaccount"]'),
+    };
   })()`);
 }
 
@@ -188,17 +212,24 @@ async function fillByHints(cdp, hints, value, label) {
 }
 
 async function openUploadPage(cdp) {
-  const page = await readPage(cdp);
-  if (/\/mods\/upload/i.test(page.url)) return page;
-  const link = (page.links || []).find((entry) => /upload/i.test(entry.href) || /(add|upload).{0,12}mod|mod.{0,12}upload|add a mod/i.test(entry.text));
-  if (link) {
+  await dismissConsent(cdp);
+  let page = await readPage(cdp);
+  if (/uploadMod=true/i.test(page.url)) return page;
+  const link = (page.links || []).find((entry) => /upload/i.test(entry.href) || /upload a mod|add a mod/i.test(entry.text));
+  if (link && /^https?:/i.test(link.href)) {
     note(`UPLOAD_LINK=${link.href} text="${link.text}"`);
     await cdp.evaluate(`(() => { const a = [...document.querySelectorAll('a')].find((el) => el.href === ${JSON.stringify(link.href)}); if (a) { a.click(); return true; } return false; })()`);
-    await cdp.waitFor({ timeoutMs: 60000, description: 'the mod upload form' }, `location.href !== ${JSON.stringify(page.url)}`);
-    return readPage(cdp);
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+    page = await readPage(cdp);
+    if (/upload/i.test(page.url) && page.controls.length > 0) return page;
   }
-  note(`NO_UPLOAD_LINK=1（页面上没有找到上传入口，尝试直接打开 ${GAME_URL}/mods/upload）`);
-  await cdp.navigate(`${GAME_URL}/mods/upload`);
+  // The 2026 upload flow lives on the next.nexusmods.com React app; the legacy
+  // /mods/upload path only redirects back to the game page.
+  note(`NAVIGATE_UPLOAD=${NEXT_UPLOAD_URL}`);
+  await cdp.navigate(NEXT_UPLOAD_URL);
+  await cdp.waitFor({ timeoutMs: 90000, intervalMs: 1000, description: 'the upload form to render' },
+    `document.querySelectorAll('input, textarea, select').length > 0 || /(log in|sign in)/i.test(document.body.innerText)`);
+  await new Promise((resolve) => setTimeout(resolve, 3000));
   return readPage(cdp);
 }
 
@@ -226,8 +257,9 @@ async function clickByText(cdp, pattern, { exclude = null } = {}) {
 async function stepInspect(cdp) {
   await cdp.navigate(GAME_URL);
   const page = await assertLoaded(cdp);
+  await dismissConsent(cdp);
   const auth = await signedIn(cdp);
-  note(`LOGIN signIn_link=${auth.signIn} myaccount_link=${auth.account}`);
+  note(`LOGIN signIn=${auth.signIn} signOut=${auth.signOut} myAccount=${auth.myAccount} profileZero=${auth.profileZero}`);
   writeEvidence('inspect-dump.json', page);
   await saveScreenshot(cdp, 'inspect-game-page.png');
   const upload = await openUploadPage(cdp);
