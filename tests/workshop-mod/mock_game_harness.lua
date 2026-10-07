@@ -193,6 +193,7 @@ Keyboard = {
 }
 
 ButtonAction = {
+  ACTION_PAUSE = 99,
   ACTION_MENUBACK = 1, ACTION_MENUUP = 2, ACTION_MENUDOWN = 3,
   ACTION_MENULEFT = 4, ACTION_MENURIGHT = 5, ACTION_MENUCONFIRM = 6,
   ACTION_MAP = 7, ACTION_DROP = 8, ACTION_BOMB = 9, ACTION_PILLCARD = 10,
@@ -242,6 +243,8 @@ ModCallbacks = {
   MC_PRE_GAME_EXIT = 5,
   MC_POST_GAME_END = 16,
 }
+
+if TEST_CONFIG.updatePause then ModCallbacks.MC_PRE_UPDATE = 1026 end
 
 Input = {}
 function Input.IsButtonTriggered(key, controllerIndex)
@@ -1976,18 +1979,6 @@ end
 
 local function testEidOverlayIsolation()
   assertTrue(TEST_CONFIG.eid, "EID overlay scenario requires EID")
-  if IS_ZH then
-    EID.isHidden = false
-    openMenu()
-    assertEqual(EID.isHidden, false, "Chinese edition unexpectedly changed EID visibility")
-    pressKey(Keyboard.KEY_F6)
-    assertEqual(EID.isHidden, false, "Chinese edition changed EID on close")
-    EID.isHidden = true
-    openMenu()
-    pressKey(Keyboard.KEY_ESCAPE)
-    assertEqual(EID.isHidden, true, "Chinese edition changed a hidden EID")
-    return
-  end
   onStarted()
   EID.isHidden = false
   openMenu()
@@ -4212,6 +4203,44 @@ local scenarios = {
   controller_open_compat = testControllerOpenCompatibility,
   controller_enumeration_failure = testControllerEnumerationFailure,
 }
+
+scenarios.repentogon_update_pause = function()
+  local update = TEST.callbacks[ModCallbacks.MC_PRE_UPDATE]
+  assertTrue(type(update) == "function", "update pause callback missing")
+  local pauseMenuOpen = false
+  game.IsPauseMenuOpen = function() return pauseMenuOpen end
+  local nativeCalls = 0
+  IsaacConsoleNativePausePrototype = function() nativeCalls = nativeCalls + 1 end
+  assertEqual(update(), nil, "closed menu blocked update")
+  openMenu()
+  TEST.paused = true -- REPENTOGON sets callback pause before invoking MC_PRE_UPDATE.
+  assertEqual(update(), true, "temporary callback pause cancelled our freeze")
+  assertTrue(PresentationModel.nativePauseOwned(), "callback pause incorrectly suspended the menu")
+  TEST.paused = false
+  assertEqual(nativeCalls, 0, "REPENTOGON still acquired DLL pause")
+  assertEqual(onInput(nil, nil, InputHook.IS_ACTION_TRIGGERED, ButtonAction.ACTION_PAUSE), nil,
+    "pause action was blocked")
+  state.closeAfterRegularCommand = false
+  assertTrue(queueCommand("giveitem c182", 1), "paused queue rejected")
+  for _ = 1, 40 do renderFrame() end
+  assertEqual(TEST.executed[#TEST.executed], "giveitem c182", "paused command not executed")
+  TEST.paused = true
+  pauseMenuOpen = true
+  renderFrame()
+  -- Native pause input runs before MC_PRE_UPDATE; the engine skips this callback while its menu is active.
+  assertTrue(state.nativePauseSuspended, "native pause did not suspend menu")
+  TEST.paused = false
+  pauseMenuOpen = false
+  renderFrame()
+  assertEqual(update(), true, "resumed menu did not own update")
+  pressKey(Keyboard.KEY_F6)
+  assertEqual(state.open, false, "F6 did not close")
+  assertEqual(update(), nil, "closing left update frozen")
+  openMenu()
+  pressKey(Keyboard.KEY_ESCAPE)
+  assertEqual(update(), nil, "Esc left update frozen")
+  assertEqual(nativeCalls, 0, "DLL pause leaked into callback backend")
+end
 
 local scenario = scenarios[TEST_CONFIG.scenario]
 assertTrue(type(scenario) == "function", "unknown scenario: " .. tostring(TEST_CONFIG.scenario))

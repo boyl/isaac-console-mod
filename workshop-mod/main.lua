@@ -7,7 +7,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.24"
+local VERSION = "2.5.25"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -310,6 +310,8 @@ local state = {
   mouseDown = false,
   rightMouseDown = false,
   hudWasVisible = true,
+  eidSuppressed = false,
+  eidWasHidden = nil,
   queue = nil,
   lifecycleRequest = nil,
   lifecycleReceipt = nil,
@@ -411,8 +413,28 @@ function lifecycleDispatcher.arm()
   lifecycleDispatcher.registered = true
 end
 
+local function suppressEidOverlay()
+  if type(EID) ~= "table" or type(EID.isHidden) ~= "boolean" then return end
+  if not state.eidSuppressed then
+    state.eidSuppressed = true
+    state.eidWasHidden = EID.isHidden
+  end
+  EID.isHidden = true
+end
+
+local function restoreEidOverlay()
+  if not state.eidSuppressed then return end
+  local wasHidden = state.eidWasHidden == true
+  state.eidSuppressed = false
+  state.eidWasHidden = nil
+  if type(EID) == "table" and type(EID.isHidden) == "boolean" then
+    EID.isHidden = wasHidden
+  end
+end
 -- 原生暂停实验：只有显式加载实验 DLL 才存在此桥接接口。
+Presentation.updatePauseAvailable = REPENTOGON ~= nil and ModCallbacks.MC_PRE_UPDATE ~= nil
 function Presentation.nativePauseOwned()
+  if Presentation.updatePauseAvailable then return state.open and not Game():IsPauseMenuOpen() end
   return type(IsaacConsoleNativePausePrototype) == "function"
     and IsaacConsoleNativePausePrototype(2) == true
 end
@@ -422,19 +444,26 @@ function Presentation.commandFrame()
 end
 local function setMenuOpen(open)
   open = open == true
-  if open == state.open then return end
+  if open == state.open then
+    if open then suppressEidOverlay() else restoreEidOverlay() end
+    return
+  end
   local hudOk, hud = pcall(function() return Game():GetHUD() end)
   if open then
+    suppressEidOverlay()
     if hudOk and hud then
       local visibleOk, visible = pcall(function() return hud:IsVisible() end)
       state.hudWasVisible = not visibleOk or visible ~= false
       pcall(function() hud:SetVisible(false) end)
     end
-  elseif hudOk and hud then
-    pcall(function() hud:SetVisible(state.hudWasVisible ~= false) end)
+  else
+    restoreEidOverlay()
+    if hudOk and hud then
+      pcall(function() hud:SetVisible(state.hudWasVisible ~= false) end)
+    end
   end
   state.open = open
-  if type(IsaacConsoleNativePausePrototype) == "function" then
+  if not Presentation.updatePauseAvailable and type(IsaacConsoleNativePausePrototype) == "function" then
     IsaacConsoleNativePausePrototype(open and 1 or 0)
   end
   if not open then
@@ -4269,6 +4298,7 @@ local function onRender()
   if nativePauseOwnsScreen then
     state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
     if state.open then
+      suppressEidOverlay()
       state.nativePauseSuspended = true
       clearControllerConfirm()
     end
@@ -4304,6 +4334,7 @@ local function onRender()
 
   -- Building 732 runtime entries and scanning them is menu work. Deferring it
   -- keeps normal gameplay, R restarts and exits independent of the catalog.
+  suppressEidOverlay()
   loadCompleteCatalog()
   Presentation.syncTypography()
   computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
@@ -4367,6 +4398,7 @@ local function onInput(_, _, inputHook, action)
   -- MC_POST_GAME_STARTED. During that callback gap the previous run's overlay
   -- state must not intercept any native controller assignment or pause input.
   if runBoundaryPending() then return nil end
+  if Presentation.updatePauseAvailable and action == ButtonAction.ACTION_PAUSE then return nil end
   if Game():IsPaused() and state.runEndState ~= "game_over" then return nil end
   if state.inputLease ~= nil then
     if inputHook == InputHook.GET_ACTION_VALUE then return 0.0 end
@@ -4378,6 +4410,7 @@ local function onInput(_, _, inputHook, action)
 end
 
 local function onGameStarted()
+  restoreEidOverlay()
   clearRunTransientState()
   state.lastGameFrame = Game():GetFrameCount()
   state.loaded = false
@@ -4409,6 +4442,7 @@ local function onGameStarted()
 end
 
 local function onGameEnd(_, isGameOver)
+  restoreEidOverlay()
   local previousControllerIndex = state.controllerIndex
   clearRunTransientState()
   state.lifecycleReceipt = nil
@@ -4438,6 +4472,13 @@ local function onGameExit()
   state.lastMouseX = nil
   state.lastMouseY = nil
   state.controlMode = "keyboard"
+end
+
+if Presentation.updatePauseAvailable then
+  -- 使用忏悔龙提供的更新取消契约；原生暂停仍拥有自己的恢复输入。
+  ChineseConsole:AddCallback(ModCallbacks.MC_PRE_UPDATE, function()
+    if state.open and state.runEndState ~= "game_over" then return true end
+  end)
 end
 
 ChineseConsole:AddCallback(ModCallbacks.MC_POST_RENDER, onRender)

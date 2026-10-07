@@ -5,7 +5,7 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.19"
+local VERSION = "2.5.4-en.20"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -395,7 +395,9 @@ local function restoreEidOverlay()
   end
 end
 -- Native pause experiment: this bridge exists only with the prototype DLL loaded.
+Presentation.updatePauseAvailable = REPENTOGON ~= nil and ModCallbacks.MC_PRE_UPDATE ~= nil
 function Presentation.nativePauseOwned()
+  if Presentation.updatePauseAvailable then return state.open and not Game():IsPauseMenuOpen() end
   return type(IsaacConsoleNativePausePrototype) == "function"
     and IsaacConsoleNativePausePrototype(2) == true
 end
@@ -424,7 +426,7 @@ local function setMenuOpen(open)
     end
   end
   state.open = open
-  if type(IsaacConsoleNativePausePrototype) == "function" then
+  if not Presentation.updatePauseAvailable and type(IsaacConsoleNativePausePrototype) == "function" then
     IsaacConsoleNativePausePrototype(open and 1 or 0)
   end
   if not open then
@@ -4382,6 +4384,7 @@ local function onInput(_, _, inputHook, action)
   -- MC_POST_GAME_STARTED. During that callback gap the previous run's overlay
   -- state must not intercept any native controller assignment or pause input.
   if runBoundaryPending() then return nil end
+  if Presentation.updatePauseAvailable and action == ButtonAction.ACTION_PAUSE then return nil end
   if Game():IsPaused() and state.runEndState ~= "game_over" then return nil end
   if state.inputLease ~= nil then
     if inputHook == InputHook.GET_ACTION_VALUE then return 0.0 end
@@ -4455,6 +4458,13 @@ local function onGameExit()
   state.lastMouseX = nil
   state.lastMouseY = nil
   state.controlMode = "keyboard"
+end
+
+if Presentation.updatePauseAvailable then
+  -- Use the REPENTOGON update cancellation contract; native pause keeps its resume input.
+  ConsoleUI:AddCallback(ModCallbacks.MC_PRE_UPDATE, function()
+    if state.open and state.runEndState ~= "game_over" then return true end
+  end)
 end
 
 ConsoleUI:AddCallback(ModCallbacks.MC_POST_RENDER, onRender)

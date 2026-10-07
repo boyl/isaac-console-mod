@@ -86,7 +86,8 @@ typedef void (__fastcall *UpdateFunction)(void *,void *);
 static UpdateFunction original_update;
 static int update_hook_state;
 static void __fastcall owned_update(void *g,void *unused) {
-    if(owned && g==owner_game) return;
+    /* 原生暂停接管时必须运行其输入/恢复逻辑，不能同时截断更新链。 */
+    if(owned && g==owner_game && !native_paused(g)) return;
     original_update(g,0);
 }
 static void initialize_update_hook(void) {
@@ -242,7 +243,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
       VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused);
     }
     log_event(runtime->name);
-    log_event("LOADED native-pause 0.2.1");
+    log_event("LOADED native-pause 0.2.2");
     return 1;
 }
 #ifdef NATIVE_PAUSE_AUTO

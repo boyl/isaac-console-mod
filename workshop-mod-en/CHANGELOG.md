@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.4-en.20
+
+- REPENTOGON now pauses gameplay through its MC_PRE_UPDATE callback, without requiring the native companion; fixes gameplay remaining frozen after Esc/P and closing the menu.
+- Preserves EID visibility ownership across opening, closing, and run boundaries.
+- Repentance and Repentance+ retain the optional native companion path (0.2.2).
+
+
 ## 2.5.4-en.19
 
 - Added an optional native pause bridge. Without the DLL, the menu, search, and commands retain their existing behavior.

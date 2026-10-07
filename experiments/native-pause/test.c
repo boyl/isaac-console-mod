@@ -70,10 +70,19 @@ int main(int argc,char **argv) {
     check(gettop(L)==0,"bridge registration preserves Lua stack");
     }
     original_update=mock_update; owner_game=g1; owned=0; update_calls=0;
+    test_other_pause=0; *console_state(g1)=0;
     owned_update(g1,0); check(update_calls==1,"unowned update preserves engine chain");
     owned=1; owned_update(g1,0); check(update_calls==1,"owned pause blocks engine updates");
-    owned_update(g2,0); check(update_calls==2,"pause preserves other game updates");
-    owned=0; owned_update(g1,0); check(update_calls==3,"release resumes engine updates");
+    test_other_pause=1; owned_update(g1,0);
+    check(update_calls==2 && owned,"external pause can process resume without releasing menu ownership");
+    test_other_pause=0; owned_update(g1,0);
+    check(update_calls==2,"resumed native pause returns to owned menu freeze");
+    *console_state(g1)=2; owned_update(g1,0);
+    check(update_calls==3 && owned && *console_state(g1)==2,"native console can process input without losing either ownership");
+    *console_state(g1)=0; owned_update(g1,0);
+    check(update_calls==3,"closing native console returns to owned menu freeze");
+    owned_update(g2,0); check(update_calls==4,"pause preserves other game updates");
+    owned=0; owned_update(g1,0); check(update_calls==5,"release resumes engine updates");
     {
         unsigned char *code=VirtualAlloc(0,64,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
         PausedFunction fn=(void *)code;

@@ -49,13 +49,13 @@ This version removes the custom shader to restore the Repentance+ restart fade. 
 Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may subscribe to both, but enable only one language version at a time.
 
 [h1]Optional Native Pause Companion[/h1]
-Without the native companion, Console UI keeps its existing behavior. For gameplay pause while the menu is open, separately download [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.1]Native Pause 0.2.0[/url] and copy its game-files contents into the game directory. Install once, then launch normally from Steam. The companion supports the exact EXE hashes for Repentance 1.7.9b and Repentance+ v1.9.7.17/J460. Manual copying requires no PowerShell; optional installation and uninstallation scripts require PowerShell 7. A Workshop subscription does not install the native companion.
+For Repentance/Repentance+, separately install [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.2]Native Pause 0.2.2[/url] once using its folder structure. Without it, existing menu features continue to work. Supported exact EXEs: Repentance 1.7.9b and Repentance+ v1.9.7.17/J460. REPENTOGON with MC_PRE_UPDATE pauses through its official callback and does not require the native companion. Workshop subscriptions do not install the companion.
 
 [h1]Safety and Usage Limits[/h1]
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.
 
 This Mod does not access the network or launch external programs. When reporting a problem, include the game version, DLC/runtime, enabled Mod list, and relevant log.txt lines.</description>
-    <version>2.5.4.19</version>
+    <version>2.5.4.20</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>

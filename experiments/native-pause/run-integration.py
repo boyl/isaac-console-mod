@@ -21,8 +21,8 @@ temporary.write(source.replace(marker, scenario + "\n" + marker))
 temporary.close()
 mock.HARNESS = Path(temporary.name)
 for directory, name, version, language in [
-    ("workshop-mod", "Isaac Chinese Console", "2.5.24", "zh"),
-    ("workshop-mod-en", "Console UI", "2.5.4-en.19", "en"),
+    ("workshop-mod", "Isaac Chinese Console", "2.5.25", "zh"),
+    ("workshop-mod-en", "Console UI", "2.5.4-en.20", "en"),
 ]:
     mock.MOD_ROOT = root / directory
     for rep_plus in (False, True):

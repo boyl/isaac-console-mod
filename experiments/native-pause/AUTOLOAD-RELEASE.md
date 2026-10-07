@@ -1,10 +1,10 @@
-# 原生暂停 0.2.1：随游戏自动加载
+# 原生暂停 0.2.2：随游戏自动加载
 
-安装一次，以后从 Steam 正常启动游戏即可使用暂停；没有每次启动的命令窗口。卸载后，控制台 Mod 的原有功能继续工作，只是不自动暂停。
+安装一次，以后从 Steam 正常启动游戏即可使用暂停；没有每次启动的命令窗口。卸载后，原版 Rep/Rep+ 的控制台功能继续工作，只是不自动暂停。新版忏悔龙菜单通过 MC_PRE_UPDATE 自动暂停，无需本组件。
 
 ## 手动安装（不需要PowerShell）
 
-1. 正常退出游戏，更新“以撒中文控制台”到2.5.24或“Console UI”到2.5.4-en.19，并启用其中一个语言版本。
+1. 正常退出游戏，更新“以撒中文控制台”到2.5.25或“Console UI”到2.5.4-en.20，并启用其中一个语言版本。
 2. 将 `game-files` 内的内容按目录结构复制到 `isaac-ng.exe` 所在目录：根目录新增 `winmm.dll`、`winmm.ini`，`scripts` 目录新增 `IsaacConsoleNativePause.asi`。
 3. 若目标已有同名文件，不要覆盖其他加载器或插件，应先处理冲突。
 4. 从 Steam 正常启动。菜单打开时暂停，关闭时恢复。无需再运行 start.cmd 或加载器。
@@ -28,7 +28,7 @@ The Binding of Isaac Rebirth/
     └── IsaacConsoleNativePause.asi      ← 插件必须放在这一层
 ```
 
-**忏悔龙启动器使用独立 EXE：**
+**旧版忏悔龙原生组件安装示意（新版菜单已无需此组件）：**
 
 ```text
 The Binding of Isaac Rebirth/
@@ -40,7 +40,7 @@ The Binding of Isaac Rebirth/
         └── IsaacConsoleNativePause.asi  ← 插件必须放在这一层
 ```
 
-以实际运行的 `isaac-ng.exe` 所在目录为准。如果分别使用原版和独立的忏悔龙 EXE，两处都需要按上述结构安装。
+以实际运行的 `isaac-ng.exe` 所在目录为准。如果分别使用原版和独立的忏悔龙 EXE，旧版组件需要两处按上述结构安装；新版忏悔龙菜单无需安装原生组件。
 
 **常见错误：** `IsaacConsoleNativePause.asi` 与 `winmm.dll` 放在同一层，或多套了一层 `game-files/scripts`。这两种结构不会被当前加载器配置发现。
 
