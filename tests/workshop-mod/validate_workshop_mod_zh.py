@@ -11,8 +11,8 @@ from PIL import Image
 from validate_hd_payload import validate_hd_payload
 
 
-DISPLAY_VERSION = "2.5.25"
-METADATA_VERSION = "2.5.25"
+DISPLAY_VERSION = "2.5.28"
+METADATA_VERSION = "2.5.28"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
@@ -39,6 +39,9 @@ REQUIRED_FILES = {
     "resources/gfx/ui/isaac_console_pixel.anm2",
     "resources/gfx/ui/isaac_console_pixel.png",
     "scripts/data.lua",
+    "scripts/item_icons.lua",
+    "resources/gfx/ui/isaac_console_item.anm2",
+    "resources/gfx/ui/isaac_console_cards.anm2",
     "scripts/command_specs.lua",
     "scripts/command_catalog.lua",
     "scripts/custom_commands.lua",

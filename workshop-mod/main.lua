@@ -7,7 +7,7 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.25"
+local VERSION = "2.5.28"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -374,6 +374,7 @@ local Presentation = {
   lateOverlayEnabled = false, -- Rep+ custom shaders break the native restart fade.
   hdRoot = normalizePath(getCurrentModPath()):match("(mods/[^/]+/)$") or "mods/isaac_chinese_console_workshop_3776882944/",
   typographyModule = include("scripts.typography"),
+  itemIconsModule = include("scripts.item_icons"),
   hdCoverage = include("resources.font.hd.coverage"),
   toastDurations = { success = 30, default = 60 },
   toastColors = {
@@ -532,6 +533,8 @@ local function getSharedItemConfig()
   end
   return sharedItemConfig
 end
+
+Presentation.itemIcons = Presentation.itemIconsModule.new(getSharedItemConfig, debugLog)
 
 local function objectKey(objectType, id)
   return tostring(objectType or "") .. ":" .. tostring(id or "")
@@ -1369,6 +1372,7 @@ local function showToast(message, kind, duration, action, actionFit)
     and Presentation.toastDurations.success
     or (tonumber(duration) or Presentation.toastDurations.default)
   state.toastFramesRemaining = math.max(1, math.floor(resolvedDuration))
+  state.toast.expiresAtMs = Isaac.GetTime() + state.toastFramesRemaining * (1000 / 30)
 end
 
 local mcmRegistered = false
@@ -1938,12 +1942,15 @@ local function finalizeLifecycleReceipt()
 end
 
 local function onUpdate()
+  if state.toast and state.toast.expiresAtMs and Isaac.GetTime() >= state.toast.expiresAtMs then
+    state.toast = nil; state.toastFramesRemaining = 0
+  end
   local frame = Game():GetFrameCount()
   local previousFrame = state.lastGameFrame
   if previousFrame ~= nil and frame < previousFrame then
     clearRunTransientState()
     debugLog("game frame reset detected; cleared transient run state")
-  elseif state.toast and previousFrame ~= nil then
+  elseif state.toast and state.toast.expiresAtMs == nil and previousFrame ~= nil then
     local elapsed = frame - previousFrame
     if elapsed > 0 then
       state.toastFramesRemaining = math.max(0, state.toastFramesRemaining - elapsed)
@@ -3596,6 +3603,9 @@ local function computeLayout(screenWidth, screenHeight)
   local gap = pad
   local cardW = math.floor((contentW - gap * (GRID_COLUMNS - 1)) / GRID_COLUMNS)
   local cardH = math.floor((gridH - gap * (gridRows - 1)) / gridRows)
+  local itemIconLimit = math.floor(cardW * 0.25)
+  local itemIconW = math.max(1, math.min(itemIconLimit, cardH))
+  local cardIconW = math.max(1, math.min(cardH, math.floor(cardW * 0.25)))
 
   local buttonH = line10 + pad * 2
   local repeatLabelW = math.max(safeTextWidth(geometryBody, "LB/RB"), safeTextWidth(geometryBody, "次数"))
@@ -3609,7 +3619,7 @@ local function computeLayout(screenWidth, screenHeight)
     line10 = line10, line12 = line12, pad = pad,
     panelX = panelX, panelY = panelY, panelW = panelW, panelH = panelH,
     sidebarW = sidebarW, contentX = contentX, contentW = contentW,
-    iconW = iconW, categoryHeaderH = categoryHeaderH,
+    iconW = iconW, itemIconW = itemIconW, cardIconW = cardIconW, categoryHeaderH = categoryHeaderH,
     categoryTop = categoryTop, categoryRowH = categoryRowH,
     categoryNavY = categoryNavY, categoryNavH = categoryNavH,
     searchX = searchX, searchY = searchY, searchW = searchW, searchH = searchH,
@@ -4022,11 +4032,21 @@ local function drawMenu(entries, mouse)
         and state.favorites[entry.objectKey] == true
       local favoriteW = entry.canFavorite and L.starW or 0
       local favoriteX = x + L.cardW - favoriteW
-      drawText(entry.icon or "?", iconX, textY, "body",
-        entryDisabled and TEXT.muted or (entry.tier == "S" and TEXT.accent or TEXT.gold), L.iconW, true)
-      drawText(entry.name or "", iconX + L.iconW + L.pad, textY, "body",
+      local entryIconW = entry.kind == "item" and entry.objectType == "k" and L.cardIconW
+        or (Presentation.itemIcons:isItem(entry) and L.itemIconW or L.iconW)
+      if Presentation.itemIcons:isItem(entry) then
+        if not Presentation.itemIcons:draw(entry, {x = iconX, y = y,
+            w = entryIconW, h = math.max(1, L.cardH),
+            maxScale = 8}) then
+          drawText("!", iconX, textY, "body", TEXT.accent, entryIconW, true)
+        end
+      else
+        drawText(entry.icon or "?", iconX, textY, "body",
+          entryDisabled and TEXT.muted or (entry.tier == "S" and TEXT.accent or TEXT.gold), entryIconW, true)
+      end
+      drawText(entry.name or "", iconX + entryIconW + L.pad, textY, "body",
         entryDisabled and TEXT.muted or TEXT.main,
-        math.max(1, favoriteX - (iconX + L.iconW + L.pad) - L.pad))
+        math.max(1, favoriteX - (iconX + entryIconW + L.pad) - L.pad))
       if favoriteW > 0 then
         drawFavoriteStar(favoriteX, y, favoriteW, L.cardH, isFavorite)
       end
@@ -4289,6 +4309,9 @@ function Presentation.traceMenu()
 end
 local function onRender()
   loadState()
+  if state.toast and state.toast.expiresAtMs and Isaac.GetTime() >= state.toast.expiresAtMs then
+    state.toast = nil; state.toastFramesRemaining = 0
+  end
   Presentation.traceMenu()
   state.controllerCandidateSnapshot = nil
   local paused = Game():IsPaused()
@@ -4410,6 +4433,7 @@ local function onInput(_, _, inputHook, action)
 end
 
 local function onGameStarted()
+  Presentation.itemIcons:resetPills()
   restoreEidOverlay()
   clearRunTransientState()
   state.lastGameFrame = Game():GetFrameCount()

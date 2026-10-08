@@ -15,8 +15,8 @@ from validate_hd_payload import validate_hd_payload
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.20"
-METADATA_VERSION = "2.5.4.20"
+DISPLAY_VERSION = "2.5.4-en.23"
+METADATA_VERSION = "2.5.4.23"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -80,7 +80,10 @@ def main() -> int:
     required = [
         "main.lua",
         "metadata.xml",
-        "scripts/data.lua",
+    "scripts/data.lua",
+    "scripts/item_icons.lua",
+    "resources/gfx/ui/isaac_console_item.anm2",
+    "resources/gfx/ui/isaac_console_cards.anm2",
         "scripts/command_specs.lua",
         "scripts/command_catalog.lua",
         "scripts/custom_commands.lua",

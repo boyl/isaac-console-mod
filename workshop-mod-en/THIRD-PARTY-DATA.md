@@ -1,5 +1,9 @@
 # Third-party data interfaces
 
+## Item artwork
+
+The icon loader follows the ItemConfig.GfxFileName/Sprite mechanism demonstrated by EID without bundling EID images, animations, or runtime code. Card/rune/Soul Stone animation geometry is verified against the installed game's CardFronts and HUD frames. The game supplies all PNGs at runtime. Native runes with the same artwork remain distinguishable by name. Pill effect IDs are not color IDs; no complete, clearly licensed effect-specific atlas was found, so pill effects use the agreed default native pill HUD. Game resources belong to their original authors and are not bundled.
+
 Console UI does not bundle the External Item Descriptions effect-description database or runtime code.
 
 If EID is installed and enabled, Console UI reads its public `en_us` description tables at runtime and converts EID markup into plain text for the detail panel. Missing, disabled, incompatible, or unavailable EID data falls back to the game's `ItemConfig` and never blocks the core catalog, search, commands, paging, or favorites.

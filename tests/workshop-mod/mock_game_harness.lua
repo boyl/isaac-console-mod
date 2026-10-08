@@ -158,7 +158,16 @@ end
 
 function Sprite()
   local sprite = {}
-  function sprite:Load() end
+  function sprite:Load(path) self.path = path; self.loaded = true end
+  function sprite:IsLoaded() return self.loaded end
+  function sprite:ReplaceSpritesheet(layer, path)
+    self.sheets = self.sheets or {}
+    self.sheets[layer] = path
+  end
+  function sprite:LoadGraphics() end
+  function sprite:SetFrame(animation, frame) self.animation, self.frame = animation, frame end
+  function sprite:GetAnimation() return self.animation end
+  function sprite:GetFrame() return self.frame end
   function sprite:Play() end
   function sprite:Render(position)
     if self.Color ~= nil and self.Color.__isaacColorType ~= "Color" then
@@ -172,6 +181,7 @@ function Sprite()
         y = position and tonumber(position.Y) or 0,
         width = self.Scale and tonumber(self.Scale.X) or 0,
         height = self.Scale and tonumber(self.Scale.Y) or 0,
+        path = self.path, sheets = self.sheets, animation = self.animation, frame = self.frame,
       }
     end
     local color = self.Color or {}
@@ -313,6 +323,7 @@ function itemConfig:GetCollectible(id)
     Name = "#ITEM_NAME_" .. tostring(id),
     Description = "#ITEM_DESCRIPTION_" .. tostring(id),
     Quality = id % 5,
+    GfxFileName = "gfx/items/collectibles/" .. tostring(id) .. ".png",
   }
   if id == 18 then config.AddCoins = 99 end
   if id == 17 then config.AddKeys = 99 end
@@ -322,7 +333,8 @@ end
 function itemConfig:GetTrinket(id)
   TEST.getTrinketCalls = TEST.getTrinketCalls + 1
   if id < 1 or id >= TrinketType.NUM_TRINKETS or id == 47 then return nil end
-  return { Name = "#TRINKET_NAME_" .. tostring(id), Description = "Trinket " .. tostring(id) }
+  return { Name = "#TRINKET_NAME_" .. tostring(id), Description = "Trinket " .. tostring(id),
+    GfxFileName = "gfx/items/trinkets/" .. tostring(id) .. ".png" }
 end
 function itemConfig:GetCard(id)
   TEST.getCardCalls = TEST.getCardCalls + 1
@@ -349,6 +361,7 @@ end
 function Isaac.GetScreenWidth() return TEST_CONFIG.screenWidth or 1280 end
 function Isaac.GetScreenHeight() return TEST_CONFIG.screenHeight or 720 end
 function Isaac.GetFrameCount() return TEST.frame end
+function Isaac.GetTime() return TEST.timeMs or TEST.frame * (1000 / 30) end
 function Isaac.WorldToScreen(value)
   TEST.worldToScreenCalls = TEST.worldToScreenCalls + 1
   return Vector(value.X, value.Y)
@@ -751,6 +764,9 @@ local function testHistoryTwentyGames()
     -- when their Lua arrays resize during this long-running scenario.
     TEST.executed = {}
     TEST.logs = {}
+    TEST.rendered, TEST.spriteColors = {}, {}
+    TEST.renderRecords, TEST.spriteRecords = {}, {}
+    assertTrue(PresentationModel.itemIcons:stats().size <= 128, "restart grew icon cache beyond its limit")
     collectgarbage("collect")
     memorySamples[#memorySamples + 1] = collectgarbage("count")
   end
@@ -2044,6 +2060,21 @@ local function testToastRestartLifecycle()
   assertEqual(state.toast, nil, "callback-less Rerun retained a Toast")
   assertEqual(state.queue, nil, "callback-less Rerun retained an execution queue")
 
+  -- 菜单暂停时游戏帧固定，但实际时间继续，提示仍须到期。
+  state.open = true
+  for _, kind in ipairs({"success", "error", "warning", "info"}) do
+  TEST.timeMs = 1000
+  showToast("paused completion", kind)
+  local deadline = state.toast.expiresAtMs
+  TEST.timeMs = deadline - 1
+  onRender()
+  assertTrue(state.toast ~= nil, "paused Toast expired too early")
+  TEST.timeMs = deadline
+  onRender()
+  assertEqual(state.toast, nil, "paused Toast never expired")
+  assertEqual(state.toastFramesRemaining, 0, "expired Toast left footer active")
+  end
+  TEST.timeMs = nil
   -- Ordinary Toast duration remains measured in game update frames.
   state.toast = { message = "short toast", color = Color(1, 1, 1, 1) }
   state.toastFramesRemaining = 3
@@ -4240,6 +4271,87 @@ scenarios.repentogon_update_pause = function()
   pressKey(Keyboard.KEY_ESCAPE)
   assertEqual(update(), nil, "Esc left update frozen")
   assertEqual(nativeCalls, 0, "DLL pause leaked into callback backend")
+end
+
+scenarios.item_icons = function()
+  onStarted()
+  openMenu()
+  state.hdFontEnabled = TEST_CONFIG.hdFonts == true
+  for _, category in ipairs({"all_items", "damage", "defense", "trinkets", "cards", "pills"}) do
+    setCategory(categoryById[category].index)
+    local entries = visibleEntries()
+    assertTrue(#entries > 0, "empty item category " .. category)
+    for page = 1, math.ceil(#entries / 8) do
+      state.page, state.selection = page, 1
+      TEST.spriteRecords, TEST.renderRecords = {}, {}
+      TEST.captureGeometry = true
+      renderFrame()
+      TEST.captureGeometry = false
+      local icons = {}
+      for _, record in ipairs(TEST.spriteRecords) do
+        if record.path == "gfx/ui/isaac_console_item.anm2"
+            or record.path == "gfx/ui/isaac_console_cards.anm2"
+            or record.path == "gfx/005.071_pill blue-blue.anm2" then
+          icons[#icons + 1] = record
+        end
+      end
+      local expected = math.min(8, #entries - (page-1)*8)
+      assertEqual(#icons, expected, "not every visible item has an icon: " .. category .. " page " .. page)
+      local layout = computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
+      if category == "all_items" and page == 1 then
+        print(string.format("ICON_GEOMETRY plus=%s repentogon=%s screen=%dx%d row=%d padding=%d itemSlot=%d cardSlot=%d canvas=%d",
+          tostring(TEST_CONFIG.repPlus), tostring(TEST_CONFIG.repentogon), layout.screenWidth, layout.screenHeight,
+          layout.cardH, layout.pad, layout.itemIconW, layout.cardIconW,
+          layout.cardH))
+      end
+      for index, record in ipairs(icons) do
+        local entry = entries[(page-1)*8+index]
+        if entry.objectType == "c" or entry.objectType == "t" then
+          local folder = entry.objectType == "c" and "collectibles" or "trinkets"
+          assertEqual(record.sheets[0], "gfx/items/" .. folder .. "/" .. entry.id .. ".png", "texture mismatch")
+        elseif entry.objectType == "k" then
+          assertEqual(record.frame, entry.id - 1, "wrong card/rune frame")
+        else
+          assertEqual(record.frame, 0, "pill effect incorrectly mapped to appearance")
+        end
+        assertEqual(record.width, record.height, "icon aspect ratio")
+        local hud = entry.objectType ~= "k" or (entry.id >= 32 and entry.id <= 41)
+          or entry.id == 55 or entry.id == 78 or entry.id >= 81
+        local actualWidth, actualHeight = hud and 32 or 16, hud and 32 or 24
+        local iconW = entry.objectType == "k" and layout.cardIconW or layout.itemIconW
+        assertTrue(iconW >= math.min(layout.cardH, math.floor(layout.cardW * 0.25)), "icon still reduced by padding")
+        assertTrue(record.width * actualWidth <= iconW + 0.001, "icon exceeds measured width")
+        assertTrue(record.height * actualHeight <= (layout.cardH) + 0.001, "icon exceeds measured height")
+        local x = layout.contentX + ((index-1)%2)*(layout.cardW+layout.gap) + layout.pad
+        local y = layout.gridY + math.floor((index-1)/2)*(layout.cardH+layout.gap)
+        assertEqual(record.x, math.floor(x+iconW/2), "icon horizontal center")
+        assertEqual(record.y, math.floor(y+layout.cardH/2), "icon vertical center")
+        assertEqual(record.color[1], 1, "item tinted")
+      end
+      assertTrue(PresentationModel.itemIcons:stats().size <= 128, "unbounded cache while paging")
+    end
+  end
+  setCategory(categoryById.all_items.index)
+  enterSearch("182")
+  local selected = visibleEntries()[1]
+  assertEqual(selected.id, 182, "search item changed")
+  toggleFavorite(selected)
+  state.search = ""
+  state.inputMode = nil
+  setCategory(categoryById.featured.index)
+  assertEqual(visibleEntries()[1].id, 182, "favorite item changed")
+  renderFrame()
+  assertTrue(PresentationModel.itemIcons:get(selected) ~= nil, "favorite has no icon")
+  setCategory(categoryById.run_control.index)
+  TEST.spriteRecords = {}
+  TEST.captureGeometry = true
+  renderFrame()
+  TEST.captureGeometry = false
+  for _, record in ipairs(TEST.spriteRecords) do
+    assertTrue(not record.path:find("isaac_console_item", 1, true)
+      and not record.path:find("isaac_console_cards", 1, true), "ordinary command became item")
+  end
+  assertEqual(PresentationModel.itemIcons:stats().failures, 0, "unexpected icon failures")
 end
 
 local scenario = scenarios[TEST_CONFIG.scenario]

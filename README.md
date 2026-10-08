@@ -8,8 +8,8 @@
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前版本 `2.5.25`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.20`、metadata `2.5.4.20`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前版本 `2.5.28`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.23`、metadata `2.5.4.23`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：中英文 Lua Mock、冷启动回归和双语发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
 - `tools/build-nexus-mod.ps1`、`tools/verify-nexus-packages.ps1`：Nexus 发布包构建与整链路校验。
@@ -68,6 +68,6 @@ Nexus 没有面向普通作者的上传 API，因此仓库侧只负责"打包 + 
   -PythonPath 'C:\Users\lw\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe'
 ```
 
-该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.25-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.20-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
+该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.28-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.23-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
 
 页面字段与可复制文案见 [NEXUS_UPLOAD.md](NEXUS_UPLOAD.md)；网页上传步骤与安全约定见 [tools/nexus/README.md](tools/nexus/README.md)。

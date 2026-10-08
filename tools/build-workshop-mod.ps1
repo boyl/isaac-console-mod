@@ -32,6 +32,9 @@ $commonFiles = @(
     'scripts/custom_commands.lua',
     'scripts/official_objects.lua',
     'scripts/typography.lua',
+    'scripts/item_icons.lua',
+    'resources/gfx/ui/isaac_console_item.anm2',
+    'resources/gfx/ui/isaac_console_cards.anm2',
     'resources/font/hd/manifest.json'
 )
 

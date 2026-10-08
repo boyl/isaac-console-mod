@@ -1,4 +1,16 @@
+## 2.5.4-en.23
+
+- Adds native item icons across categories, accurate card scaling and current-run pill colors.
+- Uses full row height for icons on Rep, Rep+ and REPENTOGON.
+- Toasts expire in real time while the menu is paused; pause behavior remains unchanged.
+
 # Changelog
+
+## 2.5.4-en.21
+
+- Item rows now display the corresponding game artwork for collectibles, trinkets, cards, runes, and Soul Stones, including favorites and search results.
+- Icons work without EID. Pill effects use a default pill appearance rather than treating effect IDs as color IDs.
+- Added verified card animation mapping and a bounded icon cache; artwork fits measured card space, with explicit diagnostics for missing resources.
 
 ## 2.5.4-en.20
 
@@ -175,3 +187,6 @@
 - Switched optional EID enrichment to `en_us`, with `ItemConfig` fallback.
 - Made both Repentance and Repentance+ use the self-contained Fusion Pixel 10/12px font pair.
 - Isolated the Mod identity, directory, SaveData, package, and future Workshop ID from Isaac Chinese Console.
+
+## 图标辨识修复
+卡牌按实际 16×24 卡面等比放大；药丸读取本局真实颜色，未分配效果使用默认蓝蓝胶囊，换局刷新。

@@ -7,7 +7,8 @@ return function(env)
     local records = {}
     for _, record in ipairs(T.spriteRecords) do
       local c = record.color or {}
-      if c[4] == 1 and ((c[1] == 0 and c[2] == 0 and c[3] == 0)
+      if record.path == "gfx/ui/isaac_console_pixel.anm2" and c[4] == 1
+          and ((c[1] == 0 and c[2] == 0 and c[3] == 0)
           or (c[1] == 1 and c[2] == 1 and c[3] == 1)) then
         records[#records + 1] = record
       end
