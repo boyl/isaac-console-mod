@@ -1,5 +1,3 @@
-![GitHub Release Downloads](https://img.shields.io/github/downloads/boyl/isaac-console-mod/total?label=Downloads&color=blue)
-
 # Isaac Console Mod
 
 这是 The Binding of Isaac: Rebirth 游戏内控制台 Mod 的独立源仓库，与桌面版控制台项目分开维护。
