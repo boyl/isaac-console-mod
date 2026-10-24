@@ -5,7 +5,9 @@ local CommandCatalog = include("scripts.command_catalog")
 local EnglishAliases = include("scripts.english_aliases")
 local OfficialObjects = include("scripts.official_objects")
 
-local VERSION = "2.5.4-en.23"
+ConsoleUI.pedestals = include("scripts.collectible_pedestals")
+
+local VERSION = "2.5.4-en.25"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -284,6 +286,7 @@ local state = {
   startupHintEnabled = true,
   closeAfterRegularCommand = true,
   fullscreenCursorEnabled = true,
+  pedestalEnabled = false,
   loaded = false,
   layoutSignature = nil,
   detailEntryId = nil,
@@ -308,6 +311,7 @@ local state = {
   controllerConfirmValue = nil,
   controllerConfirmTrustedUnknown = false,
   controllerConfirmRawPassthrough = false,
+  controllerConfirmGroundPickup = nil,
   pointerActive = false,
   lastMouseX = nil,
   lastMouseY = nil,
@@ -454,6 +458,7 @@ local function setMenuOpen(open)
     state.controllerConfirmSource = nil
     state.controllerConfirmValue = nil
     state.controllerConfirmTrustedUnknown = false
+    state.controllerConfirmGroundPickup = nil
     state.controllerConfirmRawPassthrough = false
     state.controllerShoulderLatch = {}
   end
@@ -591,6 +596,7 @@ for _, command in ipairs(Catalog.commands) do
 end
 
 InputSettingsUI.specs = {
+  pedestal = { field = "pedestalEnabled", default = false, device = "boolean" },
   keyboard_open = { field = "openKey", default = DEFAULT_OPEN_KEY, device = "keyboard" },
   controller_favorite = { field = "controllerFavoriteButton", default = nil, device = "controller" },
   controller_open = { field = "controllerOpenFallbackButton", default = nil, device = "controller" },
@@ -620,6 +626,8 @@ InputSettingsUI.entries = {
     kind = "setting_toggle", settingId = "fullscreen_cursor" },
   { id = "hd_font_toggle", name = "HD Font", en = "HD Font", icon = "T",
     kind = "setting_toggle", settingId = "hd_font" },
+  { id = "pedestal_toggle", name = "Ground Spawn (incl. Pedestals)", en = "Ground Spawn (incl. Pedestals)", icon = "P",
+    kind = "setting_toggle", settingId = "pedestal" },
 }
 for _, entry in ipairs(InputSettingsUI.entries) do
   entry.cat = "input_settings"
@@ -1023,6 +1031,7 @@ function CustomCommandUI.buildSavePayload()
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
+      .. "pedestalEnabled=" .. (state.pedestalEnabled == true and "1" or "0") .. "\n"
       .. "hdFontEnabled=" .. (state.hdFontEnabled == true and "1" or "0") .. "\n"
       .. "fullscreenCursorEnabled=" .. (state.fullscreenCursorEnabled == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
@@ -1061,6 +1070,7 @@ local function loadState()
   state.closeAfterRegularCommand = true
   state.fullscreenCursorEnabled = true
   state.hdFontEnabled = false
+  state.pedestalEnabled = false
   state.controllerFavoriteButton = nil
   state.controllerOpenFallbackButton = nil
   state.customCommands:load("", nil)
@@ -1107,6 +1117,7 @@ local function loadState()
   elseif savedCloseAfterRegularCommand ~= nil then
     migrated = true
   end
+  state.pedestalEnabled = ("\n" .. parseRaw):match("\npedestalEnabled=([^\n]*)") == "1"
   state.hdFontEnabled = ("\n" .. parseRaw):match("\nhdFontEnabled=([^\n]*)") == "1"
   local savedFullscreenCursor = parseRaw:match("fullscreenCursorEnabled=([^\n]*)")
   if savedFullscreenCursor == "0" then
@@ -1250,6 +1261,7 @@ local function clearRunTransientState()
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
   state.controllerConfirmTrustedUnknown = false
+  state.controllerConfirmGroundPickup = nil
   state.controllerConfirmRawPassthrough = false
   state.controllerShoulderLatch = {}
   state.pointerActive = false
@@ -1604,6 +1616,8 @@ function InputSettingsUI.applySetting(settingId, value)
 end
 
 function InputSettingsUI.refreshEntries()
+  InputSettingsUI.entries[11].name = "Ground Spawn (incl. Pedestals): " .. InputSettingsUI.formatValue("pedestal", state.pedestalEnabled)
+  InputSettingsUI.entries[11].desc = "When on, collectibles spawn on pedestals; trinkets, cards and runes spawn nearby for pickup. Pills are unaffected."
   InputSettingsUI.entries[10].name = "HD Font: " .. (state.hdFontEnabled and "On" or "Off")
   InputSettingsUI.entries[10].desc = "Off by default. Uses HD fonts at the original text size and layout. Turn off for classic fonts. Your choice is saved."
   local keyboard = InputSettingsUI.formatValue("keyboard_open", state.openKey)
@@ -1679,7 +1693,7 @@ local function applyPostCommandMenuPolicy(spec)
   state.commandHistoryDraftRepeat = nil
 end
 
-local function queueCommand(command, requestedCount, explicitRepeatMax, trustedUnknown, rawPassthrough)
+local function queueCommand(command, requestedCount, explicitRepeatMax, trustedUnknown, rawPassthrough, groundPickup)
   local valid, value, spec
   if rawPassthrough then
     value = trim(command)
@@ -1761,7 +1775,8 @@ local function queueCommand(command, requestedCount, explicitRepeatMax, trustedU
   end
 
   state.queue = {
-    command = value,
+    command = groundPickup and ("spawn 5." .. groundPickup.variant .. "." .. groundPickup.id) or value,
+    groundPickup = groundPickup,
     total = count,
     done = 0,
     nextFrame = Presentation.commandFrame(),
@@ -1839,7 +1854,8 @@ local function queueEntry(entry, requestedCount)
     return false
   end
   return queueCommand(entry.cmd, requestedCount, entry.repeatMax,
-    entry.trustedUnknown, entry.rawPassthrough == true)
+    entry.trustedUnknown, entry.rawPassthrough == true,
+    ConsoleUI.pedestals.request(entry, state.pedestalEnabled))
 end
 
 local function finishQueue(queue)
@@ -1883,7 +1899,17 @@ local function processQueue()
   local frame = queue.renderClock and Isaac.GetFrameCount() or Game():GetFrameCount()
   if frame < queue.nextFrame then return end
 
-  local ok, result = pcall(Isaac.ExecuteCommand, queue.command)
+  local ok, result, reason
+  if queue.groundPickup then
+    ok, result, reason = pcall(ConsoleUI.pedestals.spawn, queue.groundPickup)
+    if ok and result == false then
+      queue.failed = reason == "no_space" and "No free pickup position nearby" or "Invalid item or spawn failed"
+      finishQueue(queue)
+      return
+    end
+  else
+    ok, result = pcall(Isaac.ExecuteCommand, queue.command)
+  end
   if not ok then
     queue.failed = tostring(result or "The Lua API rejected the command")
     finishQueue(queue)
@@ -2998,6 +3024,7 @@ local function clearControllerConfirm()
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
   state.controllerConfirmTrustedUnknown = false
+  state.controllerConfirmGroundPickup = nil
   state.controllerConfirmRawPassthrough = false
 end
 
@@ -3023,11 +3050,12 @@ local function updateControllerConfirm()
     local repeatCount = state.controllerConfirmRepeat
     local repeatMax = state.controllerConfirmRepeatMax
     local trustedUnknown = state.controllerConfirmTrustedUnknown
+    local groundPickup = state.controllerConfirmGroundPickup
     local rawPassthrough = state.controllerConfirmRawPassthrough
     local source, value = state.controllerConfirmSource, state.controllerConfirmValue
     clearControllerConfirm()
     armInputLease(source == "action" and "action" or "controller_button", value, index)
-    queueCommand(command, repeatCount, repeatMax, trustedUnknown, rawPassthrough)
+    queueCommand(command, repeatCount, repeatMax, trustedUnknown, rawPassthrough, groundPickup)
   end
   return true
 end
@@ -3259,6 +3287,7 @@ local function handleKeyboardAndController(entries)
         return
       end
       state.controllerConfirmHold = 0
+      state.controllerConfirmGroundPickup = ConsoleUI.pedestals.request(entry, state.pedestalEnabled)
       state.controllerConfirmCommand = entry.cmd
       state.controllerConfirmRemoveCommand = removalCommand(entry)
       state.controllerConfirmRemoveMessage = removalUnavailableMessage(entry, true)
@@ -3658,6 +3687,7 @@ function Presentation.categoryHint()
 end
 
 function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
+  local pedestal = ConsoleUI.pedestals.supports(entry, state.pedestalEnabled)
   local mode = state.controlMode
   local actions = {}
   local function add(value)
@@ -3706,17 +3736,17 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
       add("C: parameters")
     end
   elseif mode == "controller" and removalCommand(entry) then
-    add("A: give / hold: remove")
+    add(pedestal and "A: spawn / hold: remove" or "A: give / hold: remove")
   elseif mode == "controller" then
-    add("A: run")
+    add(pedestal and "A: spawn" or "A: run")
   elseif mode == "mouse" and removalCommand(entry) then
-    add("LMB: give"); add("RMB: remove")
+    add(pedestal and "LMB: spawn" or "LMB: give"); add("RMB: remove")
   elseif mode == "mouse" then
-    add("LMB: run")
+    add(pedestal and "LMB: spawn" or "LMB: run")
   elseif removalCommand(entry) then
-    add("Enter: give")
+    add(pedestal and "Enter: spawn" or "Enter: give")
   else
-    add("Enter: run")
+    add(pedestal and "Enter: spawn" or "Enter: run")
   end
   add(details)
   add(favorite)
@@ -3728,7 +3758,7 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
       or (entry.kind == "setting_toggle" and "A: toggle"
       or (entry.catalogAction == "disabled" and "Disabled"
       or (entry.catalogAction == "manual" and "A: help"
-      or (removalCommand(entry) and "A: give" or "A: run")))))
+      or (pedestal and "A: spawn" or (removalCommand(entry) and "A: give" or "A: run"))))))
     candidates[#candidates + 1] = favorite and (primary .. " · " .. favorite) or primary
     candidates[#candidates + 1] = primary
   elseif mode == "keyboard" then

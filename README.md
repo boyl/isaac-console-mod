@@ -10,8 +10,8 @@
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前版本 `2.5.28`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.23`、metadata `2.5.4.23`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前版本 `2.5.30`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.25`、metadata `2.5.4.25`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：中英文 Lua Mock、冷启动回归和双语发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
 - `tools/build-nexus-mod.ps1`、`tools/verify-nexus-packages.ps1`：Nexus 发布包构建与整链路校验。
@@ -70,6 +70,14 @@ Nexus 没有面向普通作者的上传 API，因此仓库侧只负责"打包 + 
   -PythonPath 'C:\Users\lw\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe'
 ```
 
-该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.28-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.23-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
+该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.30-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.25-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
 
 页面字段与可复制文案见 [NEXUS_UPLOAD.md](NEXUS_UPLOAD.md)；网页上传步骤与安全约定见 [tools/nexus/README.md](tools/nexus/README.md)。
+
+## 地面生成（含底座）
+
+在内置设置第二页切换“地面生成（含底座）”，默认关闭并自动保存，沿用原开关的已保存选择。开启后，主动/被动/跟班道具生成底座，饰品、卡牌、符文与魂石在角色附近生成拾取物，不直接改动装备或卡槽。药丸、手动/自定义命令保持原样。关闭时继续使用原给予行为。
+
+保留现有键盘、鼠标、手柄操作。右键/长按 A 仍按原规则移除已持有物品。收藏品批量上限 99，饰品和卡牌仍单次；入队时固定模式，无空位停止并显示完成数量。
+
+本轮规范与验证：`docs/specs/ground-pickups.md`。原底座版本历史验收：`docs/acceptance/collectible-pedestals.md`。

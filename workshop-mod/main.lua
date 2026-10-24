@@ -7,7 +7,9 @@ local ObjectPinyinAliases = include("scripts.object_pinyin_aliases")
 local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
-local VERSION = "2.5.28"
+ChineseConsole.pedestals = include("scripts.collectible_pedestals")
+
+local VERSION = "2.5.30"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -323,6 +325,7 @@ local state = {
   startupHintEnabled = true,
   closeAfterRegularCommand = true,
   fullscreenCursorEnabled = true,
+  pedestalEnabled = false,
   openKey = DEFAULT_OPEN_KEY,
   controllerFavoriteButton = nil,
   controllerOpenFallbackButton = nil,
@@ -350,6 +353,7 @@ local state = {
   controllerConfirmValue = nil,
   controllerConfirmTrustedUnknown = false,
   controllerConfirmRawPassthrough = false,
+  controllerConfirmGroundPickup = nil,
   pointerActive = false,
   lastMouseX = nil,
   lastMouseY = nil,
@@ -491,6 +495,7 @@ local function setMenuOpen(open)
     state.controllerConfirmSource = nil
     state.controllerConfirmValue = nil
     state.controllerConfirmTrustedUnknown = false
+    state.controllerConfirmGroundPickup = nil
     state.controllerConfirmRawPassthrough = false
     state.controllerShoulderLatch = {}
   end
@@ -625,6 +630,7 @@ for _, command in ipairs(Catalog.commands) do
 end
 
 InputSettingsUI.specs = {
+  pedestal = { field = "pedestalEnabled", default = false, device = "boolean" },
   keyboard_open = { field = "openKey", default = DEFAULT_OPEN_KEY, device = "keyboard" },
   controller_favorite = { field = "controllerFavoriteButton", default = nil, device = "controller" },
   controller_open = { field = "controllerOpenFallbackButton", default = nil, device = "controller" },
@@ -654,6 +660,8 @@ InputSettingsUI.entries = {
     kind = "setting_toggle", settingId = "fullscreen_cursor" },
   { id = "hd_font_toggle", name = "高清字体", en = "HD Font", icon = "T",
     kind = "setting_toggle", settingId = "hd_font" },
+  { id = "pedestal_toggle", name = "地面生成（含底座）", en = "Ground Spawn (incl. Pedestals)", icon = "P",
+    kind = "setting_toggle", settingId = "pedestal" },
 }
 for _, entry in ipairs(InputSettingsUI.entries) do
   entry.cat = "input_settings"
@@ -1054,6 +1062,7 @@ function CustomCommandUI.buildSavePayload()
       .. "openKey=" .. tostring(state.openKey or DEFAULT_OPEN_KEY) .. "\n"
       .. "startupHintEnabled=" .. (state.startupHintEnabled == false and "0" or "1") .. "\n"
       .. "closeAfterRegularCommand=" .. (state.closeAfterRegularCommand == false and "0" or "1") .. "\n"
+      .. "pedestalEnabled=" .. (state.pedestalEnabled == true and "1" or "0") .. "\n"
       .. "hdFontEnabled=" .. (state.hdFontEnabled == true and "1" or "0") .. "\n"
       .. "fullscreenCursorEnabled=" .. (state.fullscreenCursorEnabled == false and "0" or "1") .. "\n"
       .. "controllerFavoriteButton=" .. tostring(state.controllerFavoriteButton or "auto") .. "\n"
@@ -1127,6 +1136,8 @@ function InputSettingsUI.applySetting(settingId, value)
 end
 
 function InputSettingsUI.refreshEntries()
+  InputSettingsUI.entries[11].name = "地面生成（含底座）：" .. InputSettingsUI.formatValue("pedestal", state.pedestalEnabled)
+  InputSettingsUI.entries[11].desc = "开启后，道具以底座形式生成，饰品、卡牌和符文出现在角色附近，需自行拾取。药丸不受影响。"
   InputSettingsUI.entries[10].name = "高清字体：" .. (state.hdFontEnabled and "开启" or "关闭")
   InputSettingsUI.entries[10].desc = "默认关闭。开启后使用高清黑体，保持原字号和布局；关闭后恢复经典字体。选择会保存。"
   local keyboard = InputSettingsUI.formatValue("keyboard_open", state.openKey)
@@ -1161,6 +1172,7 @@ local function loadState()
   state.closeAfterRegularCommand = true
   state.fullscreenCursorEnabled = true
   state.hdFontEnabled = false
+  state.pedestalEnabled = false
   state.controllerFavoriteButton = nil
   state.controllerOpenFallbackButton = nil
   state.customCommands:load("", nil)
@@ -1207,6 +1219,7 @@ local function loadState()
   elseif savedCloseAfterRegularCommand ~= nil then
     migrated = true
   end
+  state.pedestalEnabled = ("\n" .. parseRaw):match("\npedestalEnabled=([^\n]*)") == "1"
   state.hdFontEnabled = ("\n" .. parseRaw):match("\nhdFontEnabled=([^\n]*)") == "1"
   local savedFullscreenCursor = parseRaw:match("fullscreenCursorEnabled=([^\n]*)")
   if savedFullscreenCursor == "0" then
@@ -1350,6 +1363,7 @@ local function clearRunTransientState()
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
   state.controllerConfirmTrustedUnknown = false
+  state.controllerConfirmGroundPickup = nil
   state.controllerConfirmRawPassthrough = false
   state.controllerShoulderLatch = {}
   state.pointerActive = false
@@ -1704,7 +1718,7 @@ local function applyPostCommandMenuPolicy(spec)
   state.commandHistoryDraftRepeat = nil
 end
 
-local function queueCommand(command, requestedCount, explicitRepeatMax, trustedUnknown, rawPassthrough)
+local function queueCommand(command, requestedCount, explicitRepeatMax, trustedUnknown, rawPassthrough, groundPickup)
   local valid, value, spec
   if rawPassthrough then
     value = trim(command)
@@ -1785,7 +1799,8 @@ local function queueCommand(command, requestedCount, explicitRepeatMax, trustedU
   end
 
   state.queue = {
-    command = value,
+    command = groundPickup and ("spawn 5." .. groundPickup.variant .. "." .. groundPickup.id) or value,
+    groundPickup = groundPickup,
     total = count,
     done = 0,
     nextFrame = Presentation.commandFrame(),
@@ -1865,7 +1880,8 @@ local function queueEntry(entry, requestedCount)
     return false
   end
   return queueCommand(entry.cmd, requestedCount, entry.repeatMax,
-    entry.trustedUnknown, entry.rawPassthrough == true)
+    entry.trustedUnknown, entry.rawPassthrough == true,
+    ChineseConsole.pedestals.request(entry, state.pedestalEnabled))
 end
 
 local function finishQueue(queue)
@@ -1908,7 +1924,17 @@ local function processQueue()
   local frame = queue.renderClock and Isaac.GetFrameCount() or Game():GetFrameCount()
   if frame < queue.nextFrame then return end
 
-  local ok, result = pcall(Isaac.ExecuteCommand, queue.command)
+  local ok, result, reason
+  if queue.groundPickup then
+    ok, result, reason = pcall(ChineseConsole.pedestals.spawn, queue.groundPickup)
+    if ok and result == false then
+      queue.failed = reason == "no_space" and "附近没有可用空位" or "物品无效或无法生成"
+      finishQueue(queue)
+      return
+    end
+  else
+    ok, result = pcall(Isaac.ExecuteCommand, queue.command)
+  end
   if not ok then
     queue.failed = tostring(result or "Lua API 拒绝执行")
     finishQueue(queue)
@@ -3019,6 +3045,7 @@ local function clearControllerConfirm()
   state.controllerConfirmSource = nil
   state.controllerConfirmValue = nil
   state.controllerConfirmTrustedUnknown = false
+  state.controllerConfirmGroundPickup = nil
   state.controllerConfirmRawPassthrough = false
 end
 
@@ -3044,11 +3071,12 @@ local function updateControllerConfirm()
     local repeatCount = state.controllerConfirmRepeat
     local repeatMax = state.controllerConfirmRepeatMax
     local trustedUnknown = state.controllerConfirmTrustedUnknown
+    local groundPickup = state.controllerConfirmGroundPickup
     local rawPassthrough = state.controllerConfirmRawPassthrough
     local source, value = state.controllerConfirmSource, state.controllerConfirmValue
     clearControllerConfirm()
     armInputLease(source == "action" and "action" or "controller_button", value, index)
-    queueCommand(command, repeatCount, repeatMax, trustedUnknown, rawPassthrough)
+    queueCommand(command, repeatCount, repeatMax, trustedUnknown, rawPassthrough, groundPickup)
   end
   return true
 end
@@ -3280,6 +3308,7 @@ local function handleKeyboardAndController(entries)
         return
       end
       state.controllerConfirmHold = 0
+      state.controllerConfirmGroundPickup = ChineseConsole.pedestals.request(entry, state.pedestalEnabled)
       state.controllerConfirmCommand = entry.cmd
       state.controllerConfirmRemoveCommand = removalCommand(entry)
       state.controllerConfirmRemoveMessage = removalUnavailableMessage(entry, true)
@@ -3673,6 +3702,7 @@ function Presentation.categoryHint()
 end
 
 function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
+  local pedestal = ChineseConsole.pedestals.supports(entry, state.pedestalEnabled)
   local mode = state.controlMode
   local actions = {}
   local function add(value)
@@ -3721,17 +3751,17 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
       add("C补参数")
     end
   elseif mode == "controller" and removalCommand(entry) then
-    add("A给予/长按移除")
+    add(pedestal and "A生成/长按移除" or "A给予/长按移除")
   elseif mode == "controller" then
-    add("A执行")
+    add(pedestal and "A生成" or "A执行")
   elseif mode == "mouse" and removalCommand(entry) then
-    add("左键给予"); add("右键移除")
+    add(pedestal and "左键生成" or "左键给予"); add("右键移除")
   elseif mode == "mouse" then
-    add("左键执行")
+    add(pedestal and "左键生成" or "左键执行")
   elseif removalCommand(entry) then
-    add("Enter给予")
+    add(pedestal and "Enter生成" or "Enter给予")
   else
-    add("Enter执行")
+    add(pedestal and "Enter生成" or "Enter执行")
   end
   add(details)
   add(favorite)
@@ -3743,7 +3773,7 @@ function Presentation.entryHintCandidates(entry, isFavorite, effectPageCount)
       or (entry.kind == "setting_toggle" and "A切换"
       or (entry.catalogAction == "disabled" and "已禁用"
       or (entry.catalogAction == "manual" and "A查看说明"
-      or (removalCommand(entry) and "A给予" or "A执行")))))
+      or (pedestal and "A生成" or (removalCommand(entry) and "A给予" or "A执行"))))))
     candidates[#candidates + 1] = favorite and (primary .. " · " .. favorite) or primary
     candidates[#candidates + 1] = primary
   elseif mode == "keyboard" then

@@ -3215,7 +3215,7 @@ local function testPartialMcmSettings()
   openMenu()
   setCategory(categoryById.input_settings.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 10, "partial MCM removed built-in settings")
+  assertEqual(#settings, 11, "partial MCM removed built-in settings")
   assertEqual(settings[3].id, "controller_favorite_bind", "built-in favorite calibration depends on MCM")
   assertEqual(settings[5].id, "controller_open_calibrate", "built-in open calibration depends on MCM")
 end
@@ -3774,7 +3774,7 @@ local function testBuiltInSettings()
   openMenu()
   setCategory(categoryById.input_settings.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 10, "built-in Settings must expose ten actions across pages")
+  assertEqual(#settings, 11, "built-in Settings must expose eleven actions across pages")
   local expectedNames = IS_ZH and {
     "键盘呼出",
     "键盘默认：F6",
@@ -3933,7 +3933,7 @@ local function testControllerOpenCompatibility()
   assertTrue(inputCategory ~= nil, "Input Settings category is unavailable without MCM")
   setCategory(inputCategory.index)
   local settings = visibleEntries()
-  assertEqual(#settings, 10, "built-in Settings must expose all ten actions")
+  assertEqual(#settings, 11, "built-in Settings must expose all eleven actions")
   local expectedSettingIds = {
     "keyboard_open_bind", "keyboard_open_reset", "controller_favorite_bind",
     "controller_favorite_reset", "controller_open_calibrate", "controller_open_reset",
@@ -4107,6 +4107,19 @@ local function testFirstStartCallbackInterruption()
 end
 
 local scenarios = {
+  pedestals = function()
+    dofile(MOD_ROOT .. "/../tests/workshop-mod/pedestal_scenarios.lua")({
+      TEST = TEST, state = state, onStarted = onStarted, onUpdate = onUpdate,
+      openMenu = openMenu, queueEntry = queueEntry, queueCommand = queueCommand,
+      findObject = findObject, settings = InputSettingsUI, game = game,
+      assertEqual = assertEqual, assertTrue = assertTrue, contains = contains,
+      presentation = PresentationModel, removalCommand = removalCommand,
+      visibleEntries = visibleEntries, setCategory = setCategory, categories = categoryById,
+      toggleFavorite = toggleFavorite, pressKey = pressKey, pressButton = pressButton,
+      renderFrame = renderFrame, computeLayout = computeLayout, clickMouse = clickMouse,
+      startHeldButton = startHeldButton, holdButton = holdButton, releaseButton = releaseButton,
+    })
+  end,
   hd_font = function()
     onStarted()
     assertEqual(state.hdFontEnabled, false, "HD must default off")

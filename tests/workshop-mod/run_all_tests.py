@@ -49,9 +49,10 @@ def main() -> int:
     assert lock["repository"] == "https://github.com/boyl/game-modding-toolkit"
     assert len(lock["verifiedCommit"]) == 40
 
+    run([sys.executable, str(TEST_ROOT / "run_pedestal_tests.py")])
     profiles = (
-        ("workshop-mod", "Isaac Chinese Console", "2.5.28"),
-        ("workshop-mod-en", "Console UI", "2.5.4-en.23"),
+        ("workshop-mod", "Isaac Chinese Console", "2.5.30"),
+        ("workshop-mod-en", "Console UI", "2.5.4-en.25"),
     )
     run([sys.executable, str(TEST_ROOT / "run_item_icon_tests.py")])
     for directory, mod_name, version in profiles:

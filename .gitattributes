@@ -1,2 +1,4 @@
 # Font manifests hash exact bytes; preserve them across Windows checkouts.
 **/resources/font/hd/** -text
+# coverage.lua 的清单哈希以 CRLF 字节计算；将行尾 CR 视为合法。
+**/resources/font/hd/coverage.lua whitespace=cr-at-eol

@@ -52,8 +52,8 @@ def main():
     for relative in ('scripts/item_icons.lua', 'resources/gfx/ui/isaac_console_item.anm2',
                      'resources/gfx/ui/isaac_console_cards.anm2'):
         assert (ROOT/'workshop-mod'/relative).read_bytes() == (ROOT/'workshop-mod-en'/relative).read_bytes()
-    for folder, name, version in (('workshop-mod','Isaac Chinese Console','2.5.28'),
-                                  ('workshop-mod-en','Console UI','2.5.4-en.23')):
+    for folder, name, version in (('workshop-mod','Isaac Chinese Console','2.5.30'),
+                                  ('workshop-mod-en','Console UI','2.5.4-en.25')):
         game.MOD_ROOT = ROOT / folder
         for plus, repentogon in ((False, False), (True, False), (False, True), (True, True)):
             for width, height, hd in ((451,257,False),(480,270,False),(553,300,False),(960,540,True)):
