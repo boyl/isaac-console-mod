@@ -1,6 +1,8 @@
-# 原生暂停 0.2.2：随游戏自动加载
+# 原生暂停 0.2.3：随游戏自动加载
 
 安装一次，以后从 Steam 正常启动游戏即可使用暂停；没有每次启动的命令窗口。卸载后，原版 Rep/Rep+ 的控制台功能继续工作，只是不自动暂停。新版忏悔龙菜单通过 MC_PRE_UPDATE 自动暂停，无需本组件。
+
+配套控制台二选一：[Isaac Chinese Console（中文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3776882944) 或 [Console UI（英文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3779128726)。先订阅并在游戏 Mods 菜单启用其中一个。原生组件下载 [GitHub Release](https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.3) 的 `native-pause-0.2.3.zip`，不要下载 Source code。加载器已包含，无需另行下载；手动安装不需要 PowerShell。
 
 ## 手动安装（不需要PowerShell）
 
@@ -9,7 +11,7 @@
 3. 若目标已有同名文件，不要覆盖其他加载器或插件，应先处理冲突。
 4. 从 Steam 正常启动。菜单打开时暂停，关闭时恢复。无需再运行 start.cmd 或加载器。
 
-REPENTOGON 启动器使用独立 EXE 时，须将相同三项文件复制到该 EXE 的目录（例如游戏下的 `Repentogon` 子目录）。只复制到原版根目录不会自动加载到独立进程。可选脚本安装须用 `./install.ps1 -GameDirectory "实际 Repentogon 目录"`，卸载也指定相同目录。支持范围以 manifest 的完整 EXE 哈希为准。
+REPENTOGON 启动器使用独立 EXE 时，须将相同三项文件复制到该 EXE 的目录（例如游戏下的 `Repentogon` 子目录）。只复制到原版根目录不会自动加载到独立进程。可选脚本安装须用 `./install.ps1 -GameDirectory "实际 Repentogon 目录"`，卸载也指定相同目录。旧版 REPENTOGON 原生后端仍保留已知哈希适配，本轮新增的未知哈希兼容检测面向普通 Rep／Rep+。
 
 `.asi` 是原生DLL插件的扩展名；需要自动加载器和插件一起复制，单独复制暂停插件不会生效。
 
@@ -48,15 +50,26 @@ The Binding of Isaac Rebirth/
 
 ## 一次性安装与卸载脚本
 
-可选：安装PowerShell 7后双击 `install.cmd`，脚本校验支持的EXE与文件哈希、检查冲突后安装。自定义目录传 `./install.ps1 -GameDirectory "实际目录"`。脚本只安装原生组件，不替换Mod、游戏EXE或存档。出现实际权限拒绝时请求UAC。
+可选：安装PowerShell 7后双击 `install.cmd`，脚本记录EXE哈希、校验包文件、检查冲突后安装。未知EXE哈希允许安装，实际兼容性由游戏启动后的组件检查。自定义目录传 `./install.ps1 -GameDirectory "实际目录"`。脚本只安装原生组件，不替换Mod、游戏EXE或存档。出现实际权限拒绝时请求UAC。
 
 使用脚本安装的，游戏退出后双击 `uninstall.cmd`。手动安装的，游戏退出后只移除上述三个自己复制的文件；保留scripts目录内其他文件。
 
 ## 支持范围
 
-支持明确哈希清单中的Steam Repentance 1.7.9b/x86与Repentance+ v1.9.7.17/J460/x86。插件自行核验EXE，未知版本拒绝挂钩并写诊断日志。Steam更新可能使组件停止启用，需对应版本更新。控制台Lua Mod的其他运行时兼容性与此原生组件的支持范围分别判断。
+优先识别 Steam Repentance 1.7.9b/x86 与 Repentance+ v1.9.7.17/J460/x86。EXE 哈希不在清单时自动检测两个适配器，恰好一个通过则启用，无需手动放行。仅哈希变化不再直接禁用；关键函数或字段布局变化、Lua 入口不匹配、结果有歧义时会停用原生暂停并说明原因，控制台其他功能继续工作。
 
-`scripts/native-pause.log` 记录加载、获取和释放暂停；初始化与未知版本拒绝可在这里检查。
+`scripts/native-pause.log` 记录完整 EXE 哈希、版本、UTC 时间、进程、逐项检测和挂钩结果，以及获取／释放暂停。主目录无法写日志时，查找 `%TEMP%/IsaacConsoleNativePause-<进程号>.log`。
+
+- `UNKNOWN_HASH compatibility_probe`：哈希未知，正在自动检测，不表示拒绝。
+- `CHECK ... result=FAIL`：具体失败项和 RVA；函数不匹配时还有实际字节。
+- `COMPATIBLE_UNKNOWN_HASH`：未知哈希已通过兼容检测。
+- `LOADED native-pause 0.2.3`：组件已加载。
+- `DISABLED no_compatible_runtime`：没有适配器通过，查看前面的 FAIL。
+- `DISABLED ambiguous_compatible_runtime`：多个候选同时通过，无法可靠选择。
+
+反馈时请发送本次启动的完整日志，从 `START` 到最后一行，不必再手动计算哈希。
+
+升级旧组件时先正常退出游戏。手动安装的只替换属于本组件的 `scripts/IsaacConsoleNativePause.asi`；使用脚本安装的先用旧包卸载，再用新包安装，避免安装回执与实际文件不一致。不要覆盖其他加载器。
 
 ## 实现与第三方组件
 

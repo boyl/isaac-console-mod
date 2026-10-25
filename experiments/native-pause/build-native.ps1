@@ -23,6 +23,8 @@ try {
     if($LASTEXITCODE -ne 0){throw '加载器编译失败'}
     & $compiler /nologo /utf-8 /MT /O2 /Fo"$dest\" /Fe"$dest\contract-test.exe" (Join-Path $PSScriptRoot 'test.c') @sources /link bcrypt.lib
     if($LASTEXITCODE -ne 0){throw '契约编译失败'}
+    & $compiler /nologo /utf-8 /MT /O2 /Fo"$dest\" /Fe"$dest\compatibility-test.exe" (Join-Path $PSScriptRoot 'test-compatibility.c') @sources /link bcrypt.lib
+    if($LASTEXITCODE -ne 0){throw '兼容检测测试编译失败'}
     & $compiler /nologo /utf-8 /MT /O2 /DNATIVE_FIXTURE_DLL /LD /Fo"$dest\" /Fe"$dest\loader-fixture.dll" (Join-Path $PSScriptRoot 'loader-fixture.c') /link '/EXPORT:NativePauseInitialize=_NativePauseInitialize@4'
     if($LASTEXITCODE -ne 0){throw '加载测试DLL编译失败'}
     & $compiler /nologo /utf-8 /MT /O2 /Fo"$dest\" /Fe"$dest\loader-target.exe" (Join-Path $PSScriptRoot 'loader-fixture.c')

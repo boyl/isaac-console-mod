@@ -12,9 +12,15 @@ $checks=0
 function Check($ok,$name){if(-not $ok){throw "FAIL $name"};$script:checks++;Write-Output "PASS $name"}
 Invoke-AutoloadInstall
 Check (-not(Test-Path -LiteralPath (Join-Path $gameRoot 'winmm.dll'))) 'preflight performs no install'
+$fixtureExe=Join-Path $gameRoot 'isaac-ng.exe'
+$stream=[IO.File]::Open($fixtureExe,[IO.FileMode]::Append,[IO.FileAccess]::Write)
+try{$stream.WriteByte(42)}finally{$stream.Dispose()}
+$probe=Invoke-AutoloadInstall
+Check (($probe -join "`n") -match 'AUTOLOAD_UNKNOWN_EXE sha256=[A-F0-9]{64}') 'unknown EXE hash is allowed and reported during preflight'
+Check (-not(Test-Path -LiteralPath (Join-Path $gameRoot 'winmm.dll'))) 'unknown EXE preflight performs no install'
 $ValidateOnly=$false
 Invoke-AutoloadInstall
-Check (Test-Path -LiteralPath (Join-Path $gameRoot '.isaac-native-pause-install.json')) 'install writes restoration receipt'
+Check (Test-Path -LiteralPath (Join-Path $gameRoot '.isaac-native-pause-install.json')) 'unknown EXE install writes restoration receipt'
 $manifest=Get-Content -LiteralPath (Join-Path $package 'manifest.json') -Raw | ConvertFrom-Json
 foreach($name in $manifest.installFiles){Check ((Get-FileHash -LiteralPath (Join-Path $gameRoot $name)).Hash -eq $manifest.files.('game-files/'+$name)) "installed hash $name"}
 Invoke-AutoloadInstall

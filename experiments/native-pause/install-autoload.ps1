@@ -10,7 +10,9 @@ function Invoke-AutoloadInstall {
     if(Get-Process -Name isaac-ng -ErrorAction SilentlyContinue){throw '先正常退出游戏再安装。'}
     $manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'manifest.json') -Raw | ConvertFrom-Json
     $exeHash=(Get-FileHash -LiteralPath (Join-Path $gameRoot 'isaac-ng.exe')).Hash
-    if($exeHash -notin @($manifest.exeHashes)){throw '当前游戏EXE不在支持清单，未修改。'}
+    if($exeHash -notin @($manifest.exeHashes)){
+        Write-Output "AUTOLOAD_UNKNOWN_EXE sha256=$exeHash：允许安装，游戏启动后自动检测 Rep/Rep+ 兼容性；结果见 scripts/native-pause.log。"
+    } else { Write-Output "AUTOLOAD_KNOWN_EXE sha256=$exeHash" }
     foreach($file in $manifest.files.PSObject.Properties){
         if((Get-InstallHash (Resolve-InstallFile $PSScriptRoot $file.Name)) -ne $file.Value){throw "包校验失败：$($file.Name)"}
     }

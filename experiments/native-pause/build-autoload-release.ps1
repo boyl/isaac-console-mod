@@ -1,19 +1,22 @@
 #requires -Version 7.0
-param([Parameter(Mandatory)][string]$PythonPath,[Parameter(Mandatory)][string]$OutputDirectory,
+param([Parameter(Mandatory)][string]$PythonPath,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$Candidate,
       [string]$GameDirectory=(Join-Path ${env:ProgramFiles(x86)} 'Steam/steamapps/common/The Binding of Isaac Rebirth'))
 $ErrorActionPreference='Stop'
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $sourceHead=(& git -C $repo rev-parse HEAD)
 if($LASTEXITCODE -ne 0){throw '无法读取源码 HEAD。'}
 $sourceChanges=(& git -C $repo status --porcelain)
-if($sourceChanges){throw '正式发布要求源码工作树干净，请先提交改动。'}
+if($sourceChanges -and -not $Candidate){throw '正式发布要求源码工作树干净，请先提交改动。开发验证可显式使用 -Candidate。'}
 if(Test-Path -LiteralPath $OutputDirectory){throw '输出目录已存在。'}
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $out=(Resolve-Path -LiteralPath $OutputDirectory).Path
-$build=Join-Path $out 'build-evidence'; $package=Join-Path $out 'native-pause-0.2.2'
+$packageName=if($Candidate){'native-pause-0.2.3-candidate'}else{'native-pause-0.2.3'}
+$build=Join-Path $out 'build-evidence'; $package=Join-Path $out $packageName
 & (Join-Path $PSScriptRoot 'build-native.ps1') -OutputDirectory $build
 & (Join-Path $build 'contract-test.exe') (Join-Path $GameDirectory 'Lua5.3.3r.dll') | Tee-Object -FilePath (Join-Path $build 'native-tests.log')
 if($LASTEXITCODE -ne 0){throw '原生测试失败'}
+& (Join-Path $build 'compatibility-test.exe') (Join-Path $GameDirectory 'Lua5.3.3r.dll') (Join-Path $GameDirectory 'isaac-ng.exe') | Tee-Object -FilePath (Join-Path $build 'compatibility-tests.log')
+if($LASTEXITCODE -ne 0){throw '兼容检测测试失败'}
 & (Join-Path $PSScriptRoot 'test-autoload.ps1') -BuildDirectory $build -GameDirectory $GameDirectory | Tee-Object -FilePath (Join-Path $build 'autoload-tests.log')
 & $PythonPath (Join-Path $PSScriptRoot 'run-integration.py') | Tee-Object -FilePath (Join-Path $build 'integration.log')
 if($LASTEXITCODE -ne 0){throw '双语暂停集成失败'}
@@ -46,9 +49,11 @@ exit /b %rc%
 }
 $files=[ordered]@{}
 foreach($file in Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName){$relative=[IO.Path]::GetRelativePath($package,$file.FullName).Replace('\','/');$files[$relative]=(Get-FileHash -LiteralPath $file.FullName).Hash}
-$manifest=[ordered]@{version='0.2.2';sourceHead=$sourceHead;sourceDirty=$false;exeHashes=@('3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B','04469D0C3D3581936FCF85BEA5F9F4F3A65B2CCF96B36310456C9626BAC36DC6','CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4');runtimes=@('Repentance+ v1.9.7.17/J460/x86','Repentance v1.7.9b/x86','REPENTOGON+ fixed Rep+ executable/x86');installFiles=@('winmm.dll','winmm.ini','scripts/IsaacConsoleNativePause.asi');files=$files;loader=$origin}
+$sourceFiles=[ordered]@{}
+foreach($name in @('pause.c','compatibility.h','test-compatibility.c','install-autoload.ps1','build-autoload-release.ps1')){$sourceFiles[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name)).Hash}
+$manifest=[ordered]@{version='0.2.3';candidate=[bool]$Candidate;sourceHead=$sourceHead;sourceDirty=[bool]$sourceChanges;sourceFiles=$sourceFiles;compatibilityPolicy='known-hash-or-validated-rep-layout';exeHashes=@('3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B','04469D0C3D3581936FCF85BEA5F9F4F3A65B2CCF96B36310456C9626BAC36DC6','CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4');runtimes=@('Repentance+ v1.9.7.17/J460/x86','Repentance v1.7.9b/x86','REPENTOGON+ fixed Rep+ executable/x86');installFiles=@('winmm.dll','winmm.ini','scripts/IsaacConsoleNativePause.asi');files=$files;loader=$origin}
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $package 'manifest.json') -Encoding utf8
 & (Join-Path $PSScriptRoot 'test-autoload-installer.ps1') -PackageDirectory $package -TestDirectory $build -GameDirectory $GameDirectory | Tee-Object -FilePath (Join-Path $build 'installer-tests.log')
-$zip=Join-Path $out 'native-pause-0.2.2.zip'
+$zip=Join-Path $out "$packageName.zip"
 Compress-Archive -LiteralPath @(Get-ChildItem -LiteralPath $package | ForEach-Object FullName) -DestinationPath $zip
 [ordered]@{status='AUTOMATIC_GATES_PASS';sourceHead=$manifest.sourceHead;package=$package;zip=$zip;zipSha256=(Get-FileHash -LiteralPath $zip).Hash;zipBytes=(Get-Item -LiteralPath $zip).Length} | ConvertTo-Json | Tee-Object -FilePath (Join-Path $out 'build-result.json')

@@ -6,7 +6,7 @@
 #include <bcrypt.h>
 #include "vendor/minhook/include/MinHook.h"
 
-/* 当前 J460 的离线反汇编证据；加载器另行验证完整 EXE SHA-256。 */
+/* 已知哈希是快速识别信息；未知哈希交由兼容检测。 */
 #define GAME_PTR_RVA 0x871678
 #define CONSOLE_OFFSET 0x68d78
 #define PAUSED_RVA 0x2fd350
@@ -50,14 +50,42 @@ static unsigned char __fastcall owned_paused(void *g,void *unused) {
     return original_paused(g,0);
 }
 static void log_event(const char *event) {
-    if(logfile) { fprintf(logfile,"%lu %s\n",GetTickCount(),event); fflush(logfile); }
+    OutputDebugStringA("[native-pause] "); OutputDebugStringA(event); OutputDebugStringA("\n");
+    if(logfile) {
+        SYSTEMTIME time;GetSystemTime(&time);
+        fprintf(logfile,"%04u-%02u-%02uT%02u:%02u:%02u.%03uZ pid=%lu tick=%lu %s\n",
+                time.wYear,time.wMonth,time.wDay,time.wHour,time.wMinute,time.wSecond,time.wMilliseconds,
+                GetCurrentProcessId(),GetTickCount(),event);fflush(logfile);
+    }
 }
+#include "compatibility.h"
+static int hook_result(const char *step,MH_STATUS status) {
+    log_detail("HOOK step=%s result=%s status=%d",step,status==MH_OK?"PASS":"FAIL",status);
+    return status==MH_OK;
+}
+static int game_memory_status=-1;
 #ifdef NATIVE_PAUSE_TEST
 static void *test_game;
 static int test_other_pause;
 static void *game(void) { return test_game; }
 #else
-static void *game(void) { return *(void **)(base+runtime->game_ptr); }
+static void *game(void) {
+    void *g=0; int status=0;
+    /* 外部对象生命周期边界：未创建是等待，非法内存是明确诊断；不猜测 vtable。 */
+    __try {
+        if(runtime && readable_range(base+runtime->game_ptr,sizeof(void *),0)) {
+            g=*(void **)(base+runtime->game_ptr);
+            if(!g) status=1;
+            else if((uintptr_t)g+runtime->console_offset>=(uintptr_t)g
+                    && readable_range((unsigned char *)g+runtime->console_offset,sizeof(int),1)) status=2;
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {status=0;}
+    if(status!=game_memory_status) {
+        log_event(status==2?"GAME_STATE ready":status==1?"GAME_STATE waiting_for_game_object":"DISABLED game_state_memory_unavailable");
+        game_memory_status=status;
+    }
+    return status==2?g:0;
+}
 #endif
 static int *console_state(void *g) { return (int *)((unsigned char *)g+runtime->console_offset); }
 static int native_paused(void *g) {
@@ -94,12 +122,16 @@ static void initialize_update_hook(void) {
     MH_STATUS status;
     if(!runtime->independent_pause || update_hook_state || !game()) return;
     /* REPENTOGON 先安装自己的更新链。Lua 调用所在游戏线程再接入已完成的链。 */
-    if(!GetModuleHandleW(L"zhlREPENTOGON.dll") || base[runtime->update]!=0xe9) return;
+    if(!GetModuleHandleW(L"zhlREPENTOGON.dll") || base[runtime->update]!=0xe9) {
+        static int reported;
+        if(!reported) {log_event("WAIT engine_update_chain_not_ready");reported=1;}
+        return;
+    }
     update_hook_state=-1;
     status=MH_CreateHook(base+runtime->update,owned_update,(void **)&original_update);
-    if(status==MH_OK && MH_EnableHook(base+runtime->update)==MH_OK) {
+    if(hook_result("update_create",status) && hook_result("update_enable",MH_EnableHook(base+runtime->update))) {
         update_hook_state=1; log_event("ENGINE_UPDATE_HOOK_READY");
-    } else log_event("DISABLED engine update hook failed");
+    } else log_event("DISABLED engine_update_hook_failed");
 }
 static void release_pause(void) {
     void *g=game();
@@ -150,9 +182,9 @@ typedef struct { unsigned char *target,*stub; unsigned char original[6],jump[6];
 static int prepare_suppression(Hook *hook,unsigned rva,const unsigned char *expected,int length) {
     unsigned char *target=base+rva, *stub;
     unsigned char jump[6]={0xe9,0,0,0,0,0x90};
-    if(memcmp(target,expected,length)) return 0;
+    if(memcmp(target,expected,length)) {log_detail("PREPARE_FAIL rva=0x%08X signature_changed",rva);return 0;}
     stub=VirtualAlloc(0,64,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
-    if(!stub) return 0;
+    if(!stub) {log_detail("PREPARE_FAIL rva=0x%08X allocation win32=%lu",rva,GetLastError());return 0;}
     /* cmp byte [owned],0; je original; ret; 原指令; jmp continuation */
     stub[0]=0x80; stub[1]=0x3d; *(uintptr_t *)(stub+2)=(uintptr_t)&owned;
     stub[6]=0; stub[7]=0x74; stub[8]=1; stub[9]=0xc3;
@@ -168,21 +200,34 @@ static HINSTANCE module;
 static LONG initialized;
 static int exe_sha256(char output[65]) {
     wchar_t path[32768]; unsigned char chunk[65536],digest[32]; DWORD read; int i,ok=0;
+    NTSTATUS hash_status;
     BCRYPT_ALG_HANDLE algorithm=0; BCRYPT_HASH_HANDLE hash=0; HANDLE file=INVALID_HANDLE_VALUE;
-    if(!GetModuleFileNameW(0,path,32768)) return 0;
+    if(!GetModuleFileNameW(0,path,32768)) {log_detail("HASH_ERROR exe_path win32=%lu",GetLastError());return 0;}
     file=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,0);
-    if(file==INVALID_HANDLE_VALUE) return 0;
-    if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,0,0)<0
-       || BCryptCreateHash(algorithm,&hash,0,0,0,0,0)<0) goto done;
-    for(;;) {
-        if(!ReadFile(file,chunk,sizeof(chunk),&read,0)) goto done;
-        if(!read) break;
-        if(BCryptHashData(hash,chunk,read,0)<0) goto done;
+    if(file==INVALID_HANDLE_VALUE) {log_detail("HASH_ERROR exe_open win32=%lu",GetLastError());return 0;}
+    { LARGE_INTEGER size; char utf8[32768]={0};
+      size.QuadPart=-1;
+      if(!GetFileSizeEx(file,&size)) log_detail("HASH_WARNING file_size win32=%lu",GetLastError());
+      if(!WideCharToMultiByte(CP_UTF8,0,path,-1,utf8,sizeof(utf8),0,0)) strcpy(utf8,"<path-conversion-failed>");
+      log_detail("EXE path=\"%s\" bytes=%lld",utf8,size.QuadPart);
     }
-    if(BCryptFinishHash(hash,digest,sizeof(digest),0)<0) goto done;
+    hash_status=BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,0,0);
+    if(hash_status<0) {log_detail("HASH_ERROR step=algorithm ntstatus=0x%08lX",hash_status);goto done;}
+    hash_status=BCryptCreateHash(algorithm,&hash,0,0,0,0,0);
+    if(hash_status<0) {log_detail("HASH_ERROR step=create ntstatus=0x%08lX",hash_status);goto done;}
+    for(;;) {
+        if(!ReadFile(file,chunk,sizeof(chunk),&read,0)) {log_detail("HASH_ERROR step=read win32=%lu",GetLastError());goto done;}
+        if(!read) break;
+        hash_status=BCryptHashData(hash,chunk,read,0);
+        if(hash_status<0) {log_detail("HASH_ERROR step=update ntstatus=0x%08lX",hash_status);goto done;}
+    }
+    hash_status=BCryptFinishHash(hash,digest,sizeof(digest),0);
+    if(hash_status<0) {log_detail("HASH_ERROR step=finish ntstatus=0x%08lX",hash_status);goto done;}
     for(i=0;i<32;i++) sprintf(output+i*2,"%02X",digest[i]);
     ok=1;
 done:
+    if(ok) log_detail("EXE sha256=%s",output);
+    else log_event("HASH_ERROR sha256_read_or_bcrypt_failed");
     if(hash) BCryptDestroyHash(hash);
     if(algorithm) BCryptCloseAlgorithmProvider(algorithm,0);
     CloseHandle(file); return ok;
@@ -190,60 +235,78 @@ done:
 __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
     HMODULE lua;
     wchar_t path[32768];
-    char digest[65]; int i;
+    char digest[65]={0}; MH_STATUS status;
     Hook input_hook={0},render_hook={0};
-    if(InterlockedCompareExchange(&initialized,1,0)!=0) return 10;
-    if(!GetModuleFileNameW(module,path,32768) || !wcsrchr(path,L'\\')) return 11;
-    wcscpy(wcsrchr(path,L'\\')+1,L"native-pause.log");
-    logfile=_wfopen(path,L"a");
-    if(!exe_sha256(digest)) { log_event("DISABLED EXE hash unavailable"); return 16; }
-    runtime=0;
-    for(i=0;i<sizeof(runtimes)/sizeof(runtimes[0]);i++) if(!strcmp(digest,runtimes[i].sha256)){runtime=&runtimes[i];break;}
-    if(!runtime){log_event("DISABLED unsupported EXE hash");return 17;}
+    if(InterlockedCompareExchange(&initialized,1,0)!=0) {log_event("INITIALIZE already_attempted");return 10;}
+    if(GetModuleFileNameW(module,path,32768) && wcsrchr(path,L'\\')) {
+        wcscpy(wcsrchr(path,L'\\')+1,L"native-pause.log");
+        logfile=_wfopen(path,L"a");
+    }
+    if(!logfile) {
+        wchar_t temporary[MAX_PATH];
+        if(GetTempPathW(MAX_PATH,temporary)) {
+            swprintf(path,32768,L"%lsIsaacConsoleNativePause-%lu.log",temporary,GetCurrentProcessId());
+            logfile=_wfopen(path,L"a");
+            log_event("LOG_FALLBACK primary_log_unwritable using_TEMP");
+        }
+    }
+    if(!logfile) log_event("LOG_ERROR file_unavailable diagnostics_via_OutputDebugString");
+    log_detail("START native-pause 0.2.3 pid=%lu",GetCurrentProcessId());
+    if(!exe_sha256(digest)) log_event("HASH_UNAVAILABLE compatibility_probe_required");
     base=(unsigned char *)GetModuleHandleW(0);
     lua=GetModuleHandleA("Lua5.3.3r.dll");
-    if(!lua || memcmp(base+runtime->paused,runtime->paused_bytes,runtime->paused_length)
-        || (!runtime->independent_pause && (
-        memcmp(base+runtime->input,runtime->input_bytes,runtime->input_length)
-        || memcmp(base+runtime->render,runtime->render_bytes,runtime->render_length)))) return FALSE;
+    if(!lua) {log_event("DISABLED lua_module_missing name=Lua5.3.3r.dll");return 18;}
+    runtime=select_runtime(digest,base,lua);
+    if(!runtime) return 17;
     pushclosure=(void *)GetProcAddress(lua,"lua_pushcclosure");
     setglobal=(void *)GetProcAddress(lua,"lua_setglobal");
     pushboolean=(void *)GetProcAddress(lua,"lua_pushboolean");
     tointeger=(void *)GetProcAddress(lua,"lua_tointegerx");
-    if(!pushclosure || !setglobal || !pushboolean || !tointeger) return FALSE;
+    if(!pushclosure || !setglobal || !pushboolean || !tointeger) {
+        log_detail("DISABLED lua_exports_missing pushclosure=%d setglobal=%d pushboolean=%d tointeger=%d",
+                   !!pushclosure,!!setglobal,!!pushboolean,!!tointeger);return 19;
+    }
+    log_event("CHECK lua_exports result=PASS");
     original_pcall=*(Pcall *)(base+runtime->pcall_iat);
-    if((void *)original_pcall!=(void *)GetProcAddress(lua,"lua_pcallk")) return FALSE;
-    if(MH_Initialize()!=MH_OK) return 12;
+    if((void *)original_pcall!=(void *)GetProcAddress(lua,"lua_pcallk")) {log_event("DISABLED pcall_iat_changed_before_hooks");return 15;}
+    status=MH_Initialize();
+    if(status!=MH_OK) {log_detail("DISABLED minhook_initialize status=%d",status);return 12;}
     if(runtime->independent_pause) {
-        if(MH_CreateHook(base+runtime->paused,owned_paused,(void **)&original_paused)!=MH_OK
-           || MH_EnableHook(base+runtime->paused)!=MH_OK) {
+        if(!hook_result("paused_create",MH_CreateHook(base+runtime->paused,owned_paused,(void **)&original_paused))
+           || !hook_result("paused_enable",MH_EnableHook(base+runtime->paused))) {
             log_event("DISABLED independent pause hook failed"); return 13;
         }
     } else {
     if(!prepare_suppression(&input_hook,runtime->input,runtime->input_bytes,runtime->input_length)
-       || !prepare_suppression(&render_hook,runtime->render,runtime->render_bytes,runtime->render_length)) return FALSE;
-    if(MH_CreateHook(input_hook.target,input_hook.stub,0)!=MH_OK
-       || MH_CreateHook(render_hook.target,render_hook.stub,0)!=MH_OK
-       || MH_QueueEnableHook(input_hook.target)!=MH_OK
-       || MH_QueueEnableHook(render_hook.target)!=MH_OK
-       || MH_ApplyQueued()!=MH_OK) {
+       || !prepare_suppression(&render_hook,runtime->render,runtime->render_bytes,runtime->render_length)) {
+        log_event("DISABLED suppression_prepare_failed signature_changed_or_allocation_failed");return 13;
+    }
+    if(!hook_result("input_create",MH_CreateHook(input_hook.target,input_hook.stub,0))
+       || !hook_result("render_create",MH_CreateHook(render_hook.target,render_hook.stub,0))
+       || !hook_result("input_queue",MH_QueueEnableHook(input_hook.target))
+       || !hook_result("render_queue",MH_QueueEnableHook(render_hook.target))
+       || !hook_result("apply",MH_ApplyQueued())) {
         log_event("DISABLED hook initialization failed");
         /* 不卸载：部分生效的跳板仍可能引用本模块，owned 始终为零。 */
         return 13;
     }
     }
+    log_event("HOOKS result=PASS");
     { DWORD old,unused;
-      if(!VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),PAGE_READWRITE,&old)) return 14;
+      if(!VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),PAGE_READWRITE,&old)) {
+          log_detail("DISABLED iat_virtual_protect win32=%lu",GetLastError());return 14;
+      }
       /* 对齐 IAT 入口原子交换；其他线程永远看到完整旧或新指针。 */
       if(InterlockedCompareExchangePointer((PVOID *)(base+runtime->pcall_iat),
           (PVOID)wrapped_pcall,(PVOID)original_pcall)!=(PVOID)original_pcall) {
           VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused);
           log_event("DISABLED IAT changed during initialization"); return 15;
       }
-      VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused);
+      if(!VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),old,&unused))
+          log_detail("WARNING iat_protection_restore win32=%lu",GetLastError());
     }
     log_event(runtime->name);
-    log_event("LOADED native-pause 0.2.2");
+    log_event("LOADED native-pause 0.2.3");
     return 1;
 }
 #ifdef NATIVE_PAUSE_AUTO
@@ -253,7 +316,7 @@ static DWORD WINAPI automatic_initialize(void *unused) {
         if(GetModuleHandleW(L"Lua5.3.3r.dll")) return NativePauseInitialize(0);
         Sleep(50);
     }
-    /* 即使没有 Lua 也执行哈希拒绝，便于非游戏启动测试输出可观察证据。 */
+    /* 等待超时也进入统一诊断入口，明确记录 Lua 未加载。 */
     return NativePauseInitialize(0);
 }
 #endif
@@ -262,7 +325,7 @@ BOOL WINAPI DllMain(HINSTANCE self,DWORD reason,LPVOID reserved) {
         module=self; DisableThreadLibraryCalls(self);
 #ifdef NATIVE_PAUSE_AUTO
         HANDLE worker=CreateThread(0,0,automatic_initialize,0,0,0);
-        if(!worker) return FALSE;
+        if(!worker) {OutputDebugStringA("[native-pause] DISABLED initialization_thread_creation_failed\n");return FALSE;}
         CloseHandle(worker);
 #endif
     }
