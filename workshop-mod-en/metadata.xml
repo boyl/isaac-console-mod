@@ -50,7 +50,13 @@ This version removes the custom shader to restore the Repentance+ restart fade. 
 Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may subscribe to both, but enable only one language version at a time.
 
 [h1]Optional Native Pause Companion[/h1]
-For Repentance/Repentance+, separately install [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.2]Native Pause 0.2.2[/url] once using its folder structure. Without it, existing menu features continue to work. Supported exact EXEs: Repentance 1.7.9b and Repentance+ v1.9.7.17/J460. REPENTOGON with MC_PRE_UPDATE pauses through its official callback and does not require the native companion. Workshop subscriptions do not install the companion.
+For Repentance/Repentance+, download native-pause-0.2.3.zip from [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.3]Native Pause 0.2.3[/url] to pause automatically while the menu is open. Exit the game, then copy the contents of game-files into the folder containing isaac-ng.exe, preserving the folder structure. Install once; it loads with the game. Existing menu features remain usable without it.
+
+Known versions are recognized first. An EXE hash outside the allowlist now triggers automatic compatibility checks; a compatible EXE is enabled instead of being rejected solely because its hash differs. If critical code or memory layouts are incompatible, only native pause is disabled, the reason is logged, and other menu features remain available.
+
+For pause issues, include scripts/native-pause.log from the game folder. If that location is not writable, the fallback is %TEMP%\IsaacConsoleNativePause-PID.log.
+
+REPENTOGON with MC_PRE_UPDATE pauses through its official callback and does not require the native companion. Workshop subscriptions do not install the companion.
 
 [h1]Safety and Usage Limits[/h1]
 This is a local entertainment, build-testing, and screenshot tool that changes the current run. Do not use it in Daily Challenges or online multiplayer. Back up important saves before testing.

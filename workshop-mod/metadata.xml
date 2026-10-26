@@ -50,7 +50,13 @@
 中文版与英文版使用相同的 F6 和 L3 呼出方式；可以同时订阅，但请只启用一个语言版本。
 
 [h1]可选原生暂停组件[/h1]
-Repentance/Repentance+ 需要另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.2]原生暂停组件 0.2.2[/url]，按目录结构安装一次后随游戏加载；不安装时保留原有菜单功能。支持匹配 EXE 的 Repentance 1.7.9b 与 Repentance+ v1.9.7.17/J460。忏悔龙提供 MC_PRE_UPDATE 时，菜单直接使用其官方暂停回调，无需安装原生组件。Workshop 订阅不包含原生组件。
+Repentance/Repentance+ 如需在打开菜单时自动暂停，请另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.3]原生暂停组件 0.2.3[/url] 的 native-pause-0.2.3.zip。退出游戏后，将包内 game-files 的内容按目录结构复制到 isaac-ng.exe 所在目录，安装一次后随游戏加载；不安装仍可使用原有菜单功能。
+
+已知版本优先识别；EXE 哈希不在白名单时会自动检测兼容性，通过后启用，不再仅因哈希不同停用。关键代码或内存布局不兼容时，仅停用原生暂停并记录原因，菜单其他功能继续可用。
+
+暂停异常时，请提供游戏目录下的 scripts/native-pause.log；该位置无法写入时，日志位于 %TEMP%\IsaacConsoleNativePause-进程号.log。
+
+忏悔龙提供 MC_PRE_UPDATE 时，菜单直接使用其官方暂停回调，无需安装原生组件。Workshop 订阅不包含原生组件。
 
 [h1]安全及使用限制[/h1]
 这是用于本地娱乐、构筑测试和截图录制的调试工具，会改变当前局面。请勿用于每日挑战或在线联机；重要存档建议提前备份。
