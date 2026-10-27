@@ -1,5 +1,10 @@
 ## 2.5.4-en.23
 
+## 2.5.4-en.26
+
+- 修复手柄呼出改键后默认 L3 仍可呼出的问题：自定义按键替换默认 L3，恢复默认后重新启用 L3。
+- 保留现有改键存档、键盘绑定和菜单保留键限制；同步设置说明。
+
 - Adds native item icons across categories, accurate card scaling and current-run pill colors.
 - Uses full row height for icons on Rep, Rep+ and REPENTOGON.
 - Toasts expire in real time while the menu is paused; pause behavior remains unchanged.

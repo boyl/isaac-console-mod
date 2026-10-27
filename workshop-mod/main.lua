@@ -9,7 +9,7 @@ local SearchAliases = include("scripts.search_aliases")
 
 ChineseConsole.pedestals = include("scripts.collectible_pedestals")
 
-local VERSION = "2.5.30"
+local VERSION = "2.5.31"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -648,7 +648,7 @@ InputSettingsUI.entries = {
     kind = "setting_capture", settingId = "controller_favorite" },
   { id = "controller_favorite_reset", name = "手柄收藏：自动", en = "Controller Favorite: Auto", icon = "复",
     kind = "setting_reset", settingId = "controller_favorite" },
-  { id = "controller_open_calibrate", name = "手柄备用呼出", en = "Controller Backup Open", icon = "柄",
+  { id = "controller_open_calibrate", name = "手柄呼出", en = "Controller Open", icon = "柄",
     kind = "setting_capture", settingId = "controller_open" },
   { id = "controller_open_reset", name = "手柄呼出：自动", en = "Controller Open: Auto", icon = "复",
     kind = "setting_reset", settingId = "controller_open" },
@@ -1100,7 +1100,7 @@ end
 function InputSettingsUI.captureLabel(settingId)
   if settingId == "keyboard_open" then return "键盘呼出键" end
   if settingId == "controller_favorite" then return "手柄收藏键" end
-  return "手柄备用呼出键"
+  return "手柄呼出键"
 end
 
 function InputSettingsUI.applySetting(settingId, value)
@@ -1132,6 +1132,13 @@ function InputSettingsUI.applySetting(settingId, value)
     debugLog("setting save failed; rollback " .. settingId .. ": " .. tostring(err))
     return false, false, tostring(err)
   end
+  if settingId == "controller_open" then
+    state.controllerOpenHold = 0
+    state.controllerOpenLatched = false
+    state.controllerOpenIndex = nil
+    state.controllerOpenSource = nil
+    state.controllerOpenValue = nil
+  end
   return true, true
 end
 
@@ -1150,8 +1157,8 @@ function InputSettingsUI.refreshEntries()
   InputSettingsUI.entries[2].desc = "当前键盘呼出键：" .. keyboard .. "。恢复后仅键盘改回 F6。"
   InputSettingsUI.entries[3].desc = "当前手柄收藏键：" .. favorite .. "。只在校准期间扫描已分配手柄；确认与返回动作仍优先。"
   InputSettingsUI.entries[4].desc = "当前手柄收藏键：" .. favorite .. "。清除自定义 raw 按钮并恢复自动识别。"
-  InputSettingsUI.entries[5].desc = "当前手柄备用呼出键：" .. controllerOpen .. "。只补充默认长按 L3，不影响键盘呼出键。"
-  InputSettingsUI.entries[6].desc = "当前手柄备用呼出键：" .. controllerOpen .. "。清除后继续使用默认长按 L3。"
+  InputSettingsUI.entries[5].desc = "当前手柄呼出键：" .. controllerOpen .. "。自定义后替换默认 L3，长按新键呼出，不影响键盘呼出键。"
+  InputSettingsUI.entries[6].desc = "当前手柄呼出键：" .. controllerOpen .. "。恢复默认后使用长按 L3。"
   InputSettingsUI.entries[7].desc = "当前：" .. startup .. "。控制每次启动游戏进程后第一局的呼出键提示。"
   InputSettingsUI.entries[8].desc = "当前：" .. closeAfter .. "。运行流程命令仍始终关闭界面。"
   InputSettingsUI.entries[9].name = "全屏光标：" .. cursor
@@ -1527,16 +1534,16 @@ local function registerMcmSettings()
     Default = -1,
     Display = function()
       local button = state.controllerOpenFallbackButton
-      return "兼容呼出键: " .. (button ~= nil and ("自定义按钮 " .. button) or "自动")
+      return "手柄呼出键: " .. (button ~= nil and ("自定义按钮 " .. button) or "自动")
     end,
     OnChange = function(value)
       local ok, changed, err = InputSettingsUI.applySetting("controller_open", value)
-      if not ok then showToast("兼容呼出键设置失败", "warning", 150, err); return end
-      if changed then showToast("兼容呼出键已设为 "
+      if not ok then showToast("手柄呼出键设置失败", "warning", 150, err); return end
+      if changed then showToast("手柄呼出键已设为 "
         .. InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton), "success", 120) end
     end,
     Popup = function()
-      return "按下希望补充用于呼出界面的手柄按钮。$newline返回或向左可清除绑定；默认长按 L3 始终保留。"
+      return "按下希望用于呼出界面的手柄按钮。$newline新键替换默认 L3；返回或向左清除绑定并恢复默认 L3。"
     end,
     Info = {
       "只在运行时能够报告该 raw 按钮时生效。",
@@ -2699,10 +2706,14 @@ function InputSettingsUI.openSources()
     seen[value] = true
     sources[#sources + 1] = { source = source, value = value }
   end
-  add("named_l3", CONTROLLER_OPEN_BUTTONS.named)
-  add("legacy_l3", CONTROLLER_OPEN_BUTTONS.legacy)
-  local fallback = state.controllerOpenFallbackButton
-  add("calibrated", fallback)
+  -- Keep the historical save key; a custom binding replaces both default sources.
+  local custom = state.controllerOpenFallbackButton
+  if custom ~= nil then
+    add("calibrated", custom)
+  else
+    add("named_l3", CONTROLLER_OPEN_BUTTONS.named)
+    add("legacy_l3", CONTROLLER_OPEN_BUTTONS.legacy)
+  end
   return sources
 end
 

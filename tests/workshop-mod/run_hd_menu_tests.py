@@ -7,8 +7,8 @@ root = Path(__file__).resolve().parents[2]
 dll, _ = game.load_lua()
 game.configure_lua(dll)
 for language, folder, name, version in (
-    ('zh', 'workshop-mod', 'Isaac Chinese Console', '2.5.30'),
-    ('en', 'workshop-mod-en', 'Console UI', '2.5.4-en.25'),
+    ('zh', 'workshop-mod', 'Isaac Chinese Console', '2.5.31'),
+    ('en', 'workshop-mod-en', 'Console UI', '2.5.4-en.26'),
 ):
     game.MOD_ROOT = root / folder
     for plus in (False, True):

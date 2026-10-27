@@ -29,7 +29,7 @@ Console UI is a self-contained in-game command menu for *The Binding of Isaac: R
 
 Custom Commands is an advanced raw-command passthrough. Enter the command text, then an optional name; Up/Down recalls recent executed commands while editing the command field. Saved entries can be searched, favorited, edited with `C`, or deleted with `Delete`/right-click confirmation. Unknown, third-party, output, high-risk, and otherwise unvalidated commands can be saved and run at the user's own risk. Recognized lifecycle commands still use the one-shot safe Render path. The 120-byte command limit and 64 KiB total SaveData gate are technical capacity limits.
 
-Open Settings with `F6` to set or restore the keyboard open key, controller favorite button, and compatibility open button, or toggle startup hints and close-after-command behavior. Optional MCM is a mirror of the same model, not a requirement. A compatibility open button supplements rather than replaces default L3. If neither the game nor Steam Input exposes the physical button to Lua, map it to keyboard `F6` in Steam Input.
+Open Settings with `F6` to set or restore the keyboard open key, controller favorite button, and compatibility open button, or toggle startup hints and close-after-command behavior. Optional MCM is a mirror of the same model, not a requirement. A custom open button replaces default L3; resetting restores default L3. If neither the game nor Steam Input exposes the physical button to Lua, map it to keyboard `F6` in Steam Input.
 
 In the built-in catalog, only `giveitem` and `spawn` can repeat. Custom raw commands may use the selected repeat count; recognized lifecycle commands remain single-use.
 

@@ -7,7 +7,7 @@ local OfficialObjects = include("scripts.official_objects")
 
 ConsoleUI.pedestals = include("scripts.collectible_pedestals")
 
-local VERSION = "2.5.4-en.25"
+local VERSION = "2.5.4-en.26"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -614,7 +614,7 @@ InputSettingsUI.entries = {
     kind = "setting_capture", settingId = "controller_favorite" },
   { id = "controller_favorite_reset", name = "Controller Favorite: Auto", icon = "RST",
     kind = "setting_reset", settingId = "controller_favorite" },
-  { id = "controller_open_calibrate", name = "Controller Backup Open", icon = "IN",
+  { id = "controller_open_calibrate", name = "Controller Open", icon = "IN",
     kind = "setting_capture", settingId = "controller_open" },
   { id = "controller_open_reset", name = "Controller Open: Auto", icon = "RST",
     kind = "setting_reset", settingId = "controller_open" },
@@ -1366,7 +1366,7 @@ local function registerMcmSettings()
     Info = {
       "Default: F6. The custom key replaces F6.",
       "Navigation, confirm, search, favorite, and restart keys cannot be bound.",
-      "Controller opening remains hold L3.",
+      "Keyboard remapping does not change the controller open binding.",
     },
   }
   if type(ModConfigMenu.PopupGfx) == "table" then
@@ -1403,17 +1403,17 @@ local function registerMcmSettings()
     Default = -1,
     Display = function()
       local button = state.controllerOpenFallbackButton
-      return "Compatibility open key: "
+      return "Controller open key: "
         .. (button ~= nil and ("Custom button " .. button) or "Automatic")
     end,
     OnChange = function(value)
       local ok, changed, err = InputSettingsUI.applySetting("controller_open", value)
-      if not ok then showToast("Compatibility open-key setup failed", "warning", 150, err); return end
-      if changed then showToast("Compatibility open key set to "
+      if not ok then showToast("Controller open-key setup failed", "warning", 150, err); return end
+      if changed then showToast("Controller open key set to "
         .. InputSettingsUI.formatValue("controller_open", state.controllerOpenFallbackButton), "success", 120) end
     end,
     Popup = function()
-      return "Press a controller button to add as an open shortcut.$newlineBack or left clears it; held L3 always remains available."
+      return "Press a controller button to replace default L3.$newlineBack or left clears it and restores default held L3."
     end,
     Info = {
       "Works only when the runtime reports that raw controller button.",
@@ -1580,7 +1580,7 @@ end
 function InputSettingsUI.captureLabel(settingId)
   if settingId == "keyboard_open" then return "Keyboard open key" end
   if settingId == "controller_favorite" then return "Controller favorite button" end
-  return "Controller backup open button"
+  return "Controller open button"
 end
 
 function InputSettingsUI.applySetting(settingId, value)
@@ -1612,6 +1612,13 @@ function InputSettingsUI.applySetting(settingId, value)
     debugLog("setting save failed; rollback " .. settingId .. ": " .. tostring(err))
     return false, false, tostring(err)
   end
+  if settingId == "controller_open" then
+    state.controllerOpenHold = 0
+    state.controllerOpenLatched = false
+    state.controllerOpenIndex = nil
+    state.controllerOpenSource = nil
+    state.controllerOpenValue = nil
+  end
   return true, true
 end
 
@@ -1630,8 +1637,8 @@ function InputSettingsUI.refreshEntries()
   InputSettingsUI.entries[2].desc = "Current keyboard open key: " .. keyboard .. ". Restores only the keyboard binding to F6."
   InputSettingsUI.entries[3].desc = "Current controller favorite button: " .. favorite .. ". Assigned controllers are scanned only during calibration; confirm/back still win."
   InputSettingsUI.entries[4].desc = "Current controller favorite button: " .. favorite .. ". Clears the custom raw button and restores automatic detection."
-  InputSettingsUI.entries[5].desc = "Current controller backup open button: " .. controllerOpen .. ". Supplements held L3 without changing the keyboard key."
-  InputSettingsUI.entries[6].desc = "Current controller backup open button: " .. controllerOpen .. ". Clears it and keeps held L3."
+  InputSettingsUI.entries[5].desc = "Current controller open button: " .. controllerOpen .. ". Replaces default L3; hold the new button to open. Keyboard binding is unchanged."
+  InputSettingsUI.entries[6].desc = "Current controller open button: " .. controllerOpen .. ". Restores default held L3."
   InputSettingsUI.entries[7].desc = "Current: " .. startup .. ". Controls the first-run key hint in each game process."
   InputSettingsUI.entries[8].desc = "Current: " .. closeAfter .. ". Run-changing commands still always close the menu."
   InputSettingsUI.entries[9].name = "Fullscreen Cursor: " .. cursor
@@ -2676,10 +2683,14 @@ function InputSettingsUI.openSources()
     seen[value] = true
     sources[#sources + 1] = { source = source, value = value }
   end
-  add("named_l3", CONTROLLER_OPEN_BUTTONS.named)
-  add("legacy_l3", CONTROLLER_OPEN_BUTTONS.legacy)
-  local fallback = state.controllerOpenFallbackButton
-  add("calibrated", fallback)
+  -- Keep the historical save key; a custom binding replaces both default sources.
+  local custom = state.controllerOpenFallbackButton
+  if custom ~= nil then
+    add("calibrated", custom)
+  else
+    add("named_l3", CONTROLLER_OPEN_BUTTONS.named)
+    add("legacy_l3", CONTROLLER_OPEN_BUTTONS.legacy)
+  end
   return sources
 end
 

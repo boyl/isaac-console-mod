@@ -3066,7 +3066,7 @@ local function testMcmSettings254()
       local display = type(setting.Display) == "function" and tostring(setting.Display()) or ""
       if contains(display, IS_ZH and "手柄收藏键" or "Controller favorite key") then
         favoriteSetting = setting
-      elseif contains(display, IS_ZH and "兼容呼出键" or "Compatibility open key") then
+      elseif contains(display, IS_ZH and "手柄呼出键" or "Controller open key") then
         openFallbackSetting = setting
       end
     end
@@ -3092,7 +3092,7 @@ local function testMcmSettings254()
     local expectedDisplays = {
       "键盘呼出键: F6",
       "手柄收藏键: 自动",
-      "兼容呼出键: 自动",
+      "手柄呼出键: 自动",
       "进入游戏时显示键位提示: 开启",
       "普通命令执行后关闭界面: 开启",
     }
@@ -3780,7 +3780,7 @@ local function testBuiltInSettings()
     "键盘默认：F6",
     "手柄收藏",
     "手柄收藏：自动",
-    "手柄备用呼出",
+    "手柄呼出",
     "手柄呼出：自动",
     "开局键位提示",
     "普通命令后关闭",
@@ -3790,7 +3790,7 @@ local function testBuiltInSettings()
     "Keyboard Default: F6",
     "Controller Favorite",
     "Controller Favorite: Auto",
-    "Controller Backup Open",
+    "Controller Open",
     "Controller Open: Auto",
     "Startup Key Hint",
     "Close After Regular Command",
@@ -3992,6 +3992,13 @@ local function testControllerOpenCompatibility()
   pressKey(state.openKey)
   renderFrame()
 
+  for _, oldButton in ipairs({ TEST_CONFIG.namedL3Button, 10 }) do
+    holdButton(oldButton, 30, index)
+    assertEqual(state.open, false, "old L3 still opened after controller remap")
+    clearRawButton(oldButton, index)
+    renderFrame()
+  end
+  assertTrue(InputSettingsUI.applySetting("controller_open", nil), "reset binding failed")
   holdButton(TEST_CONFIG.namedL3Button, 30, index)
   assertEqual(state.open, true, "runtime named L3 did not open when it differs from raw 10")
   assertEqual(state.controllerOpenSource, "named_l3", "runtime named L3 source was not identified")
@@ -4005,6 +4012,7 @@ local function testControllerOpenCompatibility()
   clearRawButton(10, index)
   renderFrame()
 
+  assertTrue(InputSettingsUI.applySetting("controller_open", 21), "restore custom binding failed")
   assertTrue(queueEntry(settings[5], 1), "save-failure calibration did not start")
   advanceCalibrationRelease()
   holdCalibrationCandidate(20, 8, index)
@@ -4050,8 +4058,8 @@ local function testControllerOpenCompatibility()
   renderFrame()
   holdButton(10, 30, index)
   assertEqual(state.open, true, "legacy/custom same-frame dedup lost the open event")
-  assertEqual(state.controllerOpenSource, "legacy_l3",
-    "duplicate custom raw value replaced the earlier compatible source")
+  assertEqual(state.controllerOpenSource, "calibrated",
+    "explicit L3 binding did not retain custom source")
 end
 
 local function testControllerEnumerationFailure()

@@ -59,7 +59,7 @@ All five existing MCM options are now available in built-in Settings as eight ca
 
 ## 2.5.4-en.14 update note
 
-F6, runtime-named L3, and the legacy Repentance raw fallback remain active. Built-in Input Settings can now calibrate an additional raw open button for unknown controllers without requiring MCM, with conflict rejection, disconnect/timeout handling, transactional rollback, and Restore Automatic Detection. If the game exposes no button to Lua, map it to F6 in Steam Input.
+Keyboard opening stays independent. Default controller opening uses runtime-named L3 and the legacy Repentance raw fallback. Built-in Input Settings can calibrate a replacement raw open button for unknown controllers without requiring MCM, with conflict rejection, disconnect/timeout handling, transactional rollback, and Restore Automatic Detection. If the game exposes no button to Lua, map it to F6 in Steam Input.
 
 ## 2.5.4-en.13 update note
 

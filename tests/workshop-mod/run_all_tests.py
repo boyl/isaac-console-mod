@@ -51,8 +51,8 @@ def main() -> int:
 
     run([sys.executable, str(TEST_ROOT / "run_pedestal_tests.py")])
     profiles = (
-        ("workshop-mod", "Isaac Chinese Console", "2.5.30"),
-        ("workshop-mod-en", "Console UI", "2.5.4-en.25"),
+        ("workshop-mod", "Isaac Chinese Console", "2.5.31"),
+        ("workshop-mod-en", "Console UI", "2.5.4-en.26"),
     )
     run([sys.executable, str(TEST_ROOT / "run_item_icon_tests.py")])
     for directory, mod_name, version in profiles:
