@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <name>Console Input Probe</name>
+  <directory>console_input_probe</directory>
+  <description>临时只读手柄与玩家数量日志探针；排查结束后移除。</description>
+  <version>0.0.1</version>
+</metadata>

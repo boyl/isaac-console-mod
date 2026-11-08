@@ -215,6 +215,16 @@ if TEST_CONFIG.repPlus then
   ButtonAction.ACTION_MENULB = 15
   ButtonAction.ACTION_MENURB = 16
 end
+-- Recorded Repentance+ trace: MENUEX is X, MENUTAB is Y. Old runtimes
+-- without MENUEX use MENUTAB for X and a named raw Y fallback.
+if (TEST_CONFIG.repPlus or TEST_CONFIG.menuExAvailable) and not TEST_CONFIG.menuExAbsent then
+  ButtonAction.ACTION_MENUEX = 29
+end
+if TEST_CONFIG.menuActionOffset then
+  for name, value in pairs(ButtonAction) do
+    if name:match("^ACTION_MENU") then ButtonAction[name] = value + TEST_CONFIG.menuActionOffset end
+  end
+end
 Controller = {
   DPAD_LEFT = 0, DPAD_RIGHT = 1, DPAD_UP = 2, DPAD_DOWN = 3,
   BUTTON_A = 4, BUTTON_B = 5, BUTTON_X = 6, BUTTON_Y = 7,
@@ -243,7 +253,7 @@ else
   ModConfigMenu = nil
 end
 
-InputHook = { GET_ACTION_VALUE = 1 }
+InputHook = { IS_ACTION_PRESSED = 0, IS_ACTION_TRIGGERED = 1, GET_ACTION_VALUE = 2 }
 ModCallbacks = {
   MC_POST_RENDER = 1,
   MC_GET_SHADER_PARAMS = 21,
@@ -273,7 +283,8 @@ function Input.IsButtonPressed(button, controllerIndex)
 end
 function Input.IsActionTriggered(action, controllerIndex)
   if TEST_CONFIG.actionsUnavailable then return false end
-  if TEST_CONFIG.menuTabActionUnavailable and action == ButtonAction.ACTION_MENUTAB then return false end
+  if TEST_CONFIG.menuTabActionUnavailable
+      and action == (ButtonAction.ACTION_MENUEX or ButtonAction.ACTION_MENUTAB) then return false end
   local byController = TEST.actionTriggers[action]
   return type(byController) == "table" and byController[controllerIndex or 0] == true
 end
@@ -564,14 +575,19 @@ local function pressButton(button, controllerIndex)
   elseif button == (TEST_CONFIG.physicalConfirmButton or Controller.BUTTON_A) then
     TEST.actionTriggers[ButtonAction.ACTION_MENUCONFIRM] = { [controllerIndex] = true }
     TEST.actionPressed[ButtonAction.ACTION_MENUCONFIRM] = { [controllerIndex] = true }
-  elseif button == (TEST_CONFIG.physicalFavoriteButton or Controller.BUTTON_X) then
+  elseif ButtonAction.ACTION_MENUEX and button == (TEST_CONFIG.physicalDetailsButton or Controller.BUTTON_Y) then
     TEST.actionTriggers[ButtonAction.ACTION_MENUTAB] = { [controllerIndex] = true }
     TEST.actionPressed[ButtonAction.ACTION_MENUTAB] = { [controllerIndex] = true }
+  elseif button == (TEST_CONFIG.physicalFavoriteButton or Controller.BUTTON_X) then
+    local favoriteAction = ButtonAction.ACTION_MENUEX or ButtonAction.ACTION_MENUTAB
+    TEST.actionTriggers[favoriteAction] = { [controllerIndex] = true }
+    TEST.actionPressed[favoriteAction] = { [controllerIndex] = true }
   end
   renderFrame()
   TEST.buttonPressed[button] = { [controllerIndex] = false }
   TEST.actionPressed[ButtonAction.ACTION_MENUCONFIRM] = { [controllerIndex] = false }
   TEST.actionPressed[ButtonAction.ACTION_MENUTAB] = { [controllerIndex] = false }
+  if ButtonAction.ACTION_MENUEX then TEST.actionPressed[ButtonAction.ACTION_MENUEX] = nil end
   TEST.actionPressed[ButtonAction.ACTION_MENUBACK] = { [controllerIndex] = false }
 end
 
@@ -2932,6 +2948,11 @@ local function triggerControllerPage(action, button, controllerIndex)
   if action ~= nil then TEST.actionTriggers[action] = { [controllerIndex] = true } end
   TEST.buttonTriggers[button] = { [controllerIndex] = true }
   renderFrame()
+  -- Distinct taps include a release frame, as physical input does.
+  local renderedPress = TEST.rendered
+  TEST.rendered = {}
+  renderFrame()
+  TEST.rendered = renderedPress
 end
 
 local function testControllerPaging()
@@ -2978,10 +2999,11 @@ local function testControllerPaging()
   local entries = visibleEntries()
   local lastEntryPage = math.max(1, math.ceil(#entries / 8))
   state.page = lastEntryPage
-  state.selection = 4
+  local lastPageSelection = math.min(4, #entries - (lastEntryPage - 1) * 8)
+  state.selection = lastPageSelection
   triggerControllerPage(ButtonAction.ACTION_MENURT, Controller.TRIGGER_RIGHT, index)
   assertEqual(state.page, lastEntryPage, "RT wrapped past the last entry page")
-  assertEqual(state.selection, 4, "last entry page boundary reset the selection")
+  assertEqual(state.selection, lastPageSelection, "last entry page boundary reset the selection")
   state.page = 1
   state.selection = 4
   triggerControllerPage(ButtonAction.ACTION_MENULT, Controller.TRIGGER_LEFT, index)
@@ -3598,6 +3620,134 @@ local function testDeviceHelpContract()
   end
 end
 
+local function testNativePauseInputOwnership()
+  onStarted()
+  openMenu()
+  TEST.paused = true
+  local owned = true
+  IsaacConsoleNativePausePrototype = function(operation) return operation == 2 and owned end
+  local callsBefore = TEST.buttonPressedCalls
+  assertEqual(onInput(registeredMod, nil, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), 0.0, "Mod-owned pause leaked co-op join input")
+  assertEqual(onInput(registeredMod, nil, 0, ButtonAction.ACTION_JOINMULTIPLAYER), false,
+    "Mod-owned pause leaked pressed join input")
+  assertEqual(onInput(registeredMod, nil, 1, ButtonAction.ACTION_JOINMULTIPLAYER), false,
+    "Mod-owned pause leaked triggered join input")
+  assertEqual(TEST.buttonPressedCalls, callsBefore, "input hook polled physical input")
+  owned = false
+  assertEqual(onInput(registeredMod, nil, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil, "real pause menu lost native input")
+  TEST.paused = false
+  state.open = false
+  assertEqual(onInput(registeredMod, nil, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_JOINMULTIPLAYER), nil, "closed Mod intercepted game input")
+  IsaacConsoleNativePausePrototype = nil
+end
+
+local function testControllerPagingSignals()
+  onStarted()
+  openMenu()
+  local index = TEST_CONFIG.controllerIndex or 0
+  state.categoryIndex = 2
+  state.sidebarFocus = false
+  state.repeatCount = 7
+  for _, side in ipairs({
+      { button = Controller.TRIGGER_RIGHT, action = ButtonAction.ACTION_MENURT, delta = 1 },
+      { button = Controller.TRIGGER_LEFT, action = ButtonAction.ACTION_MENULT, delta = -1 },
+    }) do
+    for _, firstSource in ipairs({ "raw", "action", "analog" }) do
+      state.page = 4
+      if firstSource == "raw" then
+        TEST.buttonTriggers[side.button] = { [index] = true }
+        TEST.buttonPressed[side.button] = { [index] = true }
+      elseif firstSource == "action" then
+        TEST.actionTriggers[side.action] = { [index] = true }
+        TEST.actionPressed[side.action] = { [index] = true }
+      else
+        TEST.actionValues[side.action] = { [index] = 0.8 }
+      end
+      renderFrame()
+      assertEqual(state.page, 4 + side.delta, firstSource .. " first press must page once")
+      for frame = 1, 12 do
+        TEST.buttonTriggers[side.button] = { [index] = true }
+        TEST.actionTriggers[side.action] = { [index] = true }
+        TEST.actionValues[side.action] = { [index] = frame % 2 == 0 and 0.5 or 0.8 }
+        renderFrame()
+        assertEqual(state.page, 4 + side.delta, "delayed/repeated trigger paged twice while held")
+      end
+      TEST.buttonPressed[side.button] = nil
+      TEST.actionPressed[side.action] = nil
+      TEST.actionValues[side.action] = { [index] = 0.2 }
+      renderFrame()
+      TEST.actionValues[side.action] = nil
+      TEST.buttonTriggers[side.button] = { [index] = true }
+      renderFrame()
+      assertEqual(state.page, 4 + side.delta * 2, "released trigger did not re-arm")
+      assertEqual(state.repeatCount, 7, "paging changed repeat count")
+      renderFrame()
+    end
+  end
+end
+
+local function testControllerDetailsCollision()
+  onStarted()
+  enterSearch("260")
+  local entry = visibleEntries()[1]
+  entry.desc = string.rep("Long details for Y collision. ", 80)
+  state.detailEntryId = nil
+  state.detailPage = 1
+  local index = TEST_CONFIG.controllerIndex or 0
+  renderFrame()
+  TEST.buttonTriggers[TEST_CONFIG.physicalDetailsButton or Controller.BUTTON_Y] = { [index] = true }
+  TEST.actionTriggers[ButtonAction.ACTION_MENUTAB] = { [index] = true }
+  renderFrame()
+  assertEqual(state.detailPage, 2, "Y plus menu-tab alias must page details")
+  assertTrue(state.favorites[entry.objectKey] == nil, "Y plus menu-tab alias favorited entry")
+  assertEqual(TEST.saveAttempts, 0, "Y unexpectedly persisted a favorite")
+end
+
+local function testControllerFaceSemantics()
+  onStarted()
+  enterSearch("260")
+  local entry = visibleEntries()[1]
+  entry.desc = string.rep("Semantic details paging. ", 100)
+  state.detailEntryId = nil
+  state.detailPage = 1
+  local index = TEST_CONFIG.controllerIndex or 0
+  local favoriteAction = ButtonAction[TEST_CONFIG.expectedFavoriteAction]
+  local detailsAction = ButtonAction[TEST_CONFIG.expectedDetailsAction]
+  assertTrue(type(favoriteAction) == "number", "fixture favorite action missing")
+  assertTrue(type(detailsAction) == "number", "fixture details action missing")
+  renderFrame()
+  -- Raw values deliberately collide with legacy A/X/Y declarations. Only
+  -- independent recorded semantic roles determine the expected result.
+  for _, raw in ipairs({ -1, 4, 6, 7, 31 }) do
+    local page = state.detailPage
+    local favorites = state.favorites[entry.objectKey]
+    if raw >= 0 then TEST.buttonTriggers[raw] = { [index] = true } end
+    TEST.actionTriggers[detailsAction] = { [index] = true }
+    renderFrame()
+    assertEqual(state.detailPage, page + 1, "semantic Y depended on a raw button number")
+    assertEqual(state.favorites[entry.objectKey], favorites, "semantic Y changed favorites")
+    if raw >= 0 then TEST.buttonTriggers[raw] = { [index] = true } end
+    TEST.actionTriggers[favoriteAction] = { [index] = true }
+    renderFrame()
+    assertEqual(state.favorites[entry.objectKey] == true, favorites ~= true,
+      "semantic X did not toggle favorites")
+    assertEqual(state.detailPage, page + 1, "semantic X paged details")
+  end
+  assertEqual(#TEST.executed, 0, "secondary semantic actions executed a command")
+  local page = state.detailPage
+  local favorites = state.favorites[entry.objectKey]
+  state.controllerFavoriteButton = 31
+  TEST.buttonTriggers[31] = { [index] = true }
+  TEST.actionTriggers[detailsAction] = { [index] = true }
+  renderFrame()
+  assertEqual(state.favorites[entry.objectKey] == true, favorites ~= true,
+    "explicit custom secondary binding was ignored")
+  assertEqual(state.detailPage, page, "custom favorite also paged details")
+end
+
 local function testControllerDetailsPaging()
   onStarted()
   enterSearch("260")
@@ -3617,7 +3767,8 @@ local function testControllerDetailsPaging()
   local repeatBefore = state.repeatCount
   local executedBefore = #TEST.executed
   local favoriteBefore = state.favorites[entry.objectKey]
-  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  local detailsButton = TEST_CONFIG.physicalDetailsButton or Controller.BUTTON_Y
+  pressButton(detailsButton, state.controllerIndex)
   assertEqual(state.detailPage, 2, "Y did not advance exactly one details page")
   assertEqual(state.page, pageBefore, "Y changed the list page")
   assertEqual(state.selection, selectionBefore, "Y changed the selected entry")
@@ -3632,21 +3783,21 @@ local function testControllerDetailsPaging()
   state.detailEntryId = nil
   state.detailPage = 1
   renderFrame()
-  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  pressButton(detailsButton, state.controllerIndex)
   assertEqual(state.detailPage, 1, "Y changed a single-page description")
 
   entry.desc = string.rep("Long details. ", 50)
   state.detailEntryId = nil
   state.detailPage = 1
   state.sidebarFocus = true
-  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  pressButton(detailsButton, state.controllerIndex)
   assertEqual(state.detailPage, 1, "Y changed details while category focus was active")
   state.sidebarFocus = false
   state.inputMode = "search"
-  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  pressButton(detailsButton, state.controllerIndex)
   assertEqual(state.detailPage, 1, "Y changed details while search owned focus")
   state.inputMode = "command"
-  pressButton(Controller.BUTTON_Y, state.controllerIndex)
+  pressButton(detailsButton, state.controllerIndex)
   assertEqual(state.detailPage, 1, "Y changed details while command input owned focus")
 end
 
@@ -4251,6 +4402,10 @@ local scenarios = {
   controller_paging = testControllerPaging,
   device_help_contract = testDeviceHelpContract,
   controller_details = testControllerDetailsPaging,
+  controller_paging_signals = testControllerPagingSignals,
+  controller_details_collision = testControllerDetailsCollision,
+  native_pause_input_ownership = testNativePauseInputOwnership,
+  controller_face_semantics = testControllerFaceSemantics,
   toast_layout = testToastLayoutContract,
   controller_open_compat = testControllerOpenCompatibility,
   controller_enumeration_failure = testControllerEnumerationFailure,

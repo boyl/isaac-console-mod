@@ -9,7 +9,7 @@ local SearchAliases = include("scripts.search_aliases")
 
 ChineseConsole.pedestals = include("scripts.collectible_pedestals")
 
-local VERSION = "2.5.31"
+local VERSION = "2.5.32"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -128,16 +128,15 @@ end
 
 local CONTROLLER_ACTION_CONFIRM = ChineseConsole.controllerAction("ACTION_MENUCONFIRM")
 local CONTROLLER_ACTION_BACK = ChineseConsole.controllerAction("ACTION_MENUBACK")
-local CONTROLLER_ACTION_FAVORITE = ChineseConsole.controllerAction("ACTION_MENUTAB")
+local CONTROLLER_ACTION_FAVORITE = ChineseConsole.controllerAction("ACTION_MENUEX")
+  or ChineseConsole.controllerAction("ACTION_MENUTAB")
 local CONTROLLER_ACTION_LEFT = ChineseConsole.controllerAction("ACTION_MENULEFT")
 local CONTROLLER_ACTION_RIGHT = ChineseConsole.controllerAction("ACTION_MENURIGHT")
 local CONTROLLER_ACTION_UP = ChineseConsole.controllerAction("ACTION_MENUUP")
 local CONTROLLER_ACTION_DOWN = ChineseConsole.controllerAction("ACTION_MENUDOWN")
 local CONTROLLER_ACTION_RESTART = ChineseConsole.controllerAction("ACTION_RESTART")
--- Raw values are isolated here as verified compatibility data. Menu code uses
--- roles and logical actions, so future runtimes with complete ButtonAction
--- support do not need a new branch. Repentance+ gameplay can omit MENUTAB;
--- its verified Xbox-controller X fallback is raw 4.
+-- Keep the previously verified raw fallback only when no semantic event is
+-- reported. Modern X/Y roles are selected by MENUEX capability below.
 local CONTROLLER_INPUT_COMPATIBILITY
 if IS_REPENTANCE_PLUS then
   CONTROLLER_INPUT_COMPATIBILITY = { favorite = 4 }
@@ -149,11 +148,20 @@ else
   }
 end
 CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction = ChineseConsole.controllerAction("ACTION_MENULB")
+-- Runtimes exposing MENUEX distinguish X (extra action) from Y (menu tab).
+-- Resolve capabilities and enum values, never infer a physical Y number.
+CONTROLLER_INPUT_COMPATIBILITY.detailsAction = ChineseConsole.controllerAction("ACTION_MENUEX")
+  and ChineseConsole.controllerAction("ACTION_MENUTAB") or nil
+CONTROLLER_INPUT_COMPATIBILITY.detailsButton = not CONTROLLER_INPUT_COMPATIBILITY.detailsAction
+  and controllerButton("BUTTON_Y") or nil
 CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction = ChineseConsole.controllerAction("ACTION_MENURB")
 CONTROLLER_INPUT_COMPATIBILITY.pagePreviousAction = ChineseConsole.controllerAction("ACTION_MENULT")
 CONTROLLER_INPUT_COMPATIBILITY.pageNextAction = ChineseConsole.controllerAction("ACTION_MENURT")
 CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold = 0.55
 CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold = 0.35
+debugLog("controller semantics: favorite=" .. tostring(CONTROLLER_ACTION_FAVORITE)
+  .. "; details=" .. tostring(CONTROLLER_INPUT_COMPATIBILITY.detailsAction)
+  .. "; raw-details=" .. tostring(CONTROLLER_INPUT_COMPATIBILITY.detailsButton))
 
 local REPENTANCE_FONT_ROOT = "resources-dlc3.zh/font/"
 local REPENTANCE_PLUS_FONT_ROOT = "resources.zh/font/"
@@ -2564,26 +2572,34 @@ function ChineseConsole.controllerShoulderRoleEvent(candidates, role, action, bu
   for _, index in ipairs(candidates) do
     local latchKey = role .. ":" .. tostring(index)
     local value = analog and ChineseConsole.controllerActionValueAt(action, index) or 0
-    if analog and value <= CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold then
+    local actionTriggered = controllerActionTriggeredAt(action, index)
+    local buttonTriggered = controllerButtonTriggeredAt(button, index)
+    local actionPressed = false
+    if analog and action ~= nil and type(Input.IsActionPressed) == "function" then
+      local ok, pressed = pcall(Input.IsActionPressed, action, index)
+      actionPressed = ok and pressed == true
+    end
+    -- Raw, semantic and analog signals can arrive on different frames for one
+    -- press. All sources share a latch; only complete release can re-arm it.
+    if analog and not actionTriggered and not buttonTriggered and not actionPressed
+        and not controllerButtonPressed(button, index)
+        and value <= CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold then
       state.controllerShoulderLatch[latchKey] = nil
     end
-    if controllerActionTriggeredAt(action, index) then
-      if analog and value > CONTROLLER_INPUT_COMPATIBILITY.triggerReleaseThreshold then
-        state.controllerShoulderLatch[latchKey] = true
+    if not analog or not state.controllerShoulderLatch[latchKey] then
+      local source, eventValue
+      if actionTriggered then
+        source, eventValue = "action", action
+      elseif buttonTriggered then
+        source, eventValue = "button", button
+      elseif analog and value >= CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold then
+        source, eventValue = "action_value", action
       end
-      markControllerInput(index)
-      return { role = role, source = "action", value = action, index = index }
-    end
-    if analog and value >= CONTROLLER_INPUT_COMPATIBILITY.triggerPressThreshold
-        and not state.controllerShoulderLatch[latchKey] then
-      state.controllerShoulderLatch[latchKey] = true
-      markControllerInput(index)
-      return { role = role, source = "action_value", value = action, index = index }
-    end
-    if controllerButtonTriggeredAt(button, index) then
-      if analog then state.controllerShoulderLatch[latchKey] = true end
-      markControllerInput(index)
-      return { role = role, source = "button", value = button, index = index }
+      if source then
+        if analog then state.controllerShoulderLatch[latchKey] = true end
+        markControllerInput(index)
+        return { role = role, source = source, value = eventValue, index = index }
+      end
     end
   end
   return nil
@@ -2651,10 +2667,10 @@ local function controllerShoulderEvent(candidates)
         CONTROLLER_INPUT_COMPATIBILITY.repeatDecreaseAction, CONTROLLER_REPEAT_DECREASE,
         previousAction) then previousSuppressed = true end
   end
+  local previousEvent
   if not previousSuppressed then
-    event = ChineseConsole.controllerShoulderRoleEvent(candidates, "page_previous",
+    previousEvent = ChineseConsole.controllerShoulderRoleEvent(candidates, "page_previous",
       previousAction, CONTROLLER_PAGE_PREVIOUS, true)
-    if event then return event end
   end
   local nextSuppressed = false
   for _, index in ipairs(candidates) do
@@ -2662,31 +2678,43 @@ local function controllerShoulderEvent(candidates)
         CONTROLLER_INPUT_COMPATIBILITY.repeatIncreaseAction, CONTROLLER_REPEAT_INCREASE,
         nextAction) then nextSuppressed = true end
   end
-  if nextSuppressed then return nil end
-  return ChineseConsole.controllerShoulderRoleEvent(candidates, "page_next",
-    nextAction, CONTROLLER_PAGE_NEXT, true)
+  local nextEvent
+  if not nextSuppressed then
+    nextEvent = ChineseConsole.controllerShoulderRoleEvent(candidates, "page_next",
+      nextAction, CONTROLLER_PAGE_NEXT, true)
+  end
+  return previousEvent or nextEvent
 end
 
 local function controllerMenuEvent()
   local candidates = controllerCandidates()
-  -- Primary menu actions retain semantic priority. Physical shoulder roles
-  -- are resolved separately because official menu-tab actions do not
-  -- distinguish LB/RB from LT/RT consistently across runtimes.
   local event = controllerRoleEvent(candidates, "back", "action", CONTROLLER_ACTION_BACK)
   if event then return event end
   event = controllerRoleEvent(candidates, "confirm", "action", CONTROLLER_ACTION_CONFIRM)
   if event then return event end
+  -- Primary actions always win. Explicit user bindings override secondary
+  -- defaults; otherwise the available menu actions define X and Y semantics.
+  if state.controllerFavoriteButton ~= nil then
+    event = controllerRoleEvent(candidates, "back", "button", CONTROLLER_INPUT_COMPATIBILITY.back)
+    if event then return event end
+    event = controllerRoleEvent(candidates, "confirm", "button", CONTROLLER_INPUT_COMPATIBILITY.confirm)
+    if event then return event end
+    event = controllerRoleEvent(candidates, "favorite", "button", state.controllerFavoriteButton)
+    if event then return event end
+  end
+  event = controllerRoleEvent(candidates, "details", "action", CONTROLLER_INPUT_COMPATIBILITY.detailsAction)
+  if event then return event end
+  event = controllerRoleEvent(candidates, "details", "button", CONTROLLER_INPUT_COMPATIBILITY.detailsButton)
+  if event then return event end
   event = controllerRoleEvent(candidates, "favorite", "action", CONTROLLER_ACTION_FAVORITE)
   if event then return event end
-  local favoriteButton = state.controllerFavoriteButton
-    or CONTROLLER_INPUT_COMPATIBILITY.favorite
   event = controllerRoleEvent(candidates, "back", "button", CONTROLLER_INPUT_COMPATIBILITY.back)
   if event then return event end
   event = controllerRoleEvent(candidates, "confirm", "button", CONTROLLER_INPUT_COMPATIBILITY.confirm)
   if event then return event end
+  local favoriteButton = state.controllerFavoriteButton
+    or CONTROLLER_INPUT_COMPATIBILITY.favorite
   event = controllerRoleEvent(candidates, "favorite", "button", favoriteButton)
-  if event then return event end
-  event = controllerRoleEvent(candidates, "details", "button", controllerButton("BUTTON_Y"))
   if event then return event end
   return controllerShoulderEvent(candidates)
 end
@@ -4463,7 +4491,10 @@ local function onInput(_, _, inputHook, action)
   -- state must not intercept any native controller assignment or pause input.
   if runBoundaryPending() then return nil end
   if Presentation.updatePauseAvailable and action == ButtonAction.ACTION_PAUSE then return nil end
-  if Game():IsPaused() and state.runEndState ~= "game_over" then return nil end
+  -- Only a game-owned pause yields input. Our native pause stops simulation,
+  -- but the visible Mod still owns menu input, including co-op join aliases.
+  if Game():IsPaused() and not Presentation.nativePauseOwned()
+      and state.runEndState ~= "game_over" then return nil end
   if state.inputLease ~= nil then
     if inputHook == InputHook.GET_ACTION_VALUE then return 0.0 end
     return false

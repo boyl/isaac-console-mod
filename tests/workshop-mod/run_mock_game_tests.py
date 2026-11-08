@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD_ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "workshop-mod-en"
 HARNESS = Path(__file__).with_name("mock_game_harness.lua")
 EXPECTED_NAME = sys.argv[2] if len(sys.argv) > 2 else "Console UI"
-EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.26"
+EXPECTED_VERSION = sys.argv[3] if len(sys.argv) > 3 else "2.5.4-en.27"
 LUA_DLL_CANDIDATES = [
     Path(r"C:\Program Files\obs-studio\bin\64bit\lua51.dll"),
     Path(r"C:\Program Files\bililive\livehime\7.54.0.10521\lua51.dll"),
@@ -88,6 +88,33 @@ def run_scenario(dll: ctypes.CDLL, config: dict[str, object]) -> None:
 
 def scenarios() -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
+    for scenario in ("controller_paging_signals", "controller_details_collision"):
+        for runtime, rep_plus, repentogon in (
+            ("Repentance", False, False), ("Repentance+", True, False),
+            ("REPENTOGON", False, True),
+        ):
+            for controller_index in (0, 3):
+                result.append({
+                    "scenario": scenario,
+                    "label": f"{runtime} {scenario} controller {controller_index}",
+                    "repPlus": rep_plus, "repentogon": repentogon,
+                    "controllerIndex": controller_index,
+                    "physicalDetailsButton": 6 if rep_plus else 7,
+                })
+    result.append({"scenario": "native_pause_input_ownership",
+                   "label": "Mod-owned native pause blocks co-op join without polling input",
+                   "repPlus": True, "controllerIndex": 1})
+    for rep_plus in (False, True):
+        for controller_index in (0, 3):
+            for offset in (0, 100):
+                result.append({
+                    "scenario": "controller_face_semantics",
+                    "label": f"semantic X/Y repPlus={rep_plus} index={controller_index} enum offset={offset}",
+                    "repPlus": rep_plus, "menuExAvailable": True,
+                    "menuActionOffset": offset, "controllerIndex": controller_index,
+                    "expectedFavoriteAction": "ACTION_MENUEX",
+                    "expectedDetailsAction": "ACTION_MENUTAB",
+                })
     search_cases = (
         ("sacred heart", "giveitem c182"),
         ("sacred", "giveitem c182"),
@@ -612,6 +639,7 @@ def scenarios() -> list[dict[str, object]]:
                     "scenario": "controller_details",
                     "label": f"{runtime} Y details controller {controller_index}",
                     "repPlus": rep_plus,
+                    "physicalDetailsButton": 6 if rep_plus else 7,
                     "repentogon": repentogon,
                     "eid": eid,
                     "controllerIndex": controller_index,

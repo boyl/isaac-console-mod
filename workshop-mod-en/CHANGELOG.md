@@ -1,3 +1,14 @@
+## 2.5.4-en.27
+
+- Fixed Y adding favorites instead of paging item descriptions in Repentance+. Uses game action semantics while preserving legacy runtime and custom binding support. X favorites and Y description paging have been verified in-game.
+- LT/RT page inputs now share a press latch and require release before another page change.
+- Improved input isolation while the menu is paused.
+
+### Follow-up observations
+
+- **Page navigation**: improved duplicate-input handling. Paging currently works normally; we will continue to watch behavior across different controllers.
+- **2P**: added a preventive adjustment following an isolated report. Current testing is normal; we will continue to observe.
+
 ## 2.5.4-en.23
 
 ## 2.5.4-en.26
