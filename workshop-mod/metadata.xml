@@ -45,12 +45,12 @@
 
 [h1]兼容性与语言版本[/h1]
 同一订阅支持 Repentance、Repentance+ 与 REPENTOGON（忏悔龙），无需安装第二个运行时版本。
-为避免 Repentance+ 重开时瞬间黑屏，本版本不加载自定义 Shader；死亡结算菜单可能被原生遗书遮挡。其他 Mod 的 Shader 仍可能造成同类问题。
+为避免 Repentance+ 重开时瞬间黑屏，本版本不加载自定义 Shader；J510 / 1.9.7.19 安装可选原生组件 0.2.4 后，打开控制台会隐藏原生死亡界面及角落提示，关闭后恢复；未安装该组件的路径仍可能被遮挡。其他 Mod 的 Shader 仍可能造成同类问题。
 
 中文版与英文版使用相同的 F6 和 L3 呼出方式；可以同时订阅，但请只启用一个语言版本。
 
 [h1]可选原生暂停组件[/h1]
-Repentance/Repentance+ 如需在打开菜单时自动暂停，请另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.3]原生暂停组件 0.2.3[/url] 的 native-pause-0.2.3.zip。退出游戏后，将包内 game-files 的内容按目录结构复制到 isaac-ng.exe 所在目录，安装一次后随游戏加载；不安装仍可使用原有菜单功能。
+Repentance/Repentance+ 如需在打开菜单时自动暂停，请另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.4]原生暂停组件 0.2.4[/url] 的 native-pause-0.2.4.zip。完全退出游戏后，解压并运行包内 install.cmd（需要 PowerShell 7），按提示选择含 isaac-ng.exe 的游戏目录；升级和卸载请遵循包内 README.md，卸载入口为 uninstall.cmd。安装一次后随游戏加载；不安装仍可使用原有菜单功能。
 
 已知版本优先识别；EXE 哈希不在白名单时会自动检测兼容性，通过后启用，不再仅因哈希不同停用。关键代码或内存布局不兼容时，仅停用原生暂停并记录原因，菜单其他功能继续可用。
 

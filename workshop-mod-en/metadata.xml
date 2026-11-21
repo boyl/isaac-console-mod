@@ -45,12 +45,12 @@ Subscribe, enable the Mod, start a run, and press [b]F6[/b] or hold the left sti
 
 [h1]Compatibility and Language Versions[/h1]
 One subscription supports Repentance, Repentance+, and REPENTOGON without a second runtime-specific edition.
-This version removes the custom shader to restore the Repentance+ restart fade. The Game Over menu may be covered by the native death screen. Shaders from other mods may still cause the same issue.
+This version removes the custom shader to restore the Repentance+ restart fade. On J510 / 1.9.7.19, optional native component 0.2.4 hides the native death screen and corner hints while the console is open, restoring them on close. Paths without this component may still be covered. Shaders from other mods may still cause the same issue.
 
 Console UI and Isaac Chinese Console use the same F6 and L3 shortcuts. You may subscribe to both, but enable only one language version at a time.
 
 [h1]Optional Native Pause Companion[/h1]
-For Repentance/Repentance+, download native-pause-0.2.3.zip from [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.3]Native Pause 0.2.3[/url] to pause automatically while the menu is open. Exit the game, then copy the contents of game-files into the folder containing isaac-ng.exe, preserving the folder structure. Install once; it loads with the game. Existing menu features remain usable without it.
+For Repentance/Repentance+, download native-pause-0.2.4.zip from [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.4]Native Pause 0.2.4[/url] to pause automatically while the menu is open. Completely exit the game, extract the archive and run install.cmd (requires PowerShell 7), selecting the game folder containing isaac-ng.exe. Follow README.md for upgrades and uninstall.cmd for removal. Install once; it loads with the game. Existing menu features remain usable without it.
 
 Known versions are recognized first. An EXE hash outside the allowlist now triggers automatic compatibility checks; a compatible EXE is enabled instead of being rejected solely because its hash differs. If critical code or memory layouts are incompatible, only native pause is disabled, the reason is logged, and other menu features remain available.
 
