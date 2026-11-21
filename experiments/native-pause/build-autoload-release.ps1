@@ -10,7 +10,7 @@ if($sourceChanges -and -not $Candidate){throw '正式发布要求源码工作树
 if(Test-Path -LiteralPath $OutputDirectory){throw '输出目录已存在。'}
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $out=(Resolve-Path -LiteralPath $OutputDirectory).Path
-$packageName=if($Candidate){'native-pause-0.2.3-candidate'}else{'native-pause-0.2.3'}
+$packageName=if($Candidate){'native-pause-0.2.4-candidate'}else{'native-pause-0.2.4'}
 $build=Join-Path $out 'build-evidence'; $package=Join-Path $out $packageName
 & (Join-Path $PSScriptRoot 'build-native.ps1') -OutputDirectory $build
 & (Join-Path $build 'contract-test.exe') (Join-Path $GameDirectory 'Lua5.3.3r.dll') | Tee-Object -FilePath (Join-Path $build 'native-tests.log')
@@ -51,7 +51,7 @@ $files=[ordered]@{}
 foreach($file in Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName){$relative=[IO.Path]::GetRelativePath($package,$file.FullName).Replace('\','/');$files[$relative]=(Get-FileHash -LiteralPath $file.FullName).Hash}
 $sourceFiles=[ordered]@{}
 foreach($name in @('pause.c','compatibility.h','test-compatibility.c','install-autoload.ps1','build-autoload-release.ps1')){$sourceFiles[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name)).Hash}
-$manifest=[ordered]@{version='0.2.3';candidate=[bool]$Candidate;sourceHead=$sourceHead;sourceDirty=[bool]$sourceChanges;sourceFiles=$sourceFiles;compatibilityPolicy='known-hash-or-validated-rep-layout';exeHashes=@('3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B','04469D0C3D3581936FCF85BEA5F9F4F3A65B2CCF96B36310456C9626BAC36DC6','CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4');runtimes=@('Repentance+ v1.9.7.17/J460/x86','Repentance v1.7.9b/x86','REPENTOGON+ fixed Rep+ executable/x86');installFiles=@('winmm.dll','winmm.ini','scripts/IsaacConsoleNativePause.asi');files=$files;loader=$origin}
+$manifest=[ordered]@{version='0.2.4';candidate=[bool]$Candidate;sourceHead=$sourceHead;sourceDirty=[bool]$sourceChanges;sourceFiles=$sourceFiles;compatibilityPolicy='known-hash-or-validated-rep-layout';exeHashes=@('114673659401DA17E55BD44B2C9F1CB7D40CE5FD31E15690588661A8A7C60FF6','3BDFC8BAE0DC7E334B76009D0AD45DFBB16EE5F00C06FFBC3A0094E34D44616B','04469D0C3D3581936FCF85BEA5F9F4F3A65B2CCF96B36310456C9626BAC36DC6','CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4');runtimes=@('Repentance+ v1.9.7.19/J510/x86','Repentance+ v1.9.7.17/J460/x86','Repentance v1.7.9b/x86','REPENTOGON+ fixed Rep+ executable/x86');installFiles=@('winmm.dll','winmm.ini','scripts/IsaacConsoleNativePause.asi');files=$files;loader=$origin}
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $package 'manifest.json') -Encoding utf8
 & (Join-Path $PSScriptRoot 'test-autoload-installer.ps1') -PackageDirectory $package -TestDirectory $build -GameDirectory $GameDirectory | Tee-Object -FilePath (Join-Path $build 'installer-tests.log')
 $zip=Join-Path $out "$packageName.zip"

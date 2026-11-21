@@ -8,8 +8,9 @@ local OfficialObjects = include("scripts.official_objects")
 local SearchAliases = include("scripts.search_aliases")
 
 ChineseConsole.pedestals = include("scripts.collectible_pedestals")
+ChineseConsole.keyboard = include("scripts.keyboard_input")
 
-local VERSION = "2.5.32"
+local VERSION = "2.5.33"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -2177,8 +2178,8 @@ for code = Keyboard.KEY_0, Keyboard.KEY_9 do KEY_CHARS[code] = string.char(code)
 for code = Keyboard.KEY_A, Keyboard.KEY_Z do KEY_CHARS[code] = string.char(code + 32) end
 
 local function controlPressed()
-  return Input.IsButtonPressed(Keyboard.KEY_LEFT_CONTROL, 0)
-    or Input.IsButtonPressed(Keyboard.KEY_RIGHT_CONTROL, 0)
+  return ChineseConsole.keyboard.pressed(Keyboard.KEY_LEFT_CONTROL)
+    or ChineseConsole.keyboard.pressed(Keyboard.KEY_RIGHT_CONTROL)
 end
 
 local function markKeyboardInput()
@@ -2187,17 +2188,17 @@ local function markKeyboardInput()
 end
 
 local function captureEditableText(value, selectAll)
-  if controlPressed() and Input.IsButtonTriggered(Keyboard.KEY_A, 0) then
+  if controlPressed() and ChineseConsole.keyboard.triggered(Keyboard.KEY_A) then
     return value, value ~= "", false
   end
-  local backspace = Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0)
-  local delete = Input.IsButtonTriggered(Keyboard.KEY_DELETE, 0)
+  local backspace = ChineseConsole.keyboard.triggered(Keyboard.KEY_BACKSPACE)
+  local delete = ChineseConsole.keyboard.triggered(Keyboard.KEY_DELETE)
   if selectAll and (backspace or delete) then return "", false, true end
   if backspace then
     return value:sub(1, math.max(0, #value - 1)), false, value ~= ""
   end
   for key, character in pairs(KEY_CHARS) do
-    if Input.IsButtonTriggered(key, 0) then
+    if ChineseConsole.keyboard.triggered(key) then
       if selectAll then return character, false, true end
       if #value < 120 then return value .. character, false, true end
       return value, false, false
@@ -2207,17 +2208,17 @@ local function captureEditableText(value, selectAll)
 end
 
 local function editableTextTriggered()
-  if controlPressed() and Input.IsButtonTriggered(Keyboard.KEY_A, 0) then
+  if controlPressed() and ChineseConsole.keyboard.triggered(Keyboard.KEY_A) then
     markKeyboardInput()
     return true
   end
-  if Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0)
-      or Input.IsButtonTriggered(Keyboard.KEY_DELETE, 0) then
+  if ChineseConsole.keyboard.triggered(Keyboard.KEY_BACKSPACE)
+      or ChineseConsole.keyboard.triggered(Keyboard.KEY_DELETE) then
     markKeyboardInput()
     return true
   end
   for key in pairs(KEY_CHARS) do
-    if Input.IsButtonTriggered(key, 0) then
+    if ChineseConsole.keyboard.triggered(key) then
       markKeyboardInput()
       return true
     end
@@ -2795,7 +2796,7 @@ function InputSettingsUI.pressedKeyboardKeys()
   local pressed, seen = {}, {}
   for key in pairs(OPEN_KEY_NAMES) do
     if not seen[key] then
-      local ok, down = pcall(Input.IsButtonPressed, key, 0)
+      local ok, down = pcall(ChineseConsole.keyboard.pressed, key)
       if ok and down == true then pressed[#pressed + 1] = { index = 0, button = key }; seen[key] = true end
     end
   end
@@ -2942,14 +2943,14 @@ local function moveGridSelection(entries, delta)
 end
 
 local function keyTriggered(key)
-  local triggered = Input.IsButtonTriggered(key, 0)
+  local triggered = ChineseConsole.keyboard.triggered(key)
   if triggered then markKeyboardInput() end
   return triggered
 end
 
 local function enterTriggered()
-  local pressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
-  local triggered = Input.IsButtonTriggered(Keyboard.KEY_ENTER, 0)
+  local pressed = ChineseConsole.keyboard.pressed(Keyboard.KEY_ENTER)
+  local triggered = ChineseConsole.keyboard.triggered(Keyboard.KEY_ENTER)
   local rising = pressed and not state.keyboardEnterPressed
   state.keyboardEnterPressed = pressed
   if triggered or rising then
@@ -2966,6 +2967,7 @@ local function controllerActionPressed(action, index)
 end
 
 local function restartActionPressed()
+  if ChineseConsole.keyboard.pressed(Keyboard.KEY_R) then return true end
   if CONTROLLER_ACTION_RESTART == nil then return false end
   local candidates, seen = {}, {}
   -- Controller index 0 is also the keyboard action route. Assigned player
@@ -3008,6 +3010,8 @@ local function inputLeaseActive()
   local pressed
   if lease.kind == "action" then
     pressed = controllerActionPressed(lease.value, lease.index)
+  elseif lease.kind == "keyboard" then
+    pressed = ChineseConsole.keyboard.pressed(lease.value)
   elseif lease.kind == "mouse" then
     pressed = Input.IsMouseBtnPressed(lease.value)
   else
@@ -4388,7 +4392,7 @@ local function onRender()
   if prototypeOwned then processQueue() end
   local nativePauseOwnsScreen = paused and not prototypeOwned and state.runEndState ~= "game_over"
   if nativePauseOwnsScreen then
-    state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
+    state.keyboardEnterPressed = ChineseConsole.keyboard.pressed(Keyboard.KEY_ENTER)
     if state.open then
       suppressEidOverlay()
       state.nativePauseSuspended = true
@@ -4406,7 +4410,7 @@ local function onRender()
   local inputLeaseBlocked = inputLeaseActive()
   local blockResumeInput = state.nativePauseSuspended
   if blockResumeInput then
-    state.keyboardEnterPressed = Input.IsButtonPressed(Keyboard.KEY_ENTER, 0)
+    state.keyboardEnterPressed = ChineseConsole.keyboard.pressed(Keyboard.KEY_ENTER)
     state.nativePauseSuspended = false
     state.mouseDown = Input.IsMouseBtnPressed(0)
     state.rightMouseDown = Input.IsMouseBtnPressed(1)

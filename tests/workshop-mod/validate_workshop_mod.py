@@ -15,8 +15,8 @@ from validate_hd_payload import validate_hd_payload
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.27"
-METADATA_VERSION = "2.5.4.27"
+DISPLAY_VERSION = "2.5.4-en.28"
+METADATA_VERSION = "2.5.4.28"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -82,6 +82,7 @@ def main() -> int:
         "metadata.xml",
     "scripts/data.lua",
     "scripts/item_icons.lua",
+    "scripts/keyboard_input.lua",
     "scripts/collectible_pedestals.lua",
     "resources/gfx/ui/isaac_console_item.anm2",
     "resources/gfx/ui/isaac_console_cards.anm2",

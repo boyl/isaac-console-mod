@@ -52,7 +52,7 @@ async function session({enabled = true, fault = '', legacy = false} = {}) {
   try {
     const result = await runCursorAcceptance({sky, config, inspectFrame: async file => JSON.parse(await fs.readFile(file, 'utf8'))});
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(config.outputDir, 'result.json'), 'utf8')), result);
-    return {result, clicks, save: await fs.readFile(config.savePath, 'utf8'), original};
+    return {result, clicks, save: await fs.readFile(config.savePath, 'utf8'), original, version};
   } finally {
     // mkdtemp 创建的专属目录，先核验解析后的目标仍在系统临时目录内。
     assert(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep));
@@ -70,7 +70,7 @@ test('旧存档缺省开启并保留迁移之外的全部字段', async () => {
   const s = await session({legacy: true});
   assert.equal(s.result.status, 'PASS'); assert.equal(s.clicks, 2);
   assert.equal(s.result.restoration, 'restored-with-save-migration');
-  assert.equal(s.save, 'version=2.5.23\nfullscreenCursorEnabled=1\nfavorites=c:182\n');
+  assert.equal(s.save, `version=${s.version}\nfullscreenCursorEnabled=1\nfavorites=c:182\n`);
 });
 for (const fault of ['wrong-page', 'stale', 'ambiguous', 'wrong-slot']) {
   test(`前置失败不点击：${fault}`, async () => {

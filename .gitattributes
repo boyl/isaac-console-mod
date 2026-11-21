@@ -2,3 +2,5 @@
 **/resources/font/hd/** -text
 # coverage.lua 的清单哈希以 CRLF 字节计算；将行尾 CR 视为合法。
 **/resources/font/hd/coverage.lua whitespace=cr-at-eol
+# 升级测试按历史文件哈希识别 Shader，必须保留原始字节。
+tests/workshop-mod/fixtures/legacy-console-shaders.xml -text

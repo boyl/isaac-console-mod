@@ -1,3 +1,10 @@
+## 2.5.4-en.28
+
+- Fixed keyboard input after the Repentance+ J510 / 1.9.7.19 update, including F6, search, confirmation, rebinding and release handling. Legacy keyboard routing is preserved.
+- Prevented raw gamepad button aliases from triggering keyboard actions.
+- The local upgrade tool backs up and removes the identified legacy shader. Default bindings, Mod identity and save format are unchanged.
+- Verification scope is recorded in `docs/specs/j510-compatibility.md`.
+
 ## 2.5.4-en.27
 
 - Fixed Y adding favorites instead of paging item descriptions in Repentance+. Uses game action semantics while preserving legacy runtime and custom binding support. X favorites and Y description paging have been verified in-game.

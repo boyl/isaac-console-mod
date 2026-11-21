@@ -1,8 +1,10 @@
-# 原生暂停 0.2.3：随游戏自动加载
+# 原生暂停 0.2.4：随游戏自动加载
 
 安装一次，以后从 Steam 正常启动游戏即可使用暂停；没有每次启动的命令窗口。卸载后，原版 Rep/Rep+ 的控制台功能继续工作，只是不自动暂停。新版忏悔龙菜单通过 MC_PRE_UPDATE 自动暂停，无需本组件。
 
-配套控制台二选一：[Isaac Chinese Console（中文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3776882944) 或 [Console UI（英文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3779128726)。先订阅并在游戏 Mods 菜单启用其中一个。原生组件下载 [GitHub Release](https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.3) 的 `native-pause-0.2.3.zip`，不要下载 Source code。加载器已包含，无需另行下载；手动安装不需要 PowerShell。
+配套控制台二选一：[Isaac Chinese Console（中文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3776882944) 或 [Console UI（英文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3779128726)。先订阅并在游戏 Mods 菜单启用其中一个。从 [Native Pause 0.2.4](https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.4) 下载 `native-pause-0.2.4.zip`，不要下载 Source code。加载器已包含，无需另行下载；手动安装不需要 PowerShell。
+
+升级已由脚本安装的旧组件时：先备份旧包及安装记录，退出游戏，运行旧版卸载脚本，再安装新版；不要覆盖来源未知的加载器。J510 的函数签名、Game 字段引用与 Lua 导出身份仍须全部通过，任何失配都会停用。
 
 ## 手动安装（不需要PowerShell）
 
@@ -56,7 +58,7 @@ The Binding of Isaac Rebirth/
 
 ## 支持范围
 
-优先识别 Steam Repentance 1.7.9b/x86 与 Repentance+ v1.9.7.17/J460/x86。EXE 哈希不在清单时自动检测两个适配器，恰好一个通过则启用，无需手动放行。仅哈希变化不再直接禁用；关键函数或字段布局变化、Lua 入口不匹配、结果有歧义时会停用原生暂停并说明原因，控制台其他功能继续工作。
+优先识别 Steam Repentance 1.7.9b/x86 与 Repentance+ v1.9.7.17/J460/x86 与 v1.9.7.19/J510/x86。EXE 哈希不在清单时自动检测三个普通运行时适配器，恰好一个通过则启用，无需手动放行。仅哈希变化不再直接禁用；关键函数或字段布局变化、Lua 入口不匹配、结果有歧义时会停用原生暂停并说明原因，控制台其他功能继续工作。
 
 `scripts/native-pause.log` 记录完整 EXE 哈希、版本、UTC 时间、进程、逐项检测和挂钩结果，以及获取／释放暂停。主目录无法写日志时，查找 `%TEMP%/IsaacConsoleNativePause-<进程号>.log`。
 

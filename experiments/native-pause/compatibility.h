@@ -82,11 +82,13 @@ static int match_pattern(const unsigned char *bytes,const char *pattern) {
    Rep 来自 REPENTOGON 1.0.12 的 Console.zhl/Game.zhl，另以调用引用关系验证。 */
 static const char *input_patterns[]={
     "558bec6aff68????????64a1000000005083ec3c535657a1????????33c5508d45f464a3000000008bf1",
-    "558bec83ec3c535657"
+    "558bec83ec3c535657",
+    "558bec6aff68????????64a1000000005083ec3c535657a1????????33c5508d45f464a3000000008bf1"
 };
 static const char *render_patterns[]={
     "538bdc83ec0883e4f883c404558b6b04896c24048bec6aff68????????64a100000000505381ec78010000a1????????33c58945ec5657508d45f464a3000000008bf1897584",
-    "558bec6aff68????????64a1????????5081ec9c000000a1????????33c58945??535657508d45??64a3????????8bf18975"
+    "558bec6aff68????????64a1????????5081ec9c000000a1????????33c58945??535657508d45??64a3????????8bf18975",
+    "538bdc83ec0883e4f883c404558b6b04896c24048bec6aff68????????64a100000000505381ec78010000a1????????33c58945ec5657508d45f464a3000000008bf1897588"
 };
 
 /* 证明同一条指令链由 game 全局指针得到 Console 对象，再调用输入入口。
@@ -156,7 +158,7 @@ static int validate_candidate(const PauseImage *image,const Runtime *r,HMODULE l
     ok&=report_check(r,"pcall_iat",r->pcall_iat,pass,"lua_pcallk_export_identity");
     if(extended) {
         pass=image_range(image,r->paused,17,IMAGE_SCN_MEM_EXECUTE)
-             && (variant==0 ? (match_pattern(image->base+r->paused,"8bd1568b35????????83ba????????0074")
+             && (variant!=1 ? (match_pattern(image->base+r->paused,"8bd1568b35????????83ba????????0074")
                                && *(uint32_t *)(image->base+r->paused+11)==r->console_offset)
                             : (match_pattern(image->base+r->paused,"83b9????????008b15")
                                && *(uint32_t *)(image->base+r->paused+2)==r->console_offset));
@@ -173,11 +175,14 @@ static const Runtime *select_runtime(const char *digest,unsigned char *address,H
     if(!inspect_image(address,&image)) {log_event("DISABLED invalid_PE_or_not_x86");return 0;}
     for(i=0;i<sizeof(runtimes)/sizeof(runtimes[0]);i++) if(digest && !strcmp(digest,runtimes[i].sha256)) {
         log_detail("KNOWN_HASH candidate=\"%s\"",runtimes[i].name);
-        if(validate_candidate(&image,&runtimes[i],lua,0,0)) return &runtimes[i];
+        if(validate_candidate(&image,&runtimes[i],lua,i==3,i==3?2:0)) return &runtimes[i];
         log_event("DISABLED known_runtime_validation_failed");return 0;
     }
     log_event("UNKNOWN_HASH compatibility_probe");
-    for(i=0;i<2;i++) if(validate_candidate(&image,&runtimes[i],lua,1,i)) {selected=&runtimes[i];matches++;}
+    for(i=0;i<sizeof(runtimes)/sizeof(runtimes[0]);i++) {
+        if(runtimes[i].independent_pause) continue;
+        if(validate_candidate(&image,&runtimes[i],lua,1,i==3?2:i)) {selected=&runtimes[i];matches++;}
+    }
     if(matches!=1) {log_event(matches?"DISABLED ambiguous_compatible_runtime":"DISABLED no_compatible_runtime");return 0;}
     log_detail("COMPATIBLE_UNKNOWN_HASH candidate=\"%s\"",selected->name);
     return selected;

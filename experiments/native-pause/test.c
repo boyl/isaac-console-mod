@@ -28,7 +28,7 @@ int main(int argc,char **argv) {
     void (__cdecl *settop)(lua_State *,int);
     int (__cdecl *toboolean)(lua_State *,int);
     void (__cdecl *close_lua)(lua_State *);
-    void *g1,*g2; int variant;
+    void *g1,*g2; int variant; size_t game_size=0;
     if(argc!=2) return 2;
     lua=LoadLibraryA(argv[1]); if(!lua) return 3;
 #define LOAD(name,exported) name=(void *)GetProcAddress(lua,exported)
@@ -37,12 +37,14 @@ int main(int argc,char **argv) {
     LOAD(original_pcall,"lua_pcallk"); LOAD(newstate,"luaL_newstate");
     LOAD(loadstring,"luaL_loadstring"); LOAD(gettop,"lua_gettop");
     LOAD(settop,"lua_settop"); LOAD(toboolean,"lua_toboolean"); LOAD(close_lua,"lua_close");
-    L=newstate(); g1=calloc(1,CONSOLE_OFFSET+8); g2=calloc(1,CONSOLE_OFFSET+8);
+    for(variant=0;variant<sizeof(runtimes)/sizeof(runtimes[0]);variant++)
+        if(runtimes[variant].console_offset+8>game_size) game_size=runtimes[variant].console_offset+8;
+    L=newstate(); g1=calloc(1,game_size); g2=calloc(1,game_size);
 #define CALL(op) (loadstring(L,"return IsaacConsoleNativePausePrototype(" #op ")"),wrapped_pcall(L,0,1,0,0,0))
-    for(variant=0;variant<3;variant++) {
+    for(variant=0;variant<sizeof(runtimes)/sizeof(runtimes[0]);variant++) {
     runtime=&runtimes[variant]; test_game=g1; owned=0; owner_game=0; test_other_pause=0;
     update_hook_state=1;
-    memset(g1,0,CONSOLE_OFFSET+8); memset(g2,0,CONSOLE_OFFSET+8);
+    memset(g1,0,game_size); memset(g2,0,game_size);
     printf("RUNTIME_CONTRACT %s\n",runtime->name);
     check(CALL(1)==0 && toboolean(L,-1) && *console_state(test_game)==(runtime->independent_pause?0:2),"acquire pause without changing another backend state"); settop(L,0);
     check(CALL(1)==0 && toboolean(L,-1),"idempotent acquire"); settop(L,0);

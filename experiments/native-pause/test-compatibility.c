@@ -70,7 +70,7 @@ static unsigned char *map_exe(const char *path) {
 }
 int main(int argc,char **argv) {
     HMODULE lua; unsigned char *image; int rep; const Runtime *selected;
-    char logtext[65536];size_t logsize;
+    char *logtext;size_t logsize,logcapacity;
     if(argc!=3) {fprintf(stderr,"usage: compatibility-test Lua.dll official-RepPlus.exe\n");return 2;}
     lua=LoadLibraryA(argv[1]);check(lua!=0,"load real Lua exports");
     logfile=tmpfile();check(logfile!=0,"capture diagnostic log");
@@ -127,18 +127,30 @@ int main(int argc,char **argv) {
     VirtualFree(image,0,MEM_RELEASE);
     image=map_exe(argv[2]);check(image!=0,"map actual Rep+ EXE without execution");
     /* 模拟 Windows 加载器解析这个槽位；游戏代码和调用引用保持真实文件内容。 */
-    *(void **)(image+0x7183d8)=(void *)GetProcAddress(lua,"lua_pcallk");
+    *(void **)(image+0x73a43c)=(void *)GetProcAddress(lua,"lua_pcallk");
     selected=select_runtime(unknown_hash,image,lua);
-    check(selected && selected->input==0x28b260,"actual relocated Rep+ image accepts unknown hash");
+    check(selected && selected->input==0x292050,"actual relocated J510 image accepts unknown hash");
+    check(select_runtime("114673659401DA17E55BD44B2C9F1CB7D40CE5FD31E15690588661A8A7C60FF6",image,lua)==selected,"actual known J510 hash validates full layout");
+    image[0x30419b]^=1;
+    check(!select_runtime(selected->sha256,image,lua),"known J510 still rejects console field drift");
+    image[0x30419b]^=1;
+    image[0x56aa45]^=4;
+    check(!select_runtime(unknown_hash,image,lua),"J510 wrong singleton reference is rejected");
+    image[0x56aa45]^=4;
+    *(void **)(image+0x73a43c)=0;
+    check(!select_runtime(unknown_hash,image,lua),"J510 mismatched Lua IAT is rejected");
+    *(void **)(image+0x73a43c)=(void *)GetProcAddress(lua,"lua_pcallk");
     image[0x40]^=1;
     check(select_runtime("modified-non-code",image,lua)==selected,"actual Rep+ unrelated modification remains compatible");
-    image[0x28c2e0+8]^=1;
+    image[0x2930c0+8]^=1;
     check(!select_runtime(unknown_hash,image,lua),"actual Rep+ render change is diagnosed");
     VirtualFree(image,0,MEM_RELEASE);
-    rewind(logfile);logsize=fread(logtext,1,sizeof(logtext)-1,logfile);logtext[logsize]=0;
+    logcapacity=(size_t)ftell(logfile)+1;
+    logtext=malloc(logcapacity);check(logtext!=0,"allocate complete diagnostic capture");
+    rewind(logfile);logsize=fread(logtext,1,logcapacity-1,logfile);logtext[logsize]=0;
     check(strstr(logtext,"UNKNOWN_HASH compatibility_probe") && strstr(logtext,"COMPATIBLE_UNKNOWN_HASH"),"unknown hash logs both probe and successful selection");
     check(strstr(logtext,"check=console_field") && strstr(logtext,"check=game_console_reference") && strstr(logtext,"check=pcall_iat"),"diagnostics identify failed dependency checks");
     check(strstr(logtext,"DISABLED ambiguous_compatible_runtime") && strstr(logtext,"DISABLED no_compatible_runtime"),"terminal reasons are observable");
-    fclose(logfile);logfile=0;
+    free(logtext);fclose(logfile);logfile=0;
     printf("COMPATIBILITY_PASS assertions=%d synthetic=Rep,Rep+ actual=Rep+ no_game_execution\n",checks);return 0;
 }

@@ -28,7 +28,10 @@ static const Runtime runtimes[]={
      {0x83,0xb9,0x80,0xbb,0x01,0,0},{0x55,0x8b,0xec,0x83,0xec,0x3c},{0x55,0x8b,0xec,0x6a,0xff},7,6,5},
     {"REPENTOGON+","CEB598B4E5E03DABBD2DA6EA322A9AA6FFC66FCC377AEEA4391F008403B7FAA4",
      0x7e49f4,0x67fd4,0x2f92a0,0x6aa278,0,0,
-     {0x8b,0xd1,0x56,0x8b,0x35},{0},{0},5,0,0,1,0x2f6d30}
+     {0x8b,0xd1,0x56,0x8b,0x35},{0},{0},5,0,0,1,0x2f6d30},
+    {"Repentance+ J510","114673659401DA17E55BD44B2C9F1CB7D40CE5FD31E15690588661A8A7C60FF6",
+     0x899538,0x69468,0x304190,0x73a43c,0x292050,0x2930c0,
+     {0x8b,0xd1,0x56,0x8b,0x35},{0x55,0x8b,0xec,0x6a,0xff},{0x53,0x8b,0xdc,0x83,0xec,0x08},5,5,6}
 };
 static const Runtime *runtime=&runtimes[0];
 typedef struct lua_State lua_State;
@@ -251,7 +254,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
         }
     }
     if(!logfile) log_event("LOG_ERROR file_unavailable diagnostics_via_OutputDebugString");
-    log_detail("START native-pause 0.2.3 pid=%lu",GetCurrentProcessId());
+    log_detail("START native-pause 0.2.4 pid=%lu",GetCurrentProcessId());
     if(!exe_sha256(digest)) log_event("HASH_UNAVAILABLE compatibility_probe_required");
     base=(unsigned char *)GetModuleHandleW(0);
     lua=GetModuleHandleA("Lua5.3.3r.dll");
@@ -306,7 +309,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
           log_detail("WARNING iat_protection_restore win32=%lu",GetLastError());
     }
     log_event(runtime->name);
-    log_event("LOADED native-pause 0.2.3");
+    log_event("LOADED native-pause 0.2.4");
     return 1;
 }
 #ifdef NATIVE_PAUSE_AUTO

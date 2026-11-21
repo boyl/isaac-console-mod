@@ -38,6 +38,7 @@ local TEST = {
   actionPressed = {},
   buttonPressed = {},
   buttonPressedCalls = 0,
+  buttonPressedQueries = {},
   mouseButtons = { false, false },
   mousePosition = { X = 0, Y = 0 },
   frame = 0,
@@ -270,7 +271,7 @@ Input = {}
 function Input.IsButtonTriggered(key, controllerIndex)
   local byController = TEST.buttonTriggers[key]
   local index = controllerIndex or 0
-  if TEST.keyTriggers[key] == true
+  if (TEST.keyTriggers[key] == true and index == (TEST_CONFIG.keyboardIndex or 0))
       or (type(byController) == "table" and byController[index] == true) then
     return true
   end
@@ -278,7 +279,13 @@ function Input.IsButtonTriggered(key, controllerIndex)
 end
 function Input.IsButtonPressed(button, controllerIndex)
   TEST.buttonPressedCalls = TEST.buttonPressedCalls + 1
+  if TEST_CONFIG.scenario == "controller_enumeration_failure" then
+    TEST.buttonPressedQueries[#TEST.buttonPressedQueries + 1] = {button, controllerIndex}
+  end
   local byController = TEST.buttonPressed[button]
+  if TEST_CONFIG.keyboardIndex and button >= 32 and type(byController) == "table" and byController[0] then
+    return controllerIndex == TEST_CONFIG.keyboardIndex
+  end
   return type(byController) == "table" and byController[controllerIndex or 0] == true
 end
 function Input.IsActionTriggered(action, controllerIndex)
@@ -763,6 +770,10 @@ local function testIdleRestarts()
 end
 
 local function testHistoryTwentyGames()
+  -- OBS supplies LuaJIT, whereas the game uses PUC Lua. JIT trace allocations
+  -- survive full GC and introduce a sawtooth in this live-object measurement.
+  -- Exclude that test-runtime-only cache; retain the existing 512 KiB guard.
+  if jit then jit.off(); jit.flush() end
   local memorySamples = {}
   local payloadSizes = {}
   for gameIndex = 1, 20 do
@@ -794,12 +805,11 @@ local function testHistoryTwentyGames()
     minMemory = math.min(minMemory, memorySamples[index])
     maxMemory = math.max(maxMemory, memorySamples[index])
   end
-  -- Lua 5.1's allocator may retain one additional table bucket depending on
-  -- address/hash layout. Keep this as a leak guard, while payload size and
-  -- bounded model cardinalities below remain the deterministic contracts.
   assertTrue(maxMemory - minMemory < 512,
     "Lua live memory grew beyond the bounded allocator envelope: delta="
       .. tostring(maxMemory - minMemory) .. " samples=" .. table.concat(memorySamples, ","))
+  print("MEMORY_PASS live_delta_kib=" .. tostring(maxMemory - minMemory)
+    .. " jit_compilation_excluded=" .. tostring(jit ~= nil))
   local minPayload, maxPayload = payloadSizes[11], payloadSizes[11]
   for index = 11, #payloadSizes do
     minPayload = math.min(minPayload, payloadSizes[index])
@@ -4217,8 +4227,12 @@ local function testControllerEnumerationFailure()
   onStarted()
   local callsBefore = TEST.buttonPressedCalls
   renderFrame()
-  assertEqual(TEST.buttonPressedCalls, callsBefore + 1,
-    "failed controller enumeration sampled anything beyond the Enter keyboard state")
+  assertTrue(TEST.buttonPressedCalls > callsBefore, "keyboard input was not sampled")
+  for _, query in ipairs(TEST.buttonPressedQueries) do
+    assertTrue(query[1] == Keyboard.KEY_ENTER or query[1] == Keyboard.KEY_R,
+      "failed controller enumeration sampled unrelated raw buttons")
+    assertTrue(query[2] == 0 or query[2] == -2, "keyboard scanned unassigned player slots")
+  end
   pressKey(state.openKey)
   assertEqual(state.open, true, "F6 stopped working when controller enumeration failed")
   assertEqual(TEST.getItemConfigCalls, 1, "F6 did not render the menu after enumeration failure")

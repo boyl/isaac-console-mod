@@ -26,16 +26,19 @@ $set = @($base.sets | Where-Object name -eq $BaselineSet)
 if ($set.Count -ne 1 -or [IO.Path]::GetFullPath($set[0].path) -ne $targetRoot) { throw '基线目标不匹配' }
 $known = @{}
 foreach ($file in @($base.files | Where-Object set -eq $BaselineSet)) { $known[$file.path.Replace('\','/')] = $file }
+function Assert-UnlinkedTarget([string]$Path) {
+    $cursor = $Path
+    while ($cursor) {
+        if ((Test-Path -LiteralPath $cursor) -and ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "目标包含链接：$cursor" }
+        $cursor = Split-Path $cursor -Parent
+    }
+}
 $files = @()
 foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File) {
     $relative = [IO.Path]::GetRelativePath($source, $file.FullName).Replace('\','/')
     if ($relative -match '(^|/)(save[^/]*\.dat|data|\.git)(/|$)') { throw '候选包含存档或开发数据' }
     $dest = Join-Path $targetRoot $relative
-    $cursor = $dest
-    while ($cursor) {
-        if ((Test-Path -LiteralPath $cursor) -and ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "目标包含链接：$cursor" }
-        $cursor = Split-Path $cursor -Parent
-    }
+    Assert-UnlinkedTarget $dest
     $after = (Get-FileHash -LiteralPath $file.FullName).Hash
     $before = if (Test-Path -LiteralPath $dest -PathType Leaf) { (Get-FileHash -LiteralPath $dest).Hash } else { $null }
     if ($before -eq $after) { continue }
@@ -45,6 +48,20 @@ foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File) {
         if ($before -ne $backupHash -or $backupHash -ne $known[$relative].sha256) { throw "基线后文件发生变化：$relative" }
     } elseif ($before) { throw "新增文件已被占用：$relative" }
     $files += [pscustomobject]@{path=$relative;beforeHash=$before;afterHash=$after}
+}
+# 旧版资源会被引擎独立加载，Lua 开关不能禁用它。只删除本项目
+# 已核对的旧资源；不同哈希可能属于用户，必须先明确报告而非覆盖。
+$legacyPath = 'content/shaders.xml'
+if (Test-Path -LiteralPath (Join-Path $source $legacyPath)) { throw '候选包含已退役 Shader' }
+$legacyTarget = Join-Path $targetRoot $legacyPath
+Assert-UnlinkedTarget $legacyTarget
+if (Test-Path -LiteralPath $legacyTarget -PathType Leaf) {
+    $legacyHash = (Get-FileHash -LiteralPath $legacyTarget).Hash
+    if ($legacyHash -ne '32DD0E1FF12F6C5FE5E87D18D2F7566F444AC212C6F8F70641CC37C218835F2F') { throw '旧 Shader 内容未知或已修改，未开始安装' }
+    $legacyBackup = Join-Path (Join-Path $baseRoot $BaselineSet) $legacyPath
+    if (-not $known.ContainsKey($legacyPath) -or $known[$legacyPath].sha256 -ne $legacyHash -or
+        -not (Test-Path -LiteralPath $legacyBackup) -or (Get-FileHash -LiteralPath $legacyBackup).Hash -ne $legacyHash) { throw '旧 Shader 基线备份不匹配' }
+    $files += [pscustomobject]@{path=$legacyPath;beforeHash=$legacyHash;afterHash=$null}
 }
 Write-Output "LOCAL TEST ONLY：$targetRoot；将变更 $($files.Count) 个文件，保留其他文件与存档。"
 if (-not $Apply) { $files | Select-Object path,beforeHash,afterHash; Write-Output 'PREVIEW：未修改文件'; exit 0 }
@@ -69,6 +86,12 @@ foreach ($file in $files) {
     $dest = Join-Path $targetRoot $file.path
     $now = if (Test-Path -LiteralPath $dest) { (Get-FileHash -LiteralPath $dest).Hash } else { $null }
     if ($now -ne $file.beforeHash) { throw "安装期间目标变化：$($file.path)" }
+    Assert-UnlinkedTarget $dest
+    if (-not $file.afterHash) {
+        Remove-Item -LiteralPath $dest
+        if (Test-Path -LiteralPath $dest) { throw "旧资源删除失败：$($file.path)" }
+        continue
+    }
     $from = Join-Path $source $file.path
     if ((Get-FileHash -LiteralPath $from).Hash -ne $file.afterHash) { throw '候选发生变化' }
     New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
