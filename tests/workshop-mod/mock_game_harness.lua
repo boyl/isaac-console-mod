@@ -2608,6 +2608,12 @@ local function testPauseSuspension()
 end
 
 local function testGameOverOverlayAccess()
+  local overlayLease = false
+  IsaacConsoleNativeDeathOverlay = function(op)
+    if op == 2 then return true end
+    overlayLease = op == 1
+    return overlayLease
+  end
   onStarted()
   openMenu()
   state.search = "giveitem"
@@ -2636,6 +2642,7 @@ local function testGameOverOverlayAccess()
   runCallbacks(ModCallbacks.MC_POST_RENDER)
   do
     assertTrue(#TEST.rendered > 0, "shader-free Game Over menu has no ordinary render path")
+    assertTrue(overlayLease, "native death paper would cover the rendered console")
     local count = #TEST.rendered
     runShaderCallbacks("IsaacConsoleLateOverlay")
     assertEqual(#TEST.rendered, count, "shader-free build rendered in the shader callback")
@@ -2643,6 +2650,7 @@ local function testGameOverOverlayAccess()
 
   pressKey(Keyboard.KEY_F6)
   assertEqual(state.open, false, "F6 did not close the Game Over overlay")
+  assertEqual(overlayLease, false, "closing console did not restore native death paper")
   assertEqual(onInput(registeredMod, 0, InputHook.GET_ACTION_VALUE), 0.0,
     "Game Over close did not retain the existing release-frame input lease")
   renderFrame()
@@ -2654,6 +2662,7 @@ local function testGameOverOverlayAccess()
 
   assertTrue(queueCommand("rewind", 1), "Render lifecycle command was blocked after Game Over")
   assertEqual(state.open, false, "Game Over lifecycle command did not close the overlay")
+  assertEqual(overlayLease, false, "rewind retained death paper suppression")
   assertTrue(state.lifecycleRequest ~= nil and state.queue == nil,
     "Game Over lifecycle command did not use the Render dispatcher")
   runCallbacks(ModCallbacks.MC_POST_RENDER)
@@ -2681,6 +2690,7 @@ local function testGameOverOverlayAccess()
   assertEqual(state.open, false, "L3 opened the overlay over a victory ending")
   TEST.paused = false
   releaseButton(Controller.STICK_LEFT, TEST_CONFIG.controllerIndex or 0)
+  IsaacConsoleNativeDeathOverlay = nil
 end
 
 local function testAssignedControllerIsolation()
@@ -4542,6 +4552,26 @@ scenarios.item_icons = function()
       and not record.path:find("isaac_console_cards", 1, true), "ordinary command became item")
   end
   assertEqual(PresentationModel.itemIcons:stats().failures, 0, "unexpected icon failures")
+end
+
+scenarios.j510_unsigned_keyboard_device = function()
+  TEST_CONFIG.playerControllerIndexes = {4294967294}
+  onStarted()
+  openMenu()
+  local savedBefore = TEST.saveData
+  local favoriteAction = ButtonAction.ACTION_MENUEX or ButtonAction.ACTION_MENUTAB
+  TEST.actionTriggers[favoriteAction] = {[4294967294] = true}
+  TEST.keyTriggers[Keyboard.KEY_LEFT_CONTROL] = true
+  renderFrame()
+  assertEqual(TEST.saveData, savedBefore, "keyboard Ctrl was interpreted as gamepad favorite")
+  assertEqual(#state.controllerCandidateSnapshot, 0, "unsigned keyboard sentinel was accepted as a gamepad")
+  -- Genuine gamepad zero remains valid beside a keyboard-assigned player.
+  TEST_CONFIG.playerControllerIndexes = {4294967294, 0}
+  renderFrame()
+  assertEqual(#state.controllerCandidateSnapshot, 1, "assigned gamepad zero was lost")
+  assertEqual(state.controllerCandidateSnapshot[1], 0, "wrong controller retained")
+  pressKey(Keyboard.KEY_SLASH)
+  assertEqual(state.inputMode, "search", "keyboard search stopped working")
 end
 
 local scenario = scenarios[TEST_CONFIG.scenario]

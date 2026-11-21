@@ -126,6 +126,13 @@ int main(int argc,char **argv) {
     check(!select_runtime(unknown_hash,image,lua),"unknown independent backend is not mistaken for Rep");
     VirtualFree(image,0,MEM_RELEASE);
     image=map_exe(argv[2]);check(image!=0,"map actual Rep+ EXE without execution");
+    check(death_layout_matches(image,0x900000,runtimes[3].sha256),"actual J510 death rendering ABI and field references match");
+    check(!death_layout_matches(image,0x900000,"unknown"),"unknown death rendering runtime is rejected independently");
+    { unsigned sites[]={DEATH_RENDER_RVA,0x3033ca,0x5afb61,0x5b0a15,DEATH_HINT_RENDER_RVA,0x56b5ef,0x24f1e}; int k;
+      for(k=0;k<7;k++) { image[sites[k]]^=1;
+        check(!death_layout_matches(image,0x900000,runtimes[3].sha256),"changed death rendering contract is rejected");image[sites[k]]^=1;
+      }
+    }
     /* 模拟 Windows 加载器解析这个槽位；游戏代码和调用引用保持真实文件内容。 */
     *(void **)(image+0x73a43c)=(void *)GetProcAddress(lua,"lua_pcallk");
     selected=select_runtime(unknown_hash,image,lua);

@@ -142,6 +142,7 @@ static void release_pause(void) {
     if(owned) log_event("RELEASE");
     owned=0; owner_game=0;
 }
+#include "death-overlay.h"
 static int bridge(lua_State *L) {
     int valid=0, op=(int)tointeger(L,1,&valid), result=0;
     void *g=game();
@@ -168,9 +169,11 @@ static int bridge(lua_State *L) {
 }
 static int __cdecl wrapped_pcall(lua_State *L,int args,int results,int error,int ctx,void *continuation) {
     initialize_update_hook();
-    /* 两次操作净栈变化为零；每次注册以支持 luareset 和同地址重建。 */
+    /* 注册操作净栈变化为零；每次注册以支持 luareset 和同地址重建。 */
     pushclosure(L,bridge,0);
     setglobal(L,"IsaacConsoleNativePausePrototype");
+    pushclosure(L,death_overlay_bridge,0);
+    setglobal(L,"IsaacConsoleNativeDeathOverlay");
     return original_pcall(L,args,results,error,ctx,continuation);
 }
 static int write_memory(void *where,const void *bytes,size_t size) {
@@ -295,6 +298,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
     }
     }
     log_event("HOOKS result=PASS");
+    initialize_death_overlay(digest);
     { DWORD old,unused;
       if(!VirtualProtect(base+runtime->pcall_iat,sizeof(Pcall),PAGE_READWRITE,&old)) {
           log_detail("DISABLED iat_virtual_protect win32=%lu",GetLastError());return 14;

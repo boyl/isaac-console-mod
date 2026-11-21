@@ -88,6 +88,7 @@ def run_scenario(dll: ctypes.CDLL, config: dict[str, object]) -> None:
 
 def scenarios() -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
+    result.append({"scenario": "j510_unsigned_keyboard_device", "label": "J510 unsigned keyboard device is not a gamepad", "repPlus": True})
     for scenario in ("controller_paging_signals", "controller_details_collision"):
         for runtime, rep_plus, repentogon in (
             ("Repentance", False, False), ("Repentance+", True, False),

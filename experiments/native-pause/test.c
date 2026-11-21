@@ -5,6 +5,10 @@
 #include <stdlib.h>
 static int checks;
 static int update_calls;
+static int death_calls;
+static int hint_calls;
+static void __fastcall mock_hint_render(void *g,void *unused) {hint_calls++;}
+static void __fastcall mock_death_render(void *g,void *unused) {death_calls++;}
 static void __fastcall mock_update(void *g,void *unused) {update_calls++;}
 static volatile LONG stress_stop,stress_calls,stress_errors;
 static int (__cdecl *stress_fn)(void);
@@ -149,6 +153,37 @@ int main(int argc,char **argv) {
         check(!memcmp(code,expected,5) && stress_fn()==42,"restored machine code still executes");
         printf("NATIVE_THREAD_STRESS_PASS threads=4 cycles=100 calls=%ld errors=%ld\n",stress_calls,stress_errors);
         VirtualFree(code,0,MEM_RELEASE); VirtualFree(hook.stub,0,MEM_RELEASE);
+    }
+    loadstring(L,"return IsaacConsoleNativeDeathOverlay(2)");
+    check(wrapped_pcall(L,0,1,0,0,0)==0,"death overlay capability has a separate optional bridge");
+    settop(L,0);
+    {
+        void *surface=(unsigned char *)g1+DEATH_STATE_OFFSET;
+        test_game=g1; death_hook_ready=1; original_death_render=mock_death_render;
+        original_hint_render=mock_hint_render;
+        *(int *)surface=1;
+#define DEATH_CALL(op) (loadstring(L,"return IsaacConsoleNativeDeathOverlay(" #op ")"),wrapped_pcall(L,0,1,0,0,0))
+        check(DEATH_CALL(1)==0 && toboolean(L,-1),"death render lease can acquire during game over");settop(L,0);
+        overlay_death_render(surface,0);
+        check(death_calls==0 && !death_owner && *(int *)surface==1,"single draw suppresses paper without changing death state");
+        overlay_hint_render(surface,0);
+        check(hint_calls==0 && !hint_owner,"later exit and restart hints also honor the render lease");
+        overlay_hint_render(surface,0);
+        check(hint_calls==1,"missing Lua render restores corner hints automatically");
+        overlay_death_render(surface,0);
+        check(death_calls==1,"missing Lua render restores paper automatically");
+        DEATH_CALL(1);settop(L,0);DEATH_CALL(0);settop(L,0);overlay_death_render(surface,0);
+        check(death_calls==2,"explicit close restores paper");
+        overlay_hint_render(surface,0);check(hint_calls==2,"explicit close restores corner hints");
+        DEATH_CALL(1);settop(L,0);test_game=g2;overlay_death_render(surface,0);
+        check(death_calls==3 && !death_owner,"game replacement invalidates render lease");
+        overlay_hint_render(surface,0);check(hint_calls==3,"game replacement restores corner hints");
+        test_game=g1;DEATH_CALL(1);settop(L,0);*(int *)surface=0;overlay_death_render(surface,0);
+        check(death_calls==4,"rewind bypasses stale death lease");
+        overlay_hint_render(surface,0);check(hint_calls==4,"rewind bypasses stale corner hint lease");
+        check(DEATH_CALL(1)==0 && !toboolean(L,-1),"active run cannot acquire death lease");settop(L,0);
+        death_hook_ready=0;*(int *)surface=1;
+        check(DEATH_CALL(1)==0 && !toboolean(L,-1),"unsupported runtime leaves native paper untouched");settop(L,0);
     }
     close_lua(L); printf("NATIVE_CONTRACT_PASS assertions=%d\n",checks); return 0;
 }

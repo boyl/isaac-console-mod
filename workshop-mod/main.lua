@@ -456,8 +456,15 @@ function Presentation.commandFrame()
   if Presentation.nativePauseOwned() then return Isaac.GetFrameCount() end
   return Game():GetFrameCount()
 end
+function Presentation.deathOverlay(active)
+  if type(IsaacConsoleNativeDeathOverlay) == "function" then
+    return IsaacConsoleNativeDeathOverlay(active and 1 or 0) == true
+  end
+  return false
+end
 local function setMenuOpen(open)
   open = open == true
+  if not open then Presentation.deathOverlay(false) end
   if open == state.open then
     if open then suppressEidOverlay() else restoreEidOverlay() end
     return
@@ -2483,7 +2490,9 @@ local function addControllerCandidate(candidates, seen, index)
   index = tonumber(index)
   if not index then return end
   index = math.floor(index)
-  if index < 0 or seen[index] then return end
+  -- J510 exposes keyboard -2 as uint32 4294967294 through ControllerIndex.
+  -- Signed-negative device sentinels must never enter gamepad action polling.
+  if index < 0 or index >= 2147483648 or seen[index] then return end
   seen[index] = true
   candidates[#candidates + 1] = index
 end
@@ -4381,6 +4390,7 @@ function Presentation.traceMenu()
   end
 end
 local function onRender()
+  Presentation.deathOverlay(false)
   loadState()
   if state.toast and state.toast.expiresAtMs and Isaac.GetTime() >= state.toast.expiresAtMs then
     state.toast = nil; state.toastFramesRemaining = 0
@@ -4446,6 +4456,7 @@ local function onRender()
   -- non-Game-Over rendering stay on the established callback path.
   if state.runEndState == "game_over" and Presentation.lateOverlayEnabled then return end
   Presentation.renderMenuSurface(entries)
+  if state.runEndState == "game_over" then Presentation.deathOverlay(true) end
 end
 
 function Presentation.onLateOverlayShader(_, shaderName)

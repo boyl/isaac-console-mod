@@ -1,5 +1,7 @@
 ## 2.5.4-en.28
 
+- Fixed Ctrl triggering gamepad favorites when the keyboard device index is exposed as an unsigned value.
+- With optional native component 0.2.4, J510's death paper and corner hints no longer cover the menu. Closing the menu restores the native screen. Rewind behavior is unchanged.
 - Fixed keyboard input after the Repentance+ J510 / 1.9.7.19 update, including F6, search, confirmation, rebinding and release handling. Legacy keyboard routing is preserved.
 - Prevented raw gamepad button aliases from triggering keyboard actions.
 - The local upgrade tool backs up and removes the identified legacy shader. Default bindings, Mod identity and save format are unchanged.
