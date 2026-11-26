@@ -106,7 +106,7 @@ Start a run and press [b]F6[/b], or hold the left stick button ([b]L3[/b]) for a
 [*]Arrow keys, mouse or d-pad: navigate
 [*]Enter, left mouse button or gamepad A: run the focused entry
 [*]Right mouse button or hold gamepad A for about 0.5 seconds: remove the item itself
-[*]Ctrl, gamepad X or the on-screen star: toggle favorite
+[*]F, gamepad X or the on-screen star: toggle favorite
 [*]LT/RT: page the list; LB/RB: adjust the batch count
 [*]D, click the description or gamepad Y: read multi-page descriptions
 [*]C: edit the full command; Up/Down inside the editor recall command history
@@ -178,7 +178,7 @@ This is a local debug and entertainment tool that changes the current run. Do no
 [*]方向键、鼠标或十字键：导航
 [*]Enter、鼠标左键或手柄 A：执行焦点条目
 [*]鼠标右键或长按手柄 A 约 0.5 秒：移除物品本体
-[*]Ctrl、手柄 X 或点击星标：切换收藏
+[*]F、手柄 X 或点击星标：切换收藏
 [*]LT/RT：列表翻页；LB/RB：调整次数
 [*]D、点击说明或手柄 Y：翻阅多页说明
 [*]C：编辑完整命令；输入框内 ↑/↓ 召回命令历史
