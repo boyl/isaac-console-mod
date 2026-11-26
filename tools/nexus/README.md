@@ -1,6 +1,8 @@
 # tools/nexus
 
-在**用户已登录**的可见浏览器里执行 Nexus Mods 上传的编排脚本。Nexus 没有面向普通作者的上传 API，所以这里用 Chrome DevTools Protocol 驱动浏览器，并在无法可靠自动化的地方停下来要求人工完成。
+Nexus 已开放官方 Upload API，现有项目与文件更新优先使用该 API，参考 https://api-docs.nexusmods.com/ 和 https://github.com/Nexus-Mods/upload-action。项目与文件链 ID 见根目录 NEXUS_UPLOAD.md。
+
+本目录的旧网页编排脚本仅作 API 无法覆盖操作的后备，在**用户已登录**的可见浏览器里执行。
 
 ## 前置条件
 

@@ -2,15 +2,15 @@
 
 安装一次，以后从 Steam 正常启动游戏即可使用暂停；没有每次启动的命令窗口。卸载后，原版 Rep/Rep+ 的控制台功能继续工作，只是不自动暂停。新版忏悔龙菜单通过 MC_PRE_UPDATE 自动暂停，无需本组件。
 
-配套控制台二选一：[Isaac Chinese Console（中文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3776882944) 或 [Console UI（英文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3779128726)。先订阅并在游戏 Mods 菜单启用其中一个。使用随本文提供的 `native-pause-0.2.5.zip`；正式发布后也可从 [Releases](https://github.com/boyl/isaac-console-mod/releases) 下载对应版本，不要下载 Source code。候选包不代表已经公开发布。加载器已包含，无需另行下载；手动安装不需要 PowerShell。
+配套控制台二选一：[Isaac Chinese Console（中文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3776882944) 或 [Console UI（英文）](https://steamcommunity.com/sharedfiles/filedetails/?id=3779128726)。先订阅并在游戏 Mods 菜单启用其中一个。从 [原生暂停 0.2.5 下载页](https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.5) 下载 `native-pause-0.2.5.zip`，不要下载 Source code。加载器已包含，无需另行下载；手动安装不需要 PowerShell。
 
 升级已由脚本安装的旧组件时：先备份旧包及安装记录，退出游戏，运行旧版卸载脚本，再安装新版；不要覆盖来源未知的加载器。运行时的函数签名、Game 字段引用与 Lua 导出身份仍须全部通过，任何失配都会停用。
 
-J510 / J514 配合中文 2.5.33 / 英文 2.5.4-en.28，还可在死亡后打开控制台时临时隐藏原生遗书，关闭后恢复。此能力独立于暂停检测，支持已验证的 J510 布局和通过独立结构定位的现代 Rep+ 布局；其他版本和未安装组件时仍可能出现死亡遗书遮挡。不会重新引入影响 Rep+ 重开淡出的自定义 Shader。
+中文 2.5.34 / 英文 2.5.4-en.29 的死亡菜单由 Lua Shader 绘制，并为底部“退出”“重开”提示保留空间；这项功能不依赖本组件。Lua Mod 的已知缺陷是 Repentance+ 长按 R 重开可能渐暗异常或瞬间黑屏，即使菜单关闭也可能出现。0.2.5 保留与旧版 Lua 配合的原生死亡界面处理，但新版 Lua 不使用该路径。
 
 ## 手动安装（不需要PowerShell）
 
-1. 正常退出游戏，更新“以撒中文控制台”到2.5.25或“Console UI”到2.5.4-en.20，并启用其中一个语言版本。
+1. 正常退出游戏，更新“以撒中文控制台”到 2.5.34 或“Console UI”到 2.5.4-en.29，并启用其中一个语言版本。
 2. 将 `game-files` 内的内容按目录结构复制到 `isaac-ng.exe` 所在目录：根目录新增 `winmm.dll`、`winmm.ini`，`scripts` 目录新增 `IsaacConsoleNativePause.asi`。
 3. 若目标已有同名文件，不要覆盖其他加载器或插件，应先处理冲突。
 4. 从 Steam 正常启动。菜单打开时暂停，关闭时恢复。无需再运行 start.cmd 或加载器。
@@ -67,7 +67,7 @@ The Binding of Isaac Rebirth/
 - `UNKNOWN_HASH compatibility_probe`：哈希未知，正在自动检测，不表示拒绝。
 - `CHECK ... result=FAIL`：具体失败项和 RVA；函数不匹配时还有实际字节。
 - `COMPATIBLE_UNKNOWN_HASH`：未知哈希已通过兼容检测。
-- `LOADED native-pause 0.2.3`：组件已加载。
+- `LOADED native-pause 0.2.5`：组件已加载。
 - `DISABLED no_compatible_runtime`：没有适配器通过，查看前面的 FAIL。
 - `DISABLED ambiguous_compatible_runtime`：多个候选同时通过，无法可靠选择。
 

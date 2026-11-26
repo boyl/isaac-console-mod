@@ -51,7 +51,7 @@
 中文版与英文版使用相同的 F6 和 L3 呼出方式；可以同时订阅，但请只启用一个语言版本。
 
 [h1]可选原生暂停组件[/h1]
-Repentance/Repentance+ 如需在打开菜单时自动暂停，请另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.4]原生暂停组件 0.2.4[/url] 的 native-pause-0.2.4.zip。完全退出游戏后，解压并运行包内 install.cmd（需要 PowerShell 7），按提示选择含 isaac-ng.exe 的游戏目录；升级和卸载请遵循包内 README.md，卸载入口为 uninstall.cmd。安装一次后随游戏加载；不安装仍可使用原有菜单功能。
+Repentance/Repentance+ 如需在打开菜单时自动暂停，请另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.5]原生暂停组件 0.2.5[/url] 的 native-pause-0.2.5.zip。完全退出游戏后，解压并运行包内 install.cmd（需要 PowerShell 7），按提示选择含 isaac-ng.exe 的游戏目录；升级和卸载请遵循包内 README.md，卸载入口为 uninstall.cmd。安装一次后随游戏加载；不安装仍可使用原有菜单功能。
 
 已知版本优先识别；EXE 哈希不在白名单时会自动检测兼容性，通过后启用，不再仅因哈希不同停用。关键代码或内存布局不兼容时，仅停用原生暂停并记录原因，菜单其他功能继续可用。
 

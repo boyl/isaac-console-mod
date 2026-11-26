@@ -1,4 +1,4 @@
-# Nexus Mods 上传说明 · 2.5.24（中文） / 2.5.4.19（英文）
+# Nexus Mods 上传说明 · 2.5.34（中文） / 2.5.4.29（英文）
 
 本文件记录把 `Isaac Chinese Console`（中文）与 `Console UI`（英文）发布到 Nexus Mods 所需的**页面字段、可复制文案、内容与授权检查、发布顺序和上传后核验**。发布包只能由本仓库脚本从已推送的提交生成；本文件不构成上传授权。
 
@@ -6,7 +6,7 @@
 
 - **一个页面、两种语言、两个 Main File。** 同一个 Mod 只是语言不同；分两页会重复说明、拆分 endorse、并让同一份字体/脚本维护两份页面。单页只要在正文开头给出"只装其中一个"的醒目提示，观感是清晰的。
 - 仍希望更干净的中文/英文独立发现路径时，把两个 Main File 拆成两页即可：页面字段和文案可直接沿用本文件的两段语言内容，不需要改包。
-- **Nexus 没有面向普通作者的上传 API**：公开 API 只读，无法程序化建页或提交文件。仓库侧能自动化的是"打包 + 校验 + 页面文案 + 证据"，网页操作由 `tools/nexus/` 在用户已登录的浏览器里执行（CDP），失败时退回人工操作，步骤见第 7 节。
+- **优先使用 Nexus 官方 Upload API 更新现有文件。** 当前项目为 `thebindingofisaacrebirth/mods/140`，全局 Mod ID `5553392713868`；中文文件链 `8109348`、英文文件链 `8109351`。上传前查询当前版本，上传后核对版本、类别、公开状态和扫描状态；页面正文通过官方 API 更新。网页工具仅用于 API 无法覆盖的操作。
 
 ## 1. 上传前的仓库侧状态
 
@@ -23,8 +23,8 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `IsaacChineseConsole-2.5.24-Nexus.zip` | 中文包，顶层 `isaac_chinese_console_workshop/`，52 个文件 |
-| `ConsoleUI-2.5.4.19-Nexus.zip` | 英文包，顶层 `console_ui_workshop/`，42 个文件 |
+| `IsaacChineseConsole-2.5.34-Nexus.zip` | 中文包，顶层 `isaac_chinese_console_workshop/`，文件数见 BUILD-INFO |
+| `ConsoleUI-2.5.4.29-Nexus.zip` | 英文包，顶层 `console_ui_workshop/`，文件数见 BUILD-INFO |
 | `<Slug>-<版本>-BUILD-INFO.json` | 来源提交、来源仓库、语言变体、Mod 注册名、目录、版本、Workshop ID、包 SHA-256、逐文件 SHA-256 |
 | `<Slug>-<版本>.sha256` | 包文件的校验行 |
 
@@ -35,8 +35,8 @@
 | 字段 | 取值 |
 | --- | --- |
 | 游戏分区 | The Binding of Isaac（`thebindingofisaacrebirth`） |
-| Mod name / 页面标题 | `Isaac Chinese Console + Console UI (中文 / English) 2.5.24` |
-| Version | `2.5.24`（英文包为 `2.5.4.19`，在 File 条目里写） |
+| Mod name / 页面标题 | `Isaac Console  UI`（保留现有页面名称） |
+| Version | `2.5.34`（英文包为 `2.5.4.29`，在 File 条目里写） |
 | Summary（英文为主） | 见第 3 节 |
 | Category | 优先 `User Interface`；该游戏分区若没有界面类目则选 `Miscellaneous`（按站点实际类目名选择，不要自造） |
 | Tags | 语言：`English`、`Chinese`（简体）；玩法：`User Interface` / `Gameplay` / `Utility` / `Singleplayer`；若站点提供 `AI-Generated Content` 标签则必须勾选（本 Mod 代码与中英文文案由 AI 辅助生成，见第 5 节） |
@@ -50,8 +50,8 @@ Files 区块两个 **Main Files**：
 
 | File name | File version | File category | File description |
 | --- | --- | --- | --- |
-| `Isaac Chinese Console 2.5.24 (Chinese)` | `2.5.24` | Main Files | 中文界面。解压后把顶层文件夹 `isaac_chinese_console_workshop` 放进 Mods 目录；与英文包同时只启用一个。 |
-| `Console UI 2.5.4.19 (English)` | `2.5.4.19` | Main Files | English interface. Extract the top-level `console_ui_workshop` folder into your Mods folder. Enable only one language build at a time. |
+| `Isaac Chinese Console 2.5.34 (Chinese)` | `2.5.34` | Main Files | 中文界面。解压后把顶层文件夹 `isaac_chinese_console_workshop` 放进 Mods 目录；与英文包同时只启用一个。 |
+| `Console UI 2.5.4.29 (English)` | `2.5.4.29` | Main Files | English interface. Extract the top-level `console_ui_workshop` folder into your Mods folder. Enable only one language build at a time. |
 
 ## 3. 可复制的摘要
 
@@ -78,8 +78,8 @@ Nexus 说明编辑器右上角的 `[ ]` 按钮可切到 BBCode 源码，粘完�
 
 [b]Two language builds are included - install only one of them[/b]
 [list]
-[*][b]IsaacChineseConsole-2.5.24-Nexus.zip[/b] - Chinese interface (mod folder: isaac_chinese_console_workshop)
-[*][b]ConsoleUI-2.5.4.19-Nexus.zip[/b] - English interface (mod folder: console_ui_workshop)
+[*][b]IsaacChineseConsole-2.5.34-Nexus.zip[/b] - Chinese interface (mod folder: isaac_chinese_console_workshop)
+[*][b]ConsoleUI-2.5.4.29-Nexus.zip[/b] - English interface (mod folder: console_ui_workshop)
 [/list]
 Both builds use the same F6 / L3 open shortcut and the same save data layout, but each keeps its own folder and register name. Enabling both at once makes them compete for the same shortcut, so pick one.
 
@@ -96,7 +96,7 @@ Start a run and press [b]F6[/b], or hold the left stick button ([b]L3[/b]) for a
 [*]Batch execution of 1-99 for collectibles and safe supplies; entries that cannot be batched are limited to one
 [*]Keyboard, mouse and gamepad support with focus navigation, favorites, removal, count adjustment, list paging and multi-page descriptions
 [*]Built-in Settings category with the full configuration set, plus optional Mod Config Menu mirroring
-[*]Optional high-resolution font (off by default) that keeps the original font size, two-column layout and 8 entries per page
+[*]Optional high-resolution font (off by default) that keeps the original font size, two-column layout and up to 8 entries per page
 [*]The menu hides the game HUD while it is open, yields to the native pause menu, and can still be opened after Game Over
 [*]No key simulation, no native console window, no leftover backtick input
 [/list]
@@ -106,7 +106,7 @@ Start a run and press [b]F6[/b], or hold the left stick button ([b]L3[/b]) for a
 [*]Arrow keys, mouse or d-pad: navigate
 [*]Enter, left mouse button or gamepad A: run the focused entry
 [*]Right mouse button or hold gamepad A for about 0.5 seconds: remove the item itself
-[*]F, gamepad X or the on-screen star: toggle favorite
+[*]Ctrl, gamepad X or the on-screen star: toggle favorite
 [*]LT/RT: page the list; LB/RB: adjust the batch count
 [*]D, click the description or gamepad Y: read multi-page descriptions
 [*]C: edit the full command; Up/Down inside the editor recall command history
@@ -117,8 +117,7 @@ Start a run and press [b]F6[/b], or hold the left stick button ([b]L3[/b]) for a
 1. Download the archive for the language you want.
 2. Close the game.
 3. Extract the single top-level folder ([b]isaac_chinese_console_workshop[/b] or [b]console_ui_workshop[/b]) into your Mods folder:
-   - Repentance: the [b]mods[/b] folder inside the game installation, next to isaac-ng.exe
-   - Repentance+: [b]Documents\My Games\Binding of Isaac Repentance+\mods[/b]
+   - Repentance / Repentance+: the [b]mods[/b] folder inside the game installation, next to isaac-ng.exe. Steam > Properties > Installed Files > Browse opens the game folder.
 4. If you already subscribed to a Steam Workshop copy, unsubscribe it (or delete the old folder) first, so only one copy is installed.
 5. Start the game, enable the Mod in the Mods menu, start a run and press F6.
 No installer, no PowerShell and no external tool is required.
@@ -127,11 +126,11 @@ No installer, no PowerShell and no external tool is required.
 [list]
 [*][b]External Item Descriptions (EID)[/b] - adds names and effect text for extra objects; this Mod never copies or edits EID files
 [*][b]Mod Config Menu (MCM)[/b] - optional mirror of the built-in Settings, writing the same values
-[*][b]Native pause component[/b] - a separate, optional download from the project's GitHub releases that pauses the game while the menu is open. A Workshop subscription or this Nexus download does not install it.
+[*][b]Native pause component[/b] - download [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.5]native-pause-0.2.5.zip[/url] separately for automatic pause, including Repentance+ J514. Close the game, extract the package and follow its README.md. It is not required for the death menu. Workshop and Nexus Mod downloads do not install it.
 [/list]
 
 [b]Compatibility[/b]
-One download supports Repentance, Repentance+, and REPENTOGON. Verified on Repentance 1.7.9b and Repentance+ v1.9.7.17/J460. To avoid the instant black screen when restarting Repentance+ with the hold-R shortcut, the Mod ships no custom shader; the death summary menu is drawn with ordinary rendering and may be covered by the native death note. Other Mods that install their own shaders can still cause related issues.
+Supports Repentance, Repentance+ and REPENTOGON. This release was tested in Repentance+ J514 with both languages. The death menu uses a Lua shader without requiring Native Pause, reserves space for Exit/Restart prompts and adjusts paging to the available height. Older runtime paths remain supported but were not all retested in game for this release. [b]Known issue:[/b] holding R to restart in Repentance+ may cause an abnormal fade or instant black screen, even with the menu closed. This shader limitation remains.
 
 [b]Limits[/b]
 This is a local debug and entertainment tool that changes the current run. Do not use it in daily challenges or online co-op, and back up important saves first. It does not access the network and does not launch external programs. For bug reports, include the game version, DLC/runtime, enabled Mod list and the relevant lines from log.txt.
@@ -151,8 +150,8 @@ This is a local debug and entertainment tool that changes the current run. Do no
 
 [b]本页包含中英两个语言包，只安装其中一个[/b]
 [list]
-[*][b]IsaacChineseConsole-2.5.24-Nexus.zip[/b] - 中文界面（Mod 文件夹：isaac_chinese_console_workshop）
-[*][b]ConsoleUI-2.5.4.19-Nexus.zip[/b] - 英文界面（Mod 文件夹：console_ui_workshop）
+[*][b]IsaacChineseConsole-2.5.34-Nexus.zip[/b] - 中文界面（Mod 文件夹：isaac_chinese_console_workshop）
+[*][b]ConsoleUI-2.5.4.29-Nexus.zip[/b] - 英文界面（Mod 文件夹：console_ui_workshop）
 [/list]
 两个包使用相同的 F6 / L3 呼出方式与相同的存档结构，但各自保留独立的文件夹与注册名。同时启用会互相抢占呼出键，请只启用一个。
 
@@ -169,7 +168,7 @@ This is a local debug and entertainment tool that changes the current run. Do no
 [*]收藏品与安全补给可批量执行 1-99 次；不适合批量的条目自动限制为单次
 [*]支持键盘、鼠标和手柄，包含焦点导航、收藏、移除、次数调整、列表翻页和多页说明
 [*]内置“设置”提供完整配置，并可选与 Mod Config Menu 同步读写同一份设置
-[*]可选高清字体，默认关闭；保留原字号、两列布局与每页 8 项
+[*]可选高清字体，默认关闭；保留原字号、两列布局与每页最多 8 项
 [*]菜单打开时隐藏游戏 HUD，原生暂停菜单出现时暂时隐藏，Game Over 后仍可呼出
 [*]不模拟按键，不弹出原生控制台，不会残留反引号
 [/list]
@@ -179,7 +178,7 @@ This is a local debug and entertainment tool that changes the current run. Do no
 [*]方向键、鼠标或十字键：导航
 [*]Enter、鼠标左键或手柄 A：执行焦点条目
 [*]鼠标右键或长按手柄 A 约 0.5 秒：移除物品本体
-[*]F、手柄 X 或点击星标：切换收藏
+[*]Ctrl、手柄 X 或点击星标：切换收藏
 [*]LT/RT：列表翻页；LB/RB：调整次数
 [*]D、点击说明或手柄 Y：翻阅多页说明
 [*]C：编辑完整命令；输入框内 ↑/↓ 召回命令历史
@@ -190,8 +189,7 @@ This is a local debug and entertainment tool that changes the current run. Do no
 1. 下载需要的语言包。
 2. 关闭游戏。
 3. 解压后把唯一的顶层文件夹（[b]isaac_chinese_console_workshop[/b] 或 [b]console_ui_workshop[/b]）放进 Mods 目录：
-   - Repentance：游戏安装目录里与 isaac-ng.exe 同级的 [b]mods[/b]
-   - Repentance+：[b]文档\My Games\Binding of Isaac Repentance+\mods[/b]
+   - Repentance / Repentance+：游戏安装目录里与 isaac-ng.exe 同级的 [b]mods[/b]。Steam 属性 → 已安装文件 → 浏览，可打开游戏目录。
 4. 如果已经订阅 Steam 创意工坊版本，请先取消订阅或删除旧文件夹，只保留一份。
 5. 启动游戏，在 Mods 菜单启用本 Mod，开始一局后按 F6。
 不需要安装程序、不需要 PowerShell，也不需要任何外部工具。
@@ -200,11 +198,11 @@ This is a local debug and entertainment tool that changes the current run. Do no
 [list]
 [*][b]External Item Descriptions（EID）[/b]：可补全部分额外对象的中文名称与效果；本 Mod 不复制或修改 EID 文件
 [*][b]Mod Config Menu（MCM）[/b]：可选镜像，与内置“设置”读写相同配置
-[*][b]原生暂停组件[/b]：另行从项目 GitHub releases 下载的可选组件，可在菜单打开时暂停游戏；订阅创意工坊或下载 Nexus 包都不会自动安装
+[*][b]原生暂停组件[/b]：另行下载 [url=https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.5]native-pause-0.2.5.zip[/url]，可在菜单打开时暂停游戏，包含 J514 兼容修复。完全退出游戏，解压并按包内 README.md 安装。死亡菜单不依赖此组件；订阅创意工坊或下载 Nexus Mod 包都不会自动安装
 [/list]
 
 [b]兼容性[/b]
-同一份下载支持 Repentance、Repentance+ 与 REPENTOGON，已验证 Repentance 1.7.9b 与 Repentance+ v1.9.7.17/J460。为避免 Repentance+ 按住 R 重开时瞬间黑屏，本 Mod 不加载自定义 Shader；死亡结算菜单改用普通绘制，可能被原生遗书遮挡。其他 Mod 自带 Shader 仍可能造成同类问题。
+支持 Repentance、Repentance+ 与 REPENTOGON。本轮中英文均通过 Repentance+ J514 实机验收。死亡菜单由 Lua Shader 绘制，不依赖原生暂停组件；底部为退出、重开提示留出空间，并按可用高度调整分页。保留旧运行时支持，但本轮没有重新实机验证全部旧版本。[b]已知缺陷：[/b]Repentance+ 长按 R 重开可能渐暗异常或瞬间黑屏，即使菜单关闭也可能出现；本次保留此 Shader 缺陷。
 
 [b]安全及使用限制[/b]
 这是用于本地娱乐、构筑测试和截图录制的调试工具，会改变当前局面。请勿用于每日挑战或在线联机，重要存档建议提前备份。本 Mod 不联网、不启动外部程序。反馈问题时，请提供游戏版本、DLC/运行时、已启用 Mod 列表和 log.txt 相关内容。

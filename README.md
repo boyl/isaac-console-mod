@@ -10,6 +10,8 @@
 
 ## 可选原生暂停组件安装
 
+[下载原生暂停 0.2.5](https://github.com/boyl/isaac-console-mod/releases/tag/native-pause-v0.2.5)，选择 `native-pause-0.2.5.zip`，包含 Repentance+ J514 兼容修复。
+
 [安装说明与目录结构示意](experiments/native-pause/AUTOLOAD-RELEASE.md#安装后的目录结构示意)包含原版和忏悔龙两种布局。插件必须位于实际 EXE 目录下的 scripts 子目录；请保留下载包 game-files 内的目录结构。
 
 ## 目录
@@ -67,7 +69,7 @@ pwsh -NoLogo -NoProfile -File .\tools\publish-workshop.ps1 `
 
 ## Nexus 发布
 
-Nexus 没有面向普通作者的上传 API，因此仓库侧只负责"打包 + 校验 + 页面文案"，网页操作由 `tools/nexus/` 在已登录的可见浏览器里完成。整条链路：
+Nexus 发布优先使用官方 Upload API 更新现有文件链，页面正文也通过官方 API 保存；`tools/nexus/` 的网页上传仅作后备。先执行整链路包校验：
 
 ```powershell
 & 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -NoProfile -File .\tools\verify-nexus-packages.ps1 `
