@@ -1,4 +1,4 @@
-# Nexus Mods 上传说明 · 2.5.34（中文） / 2.5.4.29（英文）
+# Nexus Mods 上传说明 · 2.5.35（中文） / 2.5.4.30（英文）
 
 本文件记录把 `Isaac Chinese Console`（中文）与 `Console UI`（英文）发布到 Nexus Mods 所需的**页面字段、可复制文案、内容与授权检查、发布顺序和上传后核验**。发布包只能由本仓库脚本从已推送的提交生成；本文件不构成上传授权。
 
@@ -23,8 +23,8 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `IsaacChineseConsole-2.5.34-Nexus.zip` | 中文包，顶层 `isaac_chinese_console_workshop/`，文件数见 BUILD-INFO |
-| `ConsoleUI-2.5.4.29-Nexus.zip` | 英文包，顶层 `console_ui_workshop/`，文件数见 BUILD-INFO |
+| `IsaacChineseConsole-2.5.35-Nexus.zip` | 中文包，顶层 `isaac_chinese_console_workshop/`，文件数见 BUILD-INFO |
+| `ConsoleUI-2.5.4.30-Nexus.zip` | 英文包，顶层 `console_ui_workshop/`，文件数见 BUILD-INFO |
 | `<Slug>-<版本>-BUILD-INFO.json` | 来源提交、来源仓库、语言变体、Mod 注册名、目录、版本、Workshop ID、包 SHA-256、逐文件 SHA-256 |
 | `<Slug>-<版本>.sha256` | 包文件的校验行 |
 
@@ -36,7 +36,7 @@
 | --- | --- |
 | 游戏分区 | The Binding of Isaac（`thebindingofisaacrebirth`） |
 | Mod name / 页面标题 | `Isaac Console  UI`（保留现有页面名称） |
-| Version | `2.5.34`（英文包为 `2.5.4.29`，在 File 条目里写） |
+| Version | `2.5.35`（英文包为 `2.5.4.30`，在 File 条目里写） |
 | Summary（英文为主） | 见第 3 节 |
 | Category | 优先 `User Interface`；该游戏分区若没有界面类目则选 `Miscellaneous`（按站点实际类目名选择，不要自造） |
 | Tags | 语言：`English`、`Chinese`（简体）；玩法：`User Interface` / `Gameplay` / `Utility` / `Singleplayer`；若站点提供 `AI-Generated Content` 标签则必须勾选（本 Mod 代码与中英文文案由 AI 辅助生成，见第 5 节） |
@@ -50,8 +50,8 @@ Files 区块两个 **Main Files**：
 
 | File name | File version | File category | File description |
 | --- | --- | --- | --- |
-| `Isaac Chinese Console 2.5.34 (Chinese)` | `2.5.34` | Main Files | 中文界面。解压后把顶层文件夹 `isaac_chinese_console_workshop` 放进 Mods 目录；与英文包同时只启用一个。 |
-| `Console UI 2.5.4.29 (English)` | `2.5.4.29` | Main Files | English interface. Extract the top-level `console_ui_workshop` folder into your Mods folder. Enable only one language build at a time. |
+| `Isaac Chinese Console 2.5.35 (Chinese)` | `2.5.35` | Main Files | 中文界面。解压后把顶层文件夹 `isaac_chinese_console_workshop` 放进 Mods 目录；与英文包同时只启用一个。 |
+| `Console UI 2.5.4.30 (English)` | `2.5.4.30` | Main Files | English interface. Extract the top-level `console_ui_workshop` folder into your Mods folder. Enable only one language build at a time. |
 
 ## 3. 可复制的摘要
 
@@ -78,8 +78,8 @@ Nexus 说明编辑器右上角的 `[ ]` 按钮可切到 BBCode 源码，粘完�
 
 [b]Two language builds are included - install only one of them[/b]
 [list]
-[*][b]IsaacChineseConsole-2.5.34-Nexus.zip[/b] - Chinese interface (mod folder: isaac_chinese_console_workshop)
-[*][b]ConsoleUI-2.5.4.29-Nexus.zip[/b] - English interface (mod folder: console_ui_workshop)
+[*][b]IsaacChineseConsole-2.5.35-Nexus.zip[/b] - Chinese interface (mod folder: isaac_chinese_console_workshop)
+[*][b]ConsoleUI-2.5.4.30-Nexus.zip[/b] - English interface (mod folder: console_ui_workshop)
 [/list]
 Both builds use the same F6 / L3 open shortcut and the same save data layout, but each keeps its own folder and register name. Enabling both at once makes them compete for the same shortcut, so pick one.
 
@@ -150,8 +150,8 @@ This is a local debug and entertainment tool that changes the current run. Do no
 
 [b]本页包含中英两个语言包，只安装其中一个[/b]
 [list]
-[*][b]IsaacChineseConsole-2.5.34-Nexus.zip[/b] - 中文界面（Mod 文件夹：isaac_chinese_console_workshop）
-[*][b]ConsoleUI-2.5.4.29-Nexus.zip[/b] - 英文界面（Mod 文件夹：console_ui_workshop）
+[*][b]IsaacChineseConsole-2.5.35-Nexus.zip[/b] - 中文界面（Mod 文件夹：isaac_chinese_console_workshop）
+[*][b]ConsoleUI-2.5.4.30-Nexus.zip[/b] - 英文界面（Mod 文件夹：console_ui_workshop）
 [/list]
 两个包使用相同的 F6 / L3 呼出方式与相同的存档结构，但各自保留独立的文件夹与注册名。同时启用会互相抢占呼出键，请只启用一个。
 

@@ -1,3 +1,9 @@
+## 2.5.4-en.30
+
+- Fixed holding L3 failing to open the menu after the Repentance+ J514 / 1.9.7.20 update, together with other controller actions affected by the device-index change.
+- Preserved input routing on older runtimes and prevented an unassigned controller from being polled as the keyboard restart input. Default bindings, hold duration, saves and Workshop identity are unchanged.
+- This update changes only the Lua mod. The optional native pause component remains at 0.2.5. The death shader and the documented R-restart fade limitation are unchanged.
+
 ## 2.5.4-en.29
 
 - Restored the Lua shader overlay for the Game Over menu; the native pause companion is not required. Normal gameplay rendering and input are unchanged.

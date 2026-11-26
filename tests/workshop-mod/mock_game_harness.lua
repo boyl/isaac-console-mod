@@ -268,9 +268,21 @@ ModCallbacks = {
 if TEST_CONFIG.updatePause then ModCallbacks.MC_PRE_UPDATE = 1026 end
 
 Input = {}
+-- Independent engine contract captured from J514's native Input wrappers.
+-- Player.ControllerIndex is internal (0-based), but query APIs use 1-based pads.
+local function engineDeviceIndex(index)
+  index = index or 0
+  if not TEST_CONFIG.j514Input then return index end
+  if index == 0 then return -2 end
+  if index == -1 or index == -2 then return index end
+  return index - 1
+end
+if TEST_CONFIG.j514Input then
+  function Input.GetKeyboardDeviceId() return TEST_CONFIG.signedKeyboardId and -2 or 4294967294 end
+end
 function Input.IsButtonTriggered(key, controllerIndex)
   local byController = TEST.buttonTriggers[key]
-  local index = controllerIndex or 0
+  local index = engineDeviceIndex(controllerIndex)
   if (TEST.keyTriggers[key] == true and index == (TEST_CONFIG.keyboardIndex or 0))
       or (type(byController) == "table" and byController[index] == true) then
     return true
@@ -282,6 +294,7 @@ function Input.IsButtonPressed(button, controllerIndex)
   if TEST_CONFIG.scenario == "controller_enumeration_failure" then
     TEST.buttonPressedQueries[#TEST.buttonPressedQueries + 1] = {button, controllerIndex}
   end
+  controllerIndex = engineDeviceIndex(controllerIndex)
   local byController = TEST.buttonPressed[button]
   if TEST_CONFIG.keyboardIndex and button >= 32 and type(byController) == "table" and byController[0] then
     return controllerIndex == TEST_CONFIG.keyboardIndex
@@ -289,6 +302,7 @@ function Input.IsButtonPressed(button, controllerIndex)
   return type(byController) == "table" and byController[controllerIndex or 0] == true
 end
 function Input.IsActionTriggered(action, controllerIndex)
+  controllerIndex = engineDeviceIndex(controllerIndex)
   if TEST_CONFIG.actionsUnavailable then return false end
   if TEST_CONFIG.menuTabActionUnavailable
       and action == (ButtonAction.ACTION_MENUEX or ButtonAction.ACTION_MENUTAB) then return false end
@@ -296,6 +310,7 @@ function Input.IsActionTriggered(action, controllerIndex)
   return type(byController) == "table" and byController[controllerIndex or 0] == true
 end
 function Input.IsActionPressed(action, controllerIndex)
+  controllerIndex = engineDeviceIndex(controllerIndex)
   if TEST_CONFIG.actionsUnavailable then return false end
   local byController = TEST.actionPressed[action]
   return type(byController) == "table" and byController[controllerIndex or 0] == true
@@ -316,6 +331,7 @@ function game:GetNumPlayers()
     and #TEST_CONFIG.playerControllerIndexes or 1
 end
 function Input.GetActionValue(action, controllerIndex)
+  controllerIndex = engineDeviceIndex(controllerIndex)
   if TEST_CONFIG.actionsUnavailable then return 0 end
   local byController = TEST.actionValues[action]
   local value = type(byController) == "table" and byController[controllerIndex or 0] or 0
@@ -4595,6 +4611,30 @@ scenarios.j510_unsigned_keyboard_device = function()
   assertEqual(state.controllerCandidateSnapshot[1], 0, "wrong controller retained")
   pressKey(Keyboard.KEY_SLASH)
   assertEqual(state.inputMode, "search", "keyboard search stopped working")
+end
+
+scenarios.j514_device_isolation = function()
+  TEST_CONFIG.playerControllerIndexes = {4294967294}
+  onStarted()
+  holdButton(10, 35, 0)
+  assertEqual(state.open, false, "unassigned pad opened the menu for keyboard player")
+  releaseButton(10, 0)
+  local restartPressed = findUpvalue(onRender, "restartActionPressed")
+  assertTrue(type(restartPressed) == "function", "restart input is unavailable")
+  TEST.actionPressed[ButtonAction.ACTION_RESTART] = {[0] = true}
+  assertEqual(restartPressed(), false, "unassigned first pad leaked into restart polling")
+  TEST.actionPressed = {}
+  TEST_CONFIG.playerControllerIndexes = {4294967294, 1, 1}
+  state.controllerCandidateSnapshot = nil
+  holdButton(10, 30, 1)
+  assertEqual(state.open, true, "assigned second pad could not open")
+  assertEqual(state.controllerOpenIndex, 1, "long-press lease lost player device identity")
+  assertEqual(#state.controllerCandidateSnapshot, 1, "assigned device was duplicated")
+  holdButton(10, 30, 1)
+  assertEqual(state.open, true, "held opening button closed the menu")
+  releaseButton(10, 1)
+  pressButton(10, 1)
+  assertEqual(state.open, false, "released and pressed L3 did not close")
 end
 
 local scenario = scenarios[TEST_CONFIG.scenario]

@@ -86,3 +86,15 @@ nodeRepl.write(JSON.stringify(result));
 脚本检查真实 Game Over 日志、两次开局、版本及 Lua 错误，保存六张本轮 Steam F12 截图。完成状态为 `AWAITING_VISUAL_REVIEW`，需要逐图确认普通菜单、遗书、置顶菜单、关闭恢复、新局无残留和再次打开，才能将结果标为 PASS。中断不得标通过。它不验证 R 渐暗、不代表旧运行时或所有死亡来源均已实测。
 
 结束时退出游戏，移除诊断安装副本，恢复原生 ASI、语言启用标记、备份存档和配置，并验证恢复哈希。探针与截图不进入 Workshop 包。
+
+## J514 输入专项验收
+
+`j514-mouse-keyboard.mjs` 导出异步生成器 `runJ514MouseKeyboardAcceptance({sky, config})`。本次校准为中文 2.5.34、Rep+ 1.9.7.20、2214×1232 窗口、经典布局，起点为安全房间中已打开并暂停的精选第一页，搜索为空。脚本核对安装源码、版本、实测布局及每次点击前的截图尺寸，尺寸不符立即停止。
+
+`config` 传入实际 `version`、`sourceMain`、`installedMain`、`logPath`、`savePath`、`optionsPath` 和尚不存在的 `outputDir`。在 node_repl 初始化 sky 并导入脚本后，**每次工具调用只执行一次 `await run.next()`**，直到 `done=true`。合并多个阶段可能超过工具的 10 MRTR rounds 上限；中断不能标通过。
+
+本流程检查分类、鼠标前后翻页、鼠标聚焦搜索、键盘数字输入、Enter、Ctrl+A/退格、Esc、鼠标关闭和 F6 重开，最后复核日志、存档和游戏配置。结果只覆盖列出的 13 项断言，方向键、键盘翻页、斜杠快捷键和手柄不在其 PASS 范围内。首次工具中断的记录应保留，新一轮使用新输出目录。
+
+完整键盘入口仍为 `j510-keyboard.mjs`；新增 `runJ510KeyboardAcceptanceSteps` 支持逐阶段执行，旧包装入口保留。`runtime` 与 `version` 可指定实际加载版本，默认仍为 J510。精选首项随用户收藏变化，脚本以起始首项为恢复基准；退格清空后再恢复数字查询，避免错误假设 `18` 不会匹配 `182`。填写 `skipNavigationReason` 时，即使其余断言通过，也只能得到 PARTIAL。
+
+J514 本轮完整键盘脚本在自动 Down / slash 输入处失败，物理 ↓ 对照正常，失败记录不能被键鼠专项 PASS 覆盖。旧运行时、英文实机及手柄全按键需要各自的实际证据。

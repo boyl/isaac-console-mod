@@ -4,6 +4,10 @@ Nexus 已开放官方 Upload API，现有项目与文件更新优先使用该 AP
 
 本目录的旧网页编排脚本仅作 API 无法覆盖操作的后备，在**用户已登录**的可见浏览器里执行。
 
+`publish-files.ps1` 是既有官方 API 发布流程的可复用入口。必须先通过 `verify-nexus-packages.ps1`，再提供 `Language`、从 API 核对的 `PreviousVersionId`、已推送的 `ExpectedCommit`、本次专用 `OutputDirectory` 和不超过 255 字的 `ChangeNotes`。默认只读预检；已获发布授权后传入 `-Publish`。密钥从仓库父目录约定文件直接读入内存，不放入参数或输出。
+
+脚本检查源码提交、包哈希、Nexus 门禁、Mod 身份和文件链，沿用原文件链创建版本并归档旧版本。每个上传阶段写入语言回执；存在回执或目标版本时停止，必须先读取远端状态，不能盲目重传。API 返回新版本后仍须复核安全扫描、公开文件列表以及下载包内容。
+
 ## 前置条件
 
 - 发布包已由 `tools/build-nexus-mod.ps1` 从**已推送**的提交生成（`dist/nexus-packages/*.zip` 与 `*-BUILD-INFO.json`）。

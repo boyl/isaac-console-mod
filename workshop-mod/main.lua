@@ -10,7 +10,7 @@ local SearchAliases = include("scripts.search_aliases")
 ChineseConsole.pedestals = include("scripts.collectible_pedestals")
 ChineseConsole.keyboard = include("scripts.keyboard_input")
 
-local VERSION = "2.5.34"
+local VERSION = "2.5.35"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -2486,6 +2486,20 @@ function CustomCommandUI.requestDelete(entry)
   return true
 end
 
+-- J514 added GetKeyboardDeviceId and restored 1-based pad query IDs,
+-- while EntityPlayer.ControllerIndex remains 0-based. Keep state/leases in
+-- player indices and translate only at the Input API boundary.
+InputSettingsUI.controllerQueryOffset = 0
+if type(Input.GetKeyboardDeviceId) == "function" then
+  local ok, keyboardId = pcall(Input.GetKeyboardDeviceId)
+  if ok and (keyboardId == -2 or keyboardId == 4294967294) then
+    InputSettingsUI.controllerQueryOffset = 1
+  end
+end
+function InputSettingsUI.controllerQueryIndex(index)
+  return index + InputSettingsUI.controllerQueryOffset
+end
+
 local function addControllerCandidate(candidates, seen, index)
   index = tonumber(index)
   if not index then return end
@@ -2526,7 +2540,7 @@ end
 
 local function controllerButtonPressed(button, index)
   if button == nil or type(Input.IsButtonPressed) ~= "function" then return false end
-  local ok, pressed = pcall(Input.IsButtonPressed, button, index)
+  local ok, pressed = pcall(Input.IsButtonPressed, button, InputSettingsUI.controllerQueryIndex(index))
   return ok and pressed == true
 end
 
@@ -2538,7 +2552,7 @@ end
 
 local function controllerButtonTriggeredAt(button, index)
   if button == nil or type(Input.IsButtonTriggered) ~= "function" then return false end
-  local ok, triggered = pcall(Input.IsButtonTriggered, button, index)
+  local ok, triggered = pcall(Input.IsButtonTriggered, button, InputSettingsUI.controllerQueryIndex(index))
   return ok and triggered == true
 end
 
@@ -2554,7 +2568,7 @@ end
 
 local function controllerActionTriggeredAt(action, index)
   if action == nil or type(Input.IsActionTriggered) ~= "function" then return false end
-  local ok, triggered = pcall(Input.IsActionTriggered, action, index)
+  local ok, triggered = pcall(Input.IsActionTriggered, action, InputSettingsUI.controllerQueryIndex(index))
   return ok and triggered == true
 end
 
@@ -2573,7 +2587,7 @@ end
 
 function ChineseConsole.controllerActionValueAt(action, index)
   if action == nil or type(Input.GetActionValue) ~= "function" then return 0 end
-  local ok, value = pcall(Input.GetActionValue, action, index)
+  local ok, value = pcall(Input.GetActionValue, action, InputSettingsUI.controllerQueryIndex(index))
   value = ok and tonumber(value) or 0
   return value or 0
 end
@@ -2586,7 +2600,7 @@ function ChineseConsole.controllerShoulderRoleEvent(candidates, role, action, bu
     local buttonTriggered = controllerButtonTriggeredAt(button, index)
     local actionPressed = false
     if analog and action ~= nil and type(Input.IsActionPressed) == "function" then
-      local ok, pressed = pcall(Input.IsActionPressed, action, index)
+      local ok, pressed = pcall(Input.IsActionPressed, action, InputSettingsUI.controllerQueryIndex(index))
       actionPressed = ok and pressed == true
     end
     -- Raw, semantic and analog signals can arrive on different frames for one
@@ -2620,7 +2634,7 @@ function ChineseConsole.controllerShoulderOwnerActive(side, index, repeatAction,
   if not state.controllerShoulderLatch[ownerKey] then return false end
   local actionPressed = false
   if repeatAction ~= nil and type(Input.IsActionPressed) == "function" then
-    local ok, pressed = pcall(Input.IsActionPressed, repeatAction, index)
+    local ok, pressed = pcall(Input.IsActionPressed, repeatAction, InputSettingsUI.controllerQueryIndex(index))
     actionPressed = ok and pressed == true
   end
   local pageValue = ChineseConsole.controllerActionValueAt(pageAction, index)
@@ -2971,7 +2985,7 @@ end
 
 local function controllerActionPressed(action, index)
   if action == nil or type(Input.IsActionPressed) ~= "function" then return false end
-  local ok, pressed = pcall(Input.IsActionPressed, action, index)
+  local ok, pressed = pcall(Input.IsActionPressed, action, InputSettingsUI.controllerQueryIndex(index))
   return ok and pressed == true
 end
 
@@ -2979,10 +2993,11 @@ local function restartActionPressed()
   if ChineseConsole.keyboard.pressed(Keyboard.KEY_R) then return true end
   if CONTROLLER_ACTION_RESTART == nil then return false end
   local candidates, seen = {}, {}
-  -- Controller index 0 is also the keyboard action route. Assigned player
-  -- controllers cover controller-driven restart bindings without scanning
-  -- arbitrary unassigned indexes.
-  addControllerCandidate(candidates, seen, 0)
+  -- Preserve the old keyboard action alias only on the old query contract.
+  -- On J514, player index 0 maps to the first pad, which may be unassigned.
+  if InputSettingsUI.controllerQueryOffset == 0 then
+    addControllerCandidate(candidates, seen, 0)
+  end
   for _, index in ipairs(controllerCandidates()) do
     addControllerCandidate(candidates, seen, index)
   end

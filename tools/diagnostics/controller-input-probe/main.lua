@@ -17,12 +17,19 @@ for _, action in ipairs(actions) do
   enumNames[#enumNames + 1] = action.name .. "=" .. action.value
 end
 log("loaded; repPlus=" .. tostring(REPENTANCE_PLUS) .. "; " .. table.concat(enumNames, ","))
+if type(Input.GetKeyboardDeviceId) == "function" then
+  local ok, value = pcall(Input.GetKeyboardDeviceId)
+  log("keyboardDeviceId=" .. tostring(value) .. "; ok=" .. tostring(ok))
+else
+  log("keyboardDeviceId=unavailable")
+end
 probe:AddCallback(ModCallbacks.MC_POST_RENDER, function()
   if not startedAt then startedAt = Isaac.GetTime() end
   if Isaac.GetTime() - startedAt > 600000 or emitted >= 600 then return end
   local game = Game()
   local count = game:GetNumPlayers()
-  local indices, players = {}, {}
+  -- 同时观察玩家索引及相邻查询索引，用来识别 J514 的索引偏移。
+  local indices, players = {[-2] = true, [0] = true, [1] = true, [2] = true}, {}
   for playerIndex = 0, count - 1 do
     local player = Isaac.GetPlayer(playerIndex)
     if player then
@@ -35,11 +42,14 @@ probe:AddCallback(ModCallbacks.MC_POST_RENDER, function()
     log("players=" .. playerSignature .. "; frame=" .. game:GetFrameCount())
     previousPlayers = playerSignature
   end
-  -- 只采样已分配给玩家的手柄；不在 MC_INPUT_ACTION 内递归查询输入。
+  -- 只读诊断额外观察相邻设备；正式菜单仍只接受已分配玩家的设备。
   for index in pairs(indices) do
-    if index >= 0 then
+    if index >= -2 and index < 8 then
       local buttons, pressedActions = {}, {}
       for button = 0, 31 do
+        if Input.IsButtonPressed(button, index) then buttons[#buttons + 1] = tostring(button) end
+      end
+      for _, button in ipairs({65, 256, 257, 258, 259, 262, 263, 264, 265, 295}) do
         if Input.IsButtonPressed(button, index) then buttons[#buttons + 1] = tostring(button) end
       end
       for _, action in ipairs(actions) do
