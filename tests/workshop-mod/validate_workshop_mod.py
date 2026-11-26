@@ -15,8 +15,8 @@ from validate_hd_payload import validate_hd_payload
 
 CHINESE_WORKSHOP_ID = "3776882944"
 ENGLISH_WORKSHOP_ID = "3779128726"
-DISPLAY_VERSION = "2.5.4-en.28"
-METADATA_VERSION = "2.5.4.28"
+DISPLAY_VERSION = "2.5.4-en.29"
+METADATA_VERSION = "2.5.4.29"
 EXPECTED_PREVIEW_SHA256 = "D7378BB9951A72EFE3C112F30930719FB734E20D48C16A870E396326770BB26C"
 
 def fail(message: str) -> None:
@@ -80,6 +80,7 @@ def main() -> int:
     required = [
         "main.lua",
         "metadata.xml",
+        "content/shaders.xml",
     "scripts/data.lua",
     "scripts/item_icons.lua",
     "scripts/keyboard_input.lua",
@@ -262,8 +263,11 @@ def main() -> int:
         if needle not in main_lua:
             fail(f"missing implementation: {label}")
 
-    if list(root.rglob("shaders.xml")) or "lateOverlayEnabled = false" not in main_lua:
-        fail("restart-fade fix requires a shader-free payload and ordinary rendering")
+    if "lateOverlayEnabled = true" not in main_lua:
+        fail("death menu requires the Lua late-render path")
+    shader = root / "content/shaders.xml"
+    if hashlib.sha256(shader.read_bytes()).hexdigest() != "32dd0e1ff12f6c5fe5e87d18d2f7566f444ac212c6f8f70641cc37c218835f2f":
+        fail("late-render shader differs from the verified legacy passthrough resource")
 
     semantic_shoulder_actions = [
         'controllerAction("ACTION_MENULB")',

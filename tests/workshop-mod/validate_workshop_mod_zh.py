@@ -11,14 +11,15 @@ from PIL import Image
 from validate_hd_payload import validate_hd_payload
 
 
-DISPLAY_VERSION = "2.5.33"
-METADATA_VERSION = "2.5.33"
+DISPLAY_VERSION = "2.5.34"
+METADATA_VERSION = "2.5.34"
 WORKSHOP_ID = "3776882944"
 EXPECTED_PREVIEW_SHA256 = "E187031C27C032EB11DBD2943BC75A4067E2FEA250A155B8DB3B08F06CFDB7C9"
 
 REQUIRED_FILES = {
     "main.lua",
     "metadata.xml",
+        "content/shaders.xml",
     "preview.png",
     "FONT-LICENSE-OFL.txt",
     "THIRD-PARTY-DATA.md",
@@ -125,8 +126,11 @@ def main() -> int:
         if forbidden_source in main_lua:
             fail(f"runtime-specific controller behavior remains: {forbidden_source}")
 
-    if list(root.rglob("shaders.xml")) or "lateOverlayEnabled = false" not in main_lua:
-        fail("restart-fade fix requires a shader-free payload and ordinary rendering")
+    if "lateOverlayEnabled = true" not in main_lua:
+        fail("death menu requires the Lua late-render path")
+    shader = root / "content/shaders.xml"
+    if hashlib.sha256(shader.read_bytes()).hexdigest() != "32dd0e1ff12f6c5fe5e87d18d2f7566f444ac212c6f8f70641cc37c218835f2f":
+        fail("late-render shader differs from the verified legacy passthrough resource")
 
     animation_root = ET.parse(root / "resources/gfx/ui/isaac_console_pixel.anm2").getroot()
     animation_info = animation_root.find("Info")

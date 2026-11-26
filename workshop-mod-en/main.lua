@@ -8,7 +8,7 @@ local OfficialObjects = include("scripts.official_objects")
 ConsoleUI.pedestals = include("scripts.collectible_pedestals")
 ConsoleUI.keyboard = include("scripts.keyboard_input")
 
-local VERSION = "2.5.4-en.28"
+local VERSION = "2.5.4-en.29"
 local GRID_COLUMNS = 2
 local ITEMS_PER_PAGE = 8
 local CATEGORIES_PER_PAGE = 6
@@ -347,7 +347,7 @@ local state = {
 }
 
 local Presentation = {
-  lateOverlayEnabled = false, -- Rep+ custom shaders break the native restart fade.
+  lateOverlayEnabled = true, -- Lua death-menu layering; known Rep+ restart-fade defect is documented.
   hdRoot = normalizePath(getCurrentModPath()):match("(mods/[^/]+/)$") or "mods/console_ui_workshop/",
   typographyModule = include("scripts.typography"),
   itemIconsModule = include("scripts.item_icons"),
@@ -3621,7 +3621,10 @@ local function computeLayout(screenWidth, screenHeight)
   local pad = clamp(math.floor(shortSide * 0.012), 5, 12)
   local margin = clamp(math.floor(shortSide * 0.025), 8, 22)
   local panelX, panelY = margin, margin
-  local panelW, panelH = screenWidth - margin * 2, screenHeight - margin * 2
+  -- Native Exit/Restart hints render after shaders. Keep the entire death
+  -- panel (including shadow) above their measured 80px logical-screen band.
+  local deathInset = state.runEndState == "game_over" and 80 or 0
+  local panelW, panelH = screenWidth - margin * 2, screenHeight - margin * 2 - deathInset
 
   local widestCategory = math.max(
     safeTextWidth(geometryBody, "ISAAC TOOLS"),
@@ -3641,6 +3644,9 @@ local function computeLayout(screenWidth, screenHeight)
   local categoryRowH = line10 + pad
   local categoryNavH = line10 + pad * 2
   local categoryTop = panelY + categoryHeaderH
+  CATEGORIES_PER_PAGE = deathInset > 0 and math.max(1, math.min(6,
+    math.floor((panelH - categoryHeaderH - categoryNavH - pad * 2) / categoryRowH))) or 6
+  state.categoryPage = math.floor((state.categoryIndex - 1) / CATEGORIES_PER_PAGE) + 1
   local categoryNavY = categoryTop + CATEGORIES_PER_PAGE * categoryRowH + pad
 
   local closeW = line10 + pad * 2
@@ -3657,6 +3663,14 @@ local function computeLayout(screenWidth, screenHeight)
   local footerY = panelY + panelH - footerH
   local gridY = panelY + headerH
   local gridH = math.max(1, footerY - gridY - pad)
+  local pageSize = deathInset > 0 and GRID_COLUMNS * math.max(1, math.min(4,
+    math.floor((gridH + pad) / (line10 + pad * 3)))) or 8
+  if pageSize ~= ITEMS_PER_PAGE then
+    local selected = (state.page - 1) * ITEMS_PER_PAGE + state.selection - 1
+    ITEMS_PER_PAGE = pageSize
+    state.page = math.floor(selected / pageSize) + 1
+    state.selection = (selected % pageSize) + 1
+  end
   local gridRows = math.ceil(ITEMS_PER_PAGE / GRID_COLUMNS)
   local gap = pad
   local cardW = math.floor((contentW - gap * (GRID_COLUMNS - 1)) / GRID_COLUMNS)

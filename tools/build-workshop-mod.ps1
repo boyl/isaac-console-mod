@@ -15,6 +15,7 @@ $targetRoot = Join-Path $distRoot $targetName
 $commonFiles = @(
     'main.lua',
     'metadata.xml',
+    'content/shaders.xml',
     'preview.png',
     'FONT-LICENSE-OFL.txt',
     'THIRD-PARTY-DATA.md',

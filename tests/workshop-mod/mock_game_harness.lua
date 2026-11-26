@@ -2626,6 +2626,22 @@ local function testGameOverOverlayAccess()
   assertEqual(state.lifecycleRequest, nil, "Game Over retained a lifecycle request")
   assertEqual(TEST.hudVisible, true, "Game Over did not restore the HUD before reopening")
 
+  state.page, state.selection = 1, 7
+  for _, size in ipairs({{480,256},{480,270},{553,300},{1280,720}}) do
+    local L = computeLayout(size[1], size[2])
+    local pageSize = findUpvalue(computeLayout, "ITEMS_PER_PAGE")
+    assertEqual((state.page - 1) * pageSize + state.selection, 7,
+      "death resize changed the selected item")
+    assertTrue(L.panelY + L.panelH + 4 <= size[2] - 80,
+      "death menu/shadow overlaps the native corner hint band")
+    assertTrue(L.categoryNavY + L.categoryNavH <= L.panelY + L.panelH,
+      "death category paging escapes the safe panel")
+    assertTrue(L.cardH >= L.line10, "death cards clip their readable text")
+    assertTrue(L.gridY + L.gridH < L.footerY, "death grid overlaps footer")
+  end
+  computeLayout(Isaac.GetScreenWidth(), Isaac.GetScreenHeight())
+  state.page, state.selection = 1, 1
+
   TEST.paused = true
   pressKey(Keyboard.KEY_F6)
   assertEqual(state.open, true, "F6 did not open the overlay after Game Over")
@@ -2641,11 +2657,16 @@ local function testGameOverOverlayAccess()
   TEST.rendered = {}
   runCallbacks(ModCallbacks.MC_POST_RENDER)
   do
-    assertTrue(#TEST.rendered > 0, "shader-free Game Over menu has no ordinary render path")
-    assertTrue(overlayLease, "native death paper would cover the rendered console")
+    assertEqual(#TEST.rendered, 0, "Game Over surface must wait for the late callback")
+    assertEqual(overlayLease, false, "Lua death menu acquired a native suppression lease")
+    runShaderCallbacks("OtherShader")
+    assertEqual(#TEST.rendered, 0, "unrelated shader drew the death menu")
+    IsaacConsoleNativeDeathOverlay = nil
+    runShaderCallbacks("IsaacConsoleLateOverlay")
+    assertTrue(#TEST.rendered > 0, "death menu did not draw without the native component")
     local count = #TEST.rendered
     runShaderCallbacks("IsaacConsoleLateOverlay")
-    assertEqual(#TEST.rendered, count, "shader-free build rendered in the shader callback")
+    assertEqual(#TEST.rendered, count, "same-frame shader duplicated the death menu")
   end
 
   pressKey(Keyboard.KEY_F6)
@@ -2672,6 +2693,8 @@ local function testGameOverOverlayAccess()
   TEST.paused = false
   onStarted()
   assertEqual(state.runEndState, "active", "new run retained the Game Over state")
+  local restoredLayout = computeLayout(553, 300)
+  assertEqual(restoredLayout.panelH, 284, "new run retained death-only safe area")
   onUpdate()
   onUpdate()
   assertEqual(state.lifecycleReceipt, nil,

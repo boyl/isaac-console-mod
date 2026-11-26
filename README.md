@@ -4,14 +4,18 @@
 
 这是 The Binding of Isaac: Rebirth 游戏内控制台 Mod 的独立源仓库，与桌面版控制台项目分开维护。
 
+当前源码恢复 Lua Shader 死亡菜单置顶，不依赖原生暂停组件。**已知缺陷：Repentance+ 长按 R 重开可能渐暗异常或瞬间黑屏，即使菜单关闭也可能出现。** 本次恢复保留该缺陷；详细取舍与回退说明见 [Shader 兼容记录](docs/rep-plus-shader-workaround.md)。
+
+死亡状态下菜单会为原生“退出”“重开”提示留出底部空间，并按可用高度调整分页，避免角落遮挡；正常游戏保持原布局。
+
 ## 可选原生暂停组件安装
 
 [安装说明与目录结构示意](experiments/native-pause/AUTOLOAD-RELEASE.md#安装后的目录结构示意)包含原版和忏悔龙两种布局。插件必须位于实际 EXE 目录下的 scripts 子目录；请保留下载包 game-files 内的目录结构。
 
 ## 目录
 
-- `workshop-mod/`：中文版正式源码，当前版本 `2.5.33`，Workshop ID `3776882944`。
-- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.28`、metadata `2.5.4.28`，Workshop ID `3779128726`。
+- `workshop-mod/`：中文版正式源码，当前版本 `2.5.34`，Workshop ID `3776882944`。
+- `workshop-mod-en/`：英文版正式源码，当前内部版本 `2.5.4-en.29`、metadata `2.5.4.29`，Workshop ID `3779128726`。
 - `tests/workshop-mod/`：中英文 Lua Mock、冷启动回归和双语发布负载验证器。
 - `tools/build-workshop-mod.ps1`：中英文显式允许列表构建脚本。
 - `tools/build-nexus-mod.ps1`、`tools/verify-nexus-packages.ps1`：Nexus 发布包构建与整链路校验。
@@ -70,7 +74,7 @@ Nexus 没有面向普通作者的上传 API，因此仓库侧只负责"打包 + 
   -PythonPath 'C:\Users\lw\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe'
 ```
 
-该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.33-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.28-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
+该入口先跑双语源码回归、构建两个 Workshop 候选并用现有校验器验证，再用 `tools/build-nexus-mod.ps1` 生成 Nexus 包：`dist/nexus-packages/IsaacChineseConsole-2.5.34-Nexus.zip`（中文）与 `dist/nexus-packages/ConsoleUI-2.5.4.29-Nexus.zip`（英文），zip 顶层只有一个 Mod 文件夹，并可被同一组校验器直接校验解包结果。构建脚本要求工作树无未提交的已跟踪改动且 `origin/main` 与本地 HEAD 一致（只有显式传 `-AllowUnpushedHead` 才允许例外），`*-BUILD-INFO.json` 记录来源提交、Mod 目录、版本、Workshop ID、包 SHA-256 与逐文件 SHA-256。
 
 页面字段与可复制文案见 [NEXUS_UPLOAD.md](NEXUS_UPLOAD.md)；网页上传步骤与安全约定见 [tools/nexus/README.md](tools/nexus/README.md)。
 

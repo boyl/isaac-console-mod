@@ -69,6 +69,32 @@ def main():
         assert {p.relative_to(target).as_posix(): sha(p) for p in target.rglob("*") if p.is_file()} == original
         print("PASS rollback restores exact original file tree")
 
+        # 新需求：从无 Shader 版本恢复资源，拒绝覆盖未知占用，并能精确回退。
+        (target / "content/shaders.xml").unlink()
+        original.pop("content/shaders.xml")
+        manifest["files"] = [f for f in manifest["files"] if f["path"] != "content/shaders.xml"]
+        (baseline / "baseline.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (candidate / "content").mkdir()
+        shutil.copyfile(SHADER, candidate / "content/shaders.xml")
+        recovery = root / "restored-shader-recovery"
+        arguments[-1] = str(recovery)
+        assert "content/shaders.xml" in install()
+        assert not (target / "content/shaders.xml").exists()
+        (target / "content/shaders.xml").write_bytes(b"user shader")
+        install(True, False)
+        assert not recovery.exists()
+        (target / "content/shaders.xml").unlink()
+        install(True)
+        assert sha(target / "content/shaders.xml") == sha(SHADER)
+        for relative, digest in original.items():
+            assert sha(target / relative) == digest
+        print("PASS shader restoration adds exact resource, rejects conflicts and preserves user data")
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", "function Get-Process { param($Name) }; & '" + str(ROOT / "tools/restore-hd-menu.ps1") + "'",
+                                 "-Manifest", str(recovery / "rollback.json"), "-Apply"], capture_output=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert {p.relative_to(target).as_posix(): sha(p) for p in target.rglob("*") if p.is_file()} == original
+        print("PASS shader restoration rollback returns exact shader-free tree")
+
 
 if __name__ == "__main__":
     main()

@@ -49,13 +49,12 @@ foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File) {
     } elseif ($before) { throw "新增文件已被占用：$relative" }
     $files += [pscustomobject]@{path=$relative;beforeHash=$before;afterHash=$after}
 }
-# 旧版资源会被引擎独立加载，Lua 开关不能禁用它。只删除本项目
-# 已核对的旧资源；不同哈希可能属于用户，必须先明确报告而非覆盖。
+# Shader 候选按上面的普通文件事务安装。无 Shader 候选仍支持清理
+# 已核对的历史资源；未知资源不得静默删除。
 $legacyPath = 'content/shaders.xml'
-if (Test-Path -LiteralPath (Join-Path $source $legacyPath)) { throw '候选包含已退役 Shader' }
 $legacyTarget = Join-Path $targetRoot $legacyPath
 Assert-UnlinkedTarget $legacyTarget
-if (Test-Path -LiteralPath $legacyTarget -PathType Leaf) {
+if (-not (Test-Path -LiteralPath (Join-Path $source $legacyPath)) -and (Test-Path -LiteralPath $legacyTarget -PathType Leaf)) {
     $legacyHash = (Get-FileHash -LiteralPath $legacyTarget).Hash
     if ($legacyHash -ne '32DD0E1FF12F6C5FE5E87D18D2F7566F444AC212C6F8F70641CC37C218835F2F') { throw '旧 Shader 内容未知或已修改，未开始安装' }
     $legacyBackup = Join-Path (Join-Path $baseRoot $BaselineSet) $legacyPath

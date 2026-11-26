@@ -1,3 +1,10 @@
+## 2.5.4-en.29
+
+- Restored the Lua shader overlay for the Game Over menu; the native pause companion is not required. Normal gameplay rendering and input are unchanged.
+- Fixed corner overlap at Game Over by reserving space for the native Exit/Restart hints and adapting item/category pagination without shrinking text or separating click targets from the layout.
+- Known issue: holding R in Repentance+ may show an abnormal fade or instant black screen, including while the menu is closed. This release does not fix that native animation.
+- Restored shader packaging, installation and rollback support while preserving Workshop identity, saves and previews.
+
 ## 2.5.4-en.28
 
 - Fixed Ctrl triggering gamepad favorites when the keyboard device index is exposed as an unsigned value.
