@@ -4,7 +4,7 @@
 
 Lua 菜单管理暂停生命周期；原生组件优先识别已知 EXE 哈希，未知哈希自动检测 Repentance 与 Repentance+ 的固定 RVA 适配器。恰好一个候选通过函数特征、字段引用、游戏指针引用和 Lua IAT 检查后启用；不需要手动加哈希或开启试验开关。缺少组件时 Lua 保持原有功能。内部桥接 IsaacConsoleNativePausePrototype(op) 保留兼容名称，1 获取自身暂停，0 只释放自身，2 查询暂停归属；只在游戏线程调用，Lua 栈净变化为零。
 
-`compatibility.h` 负责只读识别与诊断，`pause.c` 保留挂钩和暂停归属。固定 RVA 布局发生变化仍可能检测失败，本轮不做全模块目标重定位。Rep+ 特征来自已知 J460 EXE；Rep 的指令模式参考 https://github.com/TeamREPENTOGON/REPENTOGON/blob/1.0.12/libzhl/functions/Console.zhl 及同版本 Game.zhl，配合控制台字段引用和游戏全局引用进行验证。不能把这些模式等同于任意新构建兼容承诺。
+`compatibility.h` 负责只读识别与诊断，`pause.c` 保留挂钩和暂停归属。0.2.5 在固定 RVA 适配器全部不匹配时，对现代 Rep+ 执行唯一结构定位，交叉验证两处 Game 全局引用、Console 输入调用、暂停字段、渲染入口与 Lua IAT。死亡绘制另行核对调用点、状态分支及返回 ABI。地址移动可自动适配，结构变化仍停用。Rep+ 特征来自已知 J460 EXE；Rep 的指令模式参考 https://github.com/TeamREPENTOGON/REPENTOGON/blob/1.0.12/libzhl/functions/Console.zhl 及同版本 Game.zhl，配合控制台字段引用和游戏全局引用进行验证。不能把这些模式等同于任意新构建兼容承诺。
 
 日志位于插件旁 `native-pause.log`，包含 UTC 时间、进程号、EXE 路径／大小／SHA-256、每项兼容检查、失败字节、挂钩阶段、启用结果和暂停归属。主路径无法写入时回退到 `%TEMP%/IsaacConsoleNativePause-<PID>.log`，并发送 OutputDebugString。日志中的地址是相对 EXE 的 RVA。
 

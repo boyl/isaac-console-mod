@@ -170,6 +170,59 @@ static int validate_candidate(const PauseImage *image,const Runtime *r,HMODULE l
     return ok;
 }
 
+/* 扫描只读可执行区，必须唯一；不在数据区或任意内存中猜测函数。 */
+static unsigned pattern_matches(const PauseImage *image,const char *pattern,unsigned *found) {
+    IMAGE_SECTION_HEADER *sections=IMAGE_FIRST_SECTION(image->nt);
+    unsigned s,count=0,length=(unsigned)strlen(pattern)/2;
+    for(s=0;s<image->nt->FileHeader.NumberOfSections;s++) {
+        unsigned start=sections[s].VirtualAddress,size=sections[s].Misc.VirtualSize,i;
+        if(!(sections[s].Characteristics&IMAGE_SCN_MEM_EXECUTE) || size<length
+           || !image_range(image,start,size,IMAGE_SCN_MEM_EXECUTE)) continue;
+        for(i=0;i<=size-length;i++) if(match_pattern(image->base+start+i,pattern)) {
+            *found=start+i; if(++count>1) return count;
+        }
+    }
+    return count;
+}
+
+static Runtime discovered_runtime;
+static const Runtime *discover_rep_plus(const PauseImage *image,HMODULE lua) {
+    Runtime candidate=runtimes[3]; unsigned reference=0,iat_count=0,i;
+    IMAGE_DATA_DIRECTORY iat=image->nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT];
+    void *pcall=lua?(void *)GetProcAddress(lua,"lua_pcallk"):0;
+    const char *paused="8bd1568b35????????83ba6894060000741a8b8e????????8b86????????3bc8";
+    const char *input_ref="8b35????????85f674??8d8e68940600e8????????";
+    unsigned paused_count=pattern_matches(image,paused,&candidate.paused);
+    unsigned render_count=pattern_matches(image,render_patterns[2],&candidate.render);
+    unsigned reference_count=pattern_matches(image,input_ref,&reference);
+    candidate.name="Repentance+ structural layout"; candidate.sha256="";
+    if(paused_count!=1 || render_count!=1 || reference_count!=1) {
+        log_detail("DISCOVERY rejected paused=%u render=%u console_reference=%u reason=missing_or_ambiguous",paused_count,render_count,reference_count);
+        return 0;
+    }
+    candidate.game_ptr=*(uint32_t *)(image->base+reference+2)-(uintptr_t)image->base;
+    candidate.input=reference+21+*(int32_t *)(image->base+reference+17);
+    /* 紧随输入调用的是同一 Game 的 Console 更新，第二处全局引用必须一致。
+       防止把一个被改写但仍指向可写区的地址误认为 Game 单例。 */
+    if(!image_range(image,reference,38,IMAGE_SCN_MEM_EXECUTE)
+       || !match_pattern(image->base+reference+21,"8b0d????????8d8968940600e8")
+       || *(uint32_t *)(image->base+reference+23)!=*(uint32_t *)(image->base+reference+2)) {
+        log_event("DISCOVERY rejected reason=independent_game_reference_mismatch");return 0;
+    }
+    if(!pcall || iat.Size<4 || iat.Size%4 || !image_range(image,iat.VirtualAddress,iat.Size,IMAGE_SCN_MEM_READ)) {
+        log_event("DISCOVERY rejected reason=invalid_lua_IAT_directory");return 0;
+    }
+    for(i=0;i<iat.Size;i+=4) if(*(void **)(image->base+iat.VirtualAddress+i)==pcall) {
+        candidate.pcall_iat=iat.VirtualAddress+i; iat_count++;
+    }
+    if(iat_count!=1) {log_detail("DISCOVERY rejected reason=lua_IAT_identity_count count=%u",iat_count);return 0;}
+    if(!validate_candidate(image,&candidate,lua,1,2)) return 0;
+    discovered_runtime=candidate;
+    log_detail("STRUCTURAL_COMPATIBLE paused=0x%X input=0x%X render=0x%X game_ptr=0x%X pcall_iat=0x%X",
+        candidate.paused,candidate.input,candidate.render,candidate.game_ptr,candidate.pcall_iat);
+    return &discovered_runtime;
+}
+
 static const Runtime *select_runtime(const char *digest,unsigned char *address,HMODULE lua) {
     PauseImage image; unsigned i; int matches=0; const Runtime *selected=0;
     if(!inspect_image(address,&image)) {log_event("DISABLED invalid_PE_or_not_x86");return 0;}
@@ -182,6 +235,10 @@ static const Runtime *select_runtime(const char *digest,unsigned char *address,H
     for(i=0;i<sizeof(runtimes)/sizeof(runtimes[0]);i++) {
         if(runtimes[i].independent_pause) continue;
         if(validate_candidate(&image,&runtimes[i],lua,1,i==3?2:i)) {selected=&runtimes[i];matches++;}
+    }
+    if(!matches) {
+        selected=discover_rep_plus(&image,lua);
+        if(selected) return selected;
     }
     if(matches!=1) {log_event(matches?"DISABLED ambiguous_compatible_runtime":"DISABLED no_compatible_runtime");return 0;}
     log_detail("COMPATIBLE_UNKNOWN_HASH candidate=\"%s\"",selected->name);

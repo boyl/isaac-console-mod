@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-export async function runJ510PauseAcceptance({sky, window, logPath, outputDir}) {
+export async function runJ510PauseAcceptance({sky, window, logPath, outputDir, expectedTitle = 'Binding of Isaac: Repentance+ v1.9.7.19'}) {
   await fs.mkdir(outputDir, {recursive: false});
   const result = {status: 'FAIL', phases: []};
   const sample = async owned => {
@@ -24,7 +24,7 @@ export async function runJ510PauseAcceptance({sky, window, logPath, outputDir}) 
     await sleep(250);
   };
   try {
-    if (window.title !== 'Binding of Isaac: Repentance+ v1.9.7.19') throw new Error('运行时不符');
+    if (window.title !== expectedTitle) throw new Error('运行时不符');
     await sample(true);
     await toggle(); await sample(false);
     await toggle(); await sample(true);

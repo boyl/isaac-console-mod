@@ -125,32 +125,91 @@ int main(int argc,char **argv) {
     check(selected && selected->independent_pause,"known REPENTOGON selection is preserved");
     check(!select_runtime(unknown_hash,image,lua),"unknown independent backend is not mistaken for Rep");
     VirtualFree(image,0,MEM_RELEASE);
+    image=fixture();
+    bytes(image+0x304190,"8bd1568b350000000083ba6894060000741a");
+    bytes(image+0x292050,"558bec6aff680000000064a1000000005083ec3c535657a10000000033c5508d45f464a3000000008bf1");
+    bytes(image+0x2930c0,"538bdc83ec0883e4f883c404558b6b04896c24048bec6aff680000000064a100000000505381ec78010000a10000000033c58945ec5657508d45f464a3000000008bf1897588");
+    bytes(image+0x2000,"8b350000000085f6740b8d8e68940600e800000000");
+    *(uintptr_t *)(image+0x2002)=(uintptr_t)(image+0x899538);
+    *(int32_t *)(image+0x2011)=0x292050-0x2015;
+    *(void **)(image+0x73a43c)=(void *)GetProcAddress(lua,"lua_pcallk");
+    check(select_runtime(runtimes[3].sha256,image,lua)==&runtimes[3],"known J510 fixture retains full fixed-layout verification");
+    check(select_runtime(unknown_hash,image,lua)==&runtimes[3],"unknown hash J510 fixture retains compatible selection");
+    image[0x30419b]^=1;
+    check(!select_runtime(runtimes[3].sha256,image,lua),"known J510 fixture rejects field drift");
+    image[0x30419b]^=1;
+    bytes(image+0x5afb20,"538bdc83ec0883e4f8");bytes(image+0x3033ca,"8d8f20d50100e84bc72a00");
+    bytes(image+0x5afb61,"8bf989bdccfeffff833f00");bytes(image+0x5b0a15,"8be55d8be35bc3");
+    bytes(image+0x24a60,"538bdc83ec0883e4f8");bytes(image+0x56b5ef,"8d8f28ac0400e86694abff");bytes(image+0x24f1e,"8be55d8be35bc3");
+    check(death_layout_matches(image,0x900000,runtimes[3].sha256),"known J510 death fixture preserves legacy capability");
+    {unsigned sites[]={0x5afb20,0x3033ca,0x5afb61,0x5b0a15,0x24a60,0x56b5ef,0x24f1e};unsigned k;
+      for(k=0;k<7;k++){image[sites[k]]^=1;check(!death_layout_matches(image,0x900000,runtimes[3].sha256),"known J510 death drift rejected");image[sites[k]]^=1;}}
+    VirtualFree(image,0,MEM_RELEASE);
     image=map_exe(argv[2]);check(image!=0,"map actual Rep+ EXE without execution");
-    check(death_layout_matches(image,0x900000,runtimes[3].sha256),"actual J510 death rendering ABI and field references match");
-    check(!death_layout_matches(image,0x900000,"unknown"),"unknown death rendering runtime is rejected independently");
-    { unsigned sites[]={DEATH_RENDER_RVA,0x3033ca,0x5afb61,0x5b0a15,DEATH_HINT_RENDER_RVA,0x56b5ef,0x24f1e}; int k;
-      for(k=0;k<7;k++) { image[sites[k]]^=1;
-        check(!death_layout_matches(image,0x900000,runtimes[3].sha256),"changed death rendering contract is rejected");image[sites[k]]^=1;
-      }
-    }
-    /* 模拟 Windows 加载器解析这个槽位；游戏代码和调用引用保持真实文件内容。 */
-    *(void **)(image+0x73a43c)=(void *)GetProcAddress(lua,"lua_pcallk");
+    *(void **)(image+0x73b43c)=(void *)GetProcAddress(lua,"lua_pcallk");
     selected=select_runtime(unknown_hash,image,lua);
-    check(selected && selected->input==0x292050,"actual relocated J510 image accepts unknown hash");
-    check(select_runtime("114673659401DA17E55BD44B2C9F1CB7D40CE5FD31E15690588661A8A7C60FF6",image,lua)==selected,"actual known J510 hash validates full layout");
+    check(selected && selected->input==0x291da0 && selected->render==0x292e10
+        && selected->game_ptr==0x89a5f8 && selected->pcall_iat==0x73b43c,
+        "actual J514 discovers relocated runtime without a hash allowlist entry");
+    {
+        PauseImage view; DeathLayout layout;
+        check(inspect_image(image,&view),"inspect actual image for death renderer");
+        check(discover_death_layout(&view,selected,&layout) && layout.render==0x5b0000 && layout.hints==0x24a60,
+            "actual J514 death render and hints discovered with ABI validation");
+        { unsigned sites[]={0x3033cc,0x5b0000,0x5b0049,0x5b0058,0x5b0f0b,0x24a60,0x24f24,0x56b9c5};unsigned k;
+          for(k=0;k<sizeof(sites)/sizeof(sites[0]);k++) {image[sites[k]]^=1;
+            check(!discover_death_layout(&view,selected,&layout),"changed death field, call, entry or ABI rejected");image[sites[k]]^=1;
+          }
+        }
+        /* 同一函数整体移动，内部相对分支不变，仅修改调用点。 */
+        memcpy(image+0x2000,image+0x5b0000,0xf10);
+        memset(image+0x5b0000,0xcc,0xf10);
+        *(int32_t *)(image+0x3033d1)=0x2000-0x3033d5;
+        check(discover_death_layout(&view,selected,&layout) && layout.render==0x2000,
+            "death renderer relocation accepted without new hash or RVA");
+        memcpy(image+0x5b0000,image+0x2000,0xf10);memset(image+0x2000,0xcc,0xf10);
+        *(int32_t *)(image+0x3033d1)=0x5b0000-0x3033d5;
+    }
     image[0x30419b]^=1;
-    check(!select_runtime(selected->sha256,image,lua),"known J510 still rejects console field drift");
-    image[0x30419b]^=1;
-    image[0x56aa45]^=4;
-    check(!select_runtime(unknown_hash,image,lua),"J510 wrong singleton reference is rejected");
-    image[0x56aa45]^=4;
-    *(void **)(image+0x73a43c)=0;
-    check(!select_runtime(unknown_hash,image,lua),"J510 mismatched Lua IAT is rejected");
-    *(void **)(image+0x73a43c)=(void *)GetProcAddress(lua,"lua_pcallk");
+    check(!select_runtime(unknown_hash,image,lua),"J514 changed Console field rejected");image[0x30419b]^=1;
+    image[0x56ae16]^=4;
+    check(!select_runtime(unknown_hash,image,lua),"J514 wrong singleton reference rejected");image[0x56ae16]^=4;
+    *(void **)(image+0x73b43c)=0;
+    check(!select_runtime(unknown_hash,image,lua),"J514 mismatched Lua IAT rejected");
+    *(void **)(image+0x73b43c)=(void *)GetProcAddress(lua,"lua_pcallk");
+    image[0x292e18]^=1;
+    check(!select_runtime(unknown_hash,image,lua),"J514 changed render signature rejected");image[0x292e18]^=1;
     image[0x40]^=1;
-    check(select_runtime("modified-non-code",image,lua)==selected,"actual Rep+ unrelated modification remains compatible");
-    image[0x2930c0+8]^=1;
-    check(!select_runtime(unknown_hash,image,lua),"actual Rep+ render change is diagnosed");
+    check(select_runtime("modified-non-code",image,lua)!=0,"J514 unrelated modification accepted");
+    {
+        void *saved=*(void **)(image+0x73b440);
+        *(void **)(image+0x73b440)=(void *)GetProcAddress(lua,"lua_pcallk");
+        check(!select_runtime(unknown_hash,image,lua),"duplicate Lua IAT identity rejected");
+        *(void **)(image+0x73b440)=saved;
+        memcpy(image+0x1500,image+0x56ae13,38);
+        check(!select_runtime(unknown_hash,image,lua),"ambiguous Game input reference rejected");
+        memset(image+0x1500,0xcc,38);
+    }
+    memcpy(image+0x1000,image+0x304190,40);
+    check(!select_runtime(unknown_hash,image,lua),"ambiguous pause signature rejected");
+    memset(image+0x1000,0xcc,40);
+    memcpy(image+0x1000,image+0x292e10,80);
+    check(!select_runtime(unknown_hash,image,lua),"ambiguous render signature rejected");
+    memset(image+0x292e10,0xcc,80);
+    selected=select_runtime(unknown_hash,image,lua);
+    check(selected && selected->render==0x1000,"render relocated again without new version data");
+    memcpy(image+0x1100,image+0x291da0,80);
+    memset(image+0x291da0,0xcc,80);
+    *(int32_t *)(image+0x56ae24)=0x1100-0x56ae28;
+    selected=select_runtime(unknown_hash,image,lua);
+    check(selected && selected->input==0x1100,"input relocated again through verified call relationship");
+    memcpy(image+0x1200,image+0x304190,80);memset(image+0x304190,0xcc,80);
+    selected=select_runtime(unknown_hash,image,lua);
+    check(selected && selected->paused==0x1200,"pause query relocated without version data");
+    *(uintptr_t *)(image+0x56ae15)=(uintptr_t)(image+0x89a6f8);
+    *(uintptr_t *)(image+0x56ae2a)=(uintptr_t)(image+0x89a6f8);
+    selected=select_runtime(unknown_hash,image,lua);
+    check(selected && selected->game_ptr==0x89a6f8,"both independent references track relocated Game slot");
     VirtualFree(image,0,MEM_RELEASE);
     logcapacity=(size_t)ftell(logfile)+1;
     logtext=malloc(logcapacity);check(logtext!=0,"allocate complete diagnostic capture");

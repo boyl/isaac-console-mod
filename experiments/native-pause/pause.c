@@ -257,7 +257,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
         }
     }
     if(!logfile) log_event("LOG_ERROR file_unavailable diagnostics_via_OutputDebugString");
-    log_detail("START native-pause 0.2.4 pid=%lu",GetCurrentProcessId());
+    log_detail("START native-pause 0.2.5 pid=%lu",GetCurrentProcessId());
     if(!exe_sha256(digest)) log_event("HASH_UNAVAILABLE compatibility_probe_required");
     base=(unsigned char *)GetModuleHandleW(0);
     lua=GetModuleHandleA("Lua5.3.3r.dll");
@@ -313,7 +313,7 @@ __declspec(dllexport) DWORD WINAPI NativePauseInitialize(LPVOID reserved) {
           log_detail("WARNING iat_protection_restore win32=%lu",GetLastError());
     }
     log_event(runtime->name);
-    log_event("LOADED native-pause 0.2.4");
+    log_event("LOADED native-pause 0.2.5");
     return 1;
 }
 #ifdef NATIVE_PAUSE_AUTO
